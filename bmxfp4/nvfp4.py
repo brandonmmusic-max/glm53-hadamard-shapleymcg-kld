@@ -80,6 +80,8 @@ def nvfp4_quantize(w: torch.Tensor, cfg: NVFP4Config = NVFP4Config(), return_par
     block scale  s_b = amax(block) / 6 / S  -> E4M3 ;  element q = round(w / (s_b * S)) on the E2M1 grid.
     """
     orig_dtype = w.dtype
+    if w.numel() == 0:
+        return (w, {"tensor_scale": None, "block_scale": None}) if return_parts else w
     x = w.to(torch.float32)
     g = cfg.group
     xb = _blocks(x, g)                                         # [..., B, g]
@@ -238,6 +240,68 @@ def fp8_payload_bytes(shape) -> int:
 
 def bf16_payload_bytes(shape) -> int:
     return 2 * math.prod(shape)
+
+
+# ----------------------------------------------------------------------------- state / requant API (for GPTQ)
+def nvfp4_state(w: torch.Tensor, cfg: NVFP4Config = NVFP4Config()) -> torch.Tensor:
+    """Compute the real per-block scale [..., B, 1] (E4M3-rounded * tensor scale) once for a slab."""
+    _, parts = nvfp4_quantize(w, cfg, return_parts=True)
+    return parts["block_scale"].unsqueeze(-1)
+
+
+def nvfp4_requant(w: torch.Tensor, scale_b: torch.Tensor, group: int = 16) -> torch.Tensor:
+    """Round a slab [..., K] with FIXED block scales (from nvfp4_state); cheap, used inside GPTQ loops."""
+    xb = _blocks(w.to(torch.float32), group)
+    q = _round_to_levels(xb / scale_b, E2M1_LEVELS) * scale_b
+    return q.reshape_as(w).to(w.dtype)
+
+
+def mxfp6_state(w: torch.Tensor, cfg: MXFP6Config = MXFP6Config()) -> tuple[torch.Tensor, torch.Tensor]:
+    levels = fp_levels(2, 3) if cfg.variant == "e2m3" else fp_levels(3, 2)
+    lmax = float(levels[-1])
+    xb = _blocks(w.to(torch.float32), cfg.group)
+    bmax = xb.abs().amax(dim=-1, keepdim=True).clamp(min=1e-12)
+    base = _e8m0_round(bmax / lmax)
+    best_err, best_scale = None, None
+    for off in ([1.0, 0.5, 2.0] if cfg.scale_search else [1.0]):
+        sb = base * off
+        err = ((_round_to_levels(xb / sb, levels) * sb - xb) ** 2).sum(dim=-1, keepdim=True)
+        if best_err is None:
+            best_err, best_scale = err, sb
+        else:
+            better = err < best_err
+            best_err = torch.where(better, err, best_err); best_scale = torch.where(better, sb, best_scale)
+    return best_scale, levels
+
+
+def mxfp6_requant(w: torch.Tensor, state, group: int = 32) -> torch.Tensor:
+    scale_b, levels = state
+    xb = _blocks(w.to(torch.float32), group)
+    return (_round_to_levels(xb / scale_b, levels) * scale_b).reshape_as(w).to(w.dtype)
+
+
+class GroupQuantizer:
+    """Callable pair for GPTQ: state(slab)->s ; requant(slab, s)->deq.  Slab is [..., group]."""
+
+    def __init__(self, tier: str, nv: NVFP4Config | None = None, mx: MXFP6Config | None = None):
+        self.tier = tier
+        self.nv = nv or NVFP4Config()
+        self.mx = mx or MXFP6Config()
+        self.group = 32 if tier == "T2_mxfp6" else 16
+
+    def state(self, slab: torch.Tensor):
+        if self.tier in ("T1_nvfp4", "T0_sparse_nvfp4"):
+            return nvfp4_state(slab, self.nv)
+        if self.tier == "T2_mxfp6":
+            return mxfp6_state(slab, self.mx)
+        raise KeyError(self.tier)
+
+    def requant(self, slab: torch.Tensor, state) -> torch.Tensor:
+        if self.tier in ("T1_nvfp4", "T0_sparse_nvfp4"):
+            return nvfp4_requant(slab, state, self.group)
+        if self.tier == "T2_mxfp6":
+            return mxfp6_requant(slab, state, self.group)
+        raise KeyError(self.tier)
 
 
 # ----------------------------------------------------------------------------- tier registry

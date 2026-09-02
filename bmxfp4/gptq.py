@@ -1,35 +1,49 @@
-"""Batched GPTQ / SparseGPT with an arbitrary block quantizer in the loop.
+"""Batched GPTQ / SparseGPT with a group quantizer whose block scale is searched once per group.
 
-Operates on a batch of weight matrices W [E, N, K] (E experts sharing a layout, N output rows,
-K input columns) with per-expert Hessians H [E, K, K] (H = X^T X over the tokens routed to the
-expert).  Quantization is done column-block by column-block (block = group size of the format,
-16 for NVFP4, 32 for MXFP6) with error feedback to the not-yet-quantized columns (OBQ / GPTQ).
+W [E, N, K] (E experts, N output rows, K input columns) with per-expert Hessians H [E, K, K].
 
-Static act-order (MR-GPTQ ingredient 2): columns are processed in descending Hessian-diagonal
-order INSIDE each fixed group; the group membership / storage layout never changes, so no runtime
-permutation is needed.  Because a group is quantized jointly (one block scale), the intra-group
-order only affects the error feedback, which is exactly the point.
+Static act-order (MR-GPTQ ingredient 2): inside every fixed group of `group` columns, columns are
+re-ordered by descending Hessian diagonal (batch-mean over experts so the batch stays batched); the
+whole matrix and Hessian are permuted accordingly, standard sequential GPTQ runs, and the result is
+un-permuted.  Group membership (and hence the storage layout and block scales) never changes.
 
-The quantizer callback receives a [E, N, g] slab and returns its dequantized version.
+Inside a group the block scale is searched ONCE on the current (error-updated) group values, then
+columns are quantized one at a time with that fixed scale, feeding the error forward (OBQ / GPTQ).
+
+2:4 sparsity (SparseGPT-style): the mask is decided on the ORIGINAL column layout (groups of 4)
+from the current values at group start, using saliency w^2 / [H^-1]_ii^2, then carried through the
+permutation; pruned weights are compensated by the error feedback like any other rounding error.
+
+quantizer: object with .state(slab)->s and .requant(slab, s)->deq   (see nvfp4.GroupQuantizer)
 """
 from __future__ import annotations
 
 import torch
 
 
-def _hessian_inverse(h: torch.Tensor, percdamp: float = 0.01) -> torch.Tensor:
-    """Damped Cholesky inverse, batched.  Returns upper Cholesky factor of H^-1 (GPTQ convention)."""
+def hessian_inverse_chol(h: torch.Tensor, percdamp: float = 0.01) -> torch.Tensor:
+    """Upper Cholesky factor of (H + damp I)^-1, batched [E, K, K]."""
     e, k, _ = h.shape
-    h = h.clone()
-    dead = torch.diagonal(h, dim1=-2, dim2=-1) == 0
+    h = h.to(torch.float32).clone()
     idx = torch.arange(k, device=h.device)
-    h[:, idx, idx] = torch.where(dead, torch.ones_like(h[:, idx, idx]), h[:, idx, idx])
-    damp = percdamp * torch.diagonal(h, dim1=-2, dim2=-1).mean(dim=-1, keepdim=True)
+    diag = h[:, idx, idx]
+    dead = diag <= 0
+    h[:, idx, idx] = torch.where(dead, torch.ones_like(diag), diag)
+    damp = percdamp * h[:, idx, idx].mean(dim=-1, keepdim=True)
     h[:, idx, idx] += damp
     l = torch.linalg.cholesky(h)
     hinv = torch.cholesky_inverse(l)
-    u = torch.linalg.cholesky(hinv, upper=True)
-    return u
+    return torch.linalg.cholesky(hinv, upper=True)
+
+
+def in_group_act_order(diag_mean: torch.Tensor, group: int) -> torch.Tensor:
+    """Permutation that sorts columns by descending diagonal INSIDE each fixed group."""
+    k = diag_mean.numel()
+    perm = torch.empty(k, dtype=torch.long, device=diag_mean.device)
+    for g0 in range(0, k, group):
+        order = torch.argsort(diag_mean[g0:g0 + group], descending=True)
+        perm[g0:g0 + group] = g0 + order
+    return perm
 
 
 @torch.no_grad()
@@ -37,79 +51,74 @@ def gptq_quantize(
     w: torch.Tensor,
     h: torch.Tensor,
     quantizer,
-    group: int = 16,
+    group: int | None = None,
     block: int = 128,
     percdamp: float = 0.01,
     act_order_static: bool = True,
     sparse24: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return (W_q dequantized [E,N,K], per-expert Hessian-weighted loss [E]).
-
-    sparse24=True performs SparseGPT-style 2:4 pruning inside each group of 4 (mask chosen by
-    w^2 / [H^-1]_ii saliency), then quantizes the survivors; the mask is applied jointly with the
-    error feedback so pruned weights are compensated.
-    """
+    """Return (W_q dequantized [E,N,K] in w.dtype, per-expert accumulated GPTQ loss [E])."""
     e, n, k = w.shape
     dev = w.device
-    wq = w.to(torch.float32).clone()
-    hinv = _hessian_inverse(h.to(torch.float32), percdamp)          # [E, K, K] upper
-    losses = torch.zeros(e, device=dev)
-    diag_h = torch.diagonal(h, dim1=-2, dim2=-1)                    # [E, K]
+    group = group or getattr(quantizer, "group", 16)
     assert k % group == 0 and block % group == 0
+    h = h.to(torch.float32)
+    diag_h = torch.diagonal(h, dim1=-2, dim2=-1)
+    if act_order_static:
+        perm = in_group_act_order(diag_h.mean(0), group)
+    else:
+        perm = torch.arange(k, device=dev)
+    inv = torch.empty_like(perm)
+    inv[perm] = torch.arange(k, device=dev)
+
+    wq = w.to(torch.float32)[:, :, perm].clone()
+    hp = h[:, perm][:, :, perm]
+    hinv = hessian_inverse_chol(hp, percdamp)
+    losses = torch.zeros(e, device=dev)
 
     for c0 in range(0, k, block):
         c1 = min(c0 + block, k)
-        w_blk = wq[:, :, c0:c1].clone()
-        q_blk = torch.zeros_like(w_blk)
-        err_blk = torch.zeros_like(w_blk)
+        w_blk = wq[:, :, c0:c1]                        # view; updated in place
+        err_blk = torch.zeros(e, n, c1 - c0, device=dev)
         hinv_blk = hinv[:, c0:c1, c0:c1]
-
-        for g0 in range(c0, c1, group):
+        hdiag = torch.diagonal(hinv_blk, dim1=-2, dim2=-1)   # [E, blk]
+        for g0 in range(0, c1 - c0, group):
             g1 = g0 + group
-            # column order inside the group: descending Hessian diagonal (shared choice across experts
-            # would break the batch; we use the batch-mean diagonal, which keeps the loop batched)
-            if act_order_static:
-                order = torch.argsort(diag_h[:, g0:g1].mean(0), descending=True)
-            else:
-                order = torch.arange(group, device=dev)
-            # quantize the whole group jointly (one block scale), but feed error column by column
-            # in `order`: emulate by iterating columns and re-quantizing the group with the current
-            # (error-updated) values for the not-yet-fixed columns.
-            fixed = torch.zeros(group, dtype=torch.bool, device=dev)
-            grp_vals = w_blk[:, :, g0 - c0:g1 - c0]                    # view into current block state
+            grp = w_blk[:, :, g0:g1]
             if sparse24:
-                # SparseGPT saliency on the current values: w^2 / hinv_ii^2 per element, 2 of 4 kept
-                hd = torch.diagonal(hinv_blk, dim1=-2, dim2=-1)[:, g0 - c0:g1 - c0]  # [E, group]
-                sal = grp_vals ** 2 / (hd[:, None, :] ** 2 + 1e-12)
-                sal4 = sal.reshape(e, n, group // 4, 4)
-                keep_idx = sal4.topk(2, dim=-1).indices
-                mask = torch.zeros_like(sal4, dtype=torch.bool).scatter_(-1, keep_idx, True).reshape(e, n, group)
+                # saliency in ORIGINAL layout: un-permute this group's columns (they map back to the same
+                # 16-block), decide 2-of-4 on original positions, re-permute the mask
+                cols_perm = perm[c0 + g0:c0 + g1]                       # original column ids, in processing order
+                local = cols_perm - (c0 + g0)                           # 0..group-1 original positions
+                sal = grp ** 2 / (hdiag[:, None, g0:g1] ** 2 + 1e-12)   # in processing order
+                sal_orig = torch.empty_like(sal)
+                sal_orig[:, :, local] = sal                             # back to original order
+                sal4 = sal_orig.reshape(e, n, group // 4, 4)
+                keep = sal4.topk(2, dim=-1).indices
+                mask_orig = torch.zeros_like(sal4, dtype=torch.bool).scatter_(-1, keep, True).reshape(e, n, group)
+                mask = mask_orig[:, :, local]                           # into processing order
+                grp_m = grp * mask
             else:
-                mask = torch.ones(e, n, group, dtype=torch.bool, device=dev)
-            qgrp = torch.zeros_like(grp_vals)
-            for j in order.tolist():
-                col = g0 - c0 + j
-                # current group values with pruning mask applied
-                cur = grp_vals * mask
-                qg = quantizer(cur) * mask                              # [E, N, group] dequantized
-                qcol = qg[:, :, j]
-                qgrp[:, :, j] = qcol
-                d = hinv_blk[:, col, col]                               # [E]
-                err = (w_blk[:, :, col] - qcol) / d[:, None]            # [E, N]
-                # feed error to remaining (unfixed) columns of this block
-                upd = err[:, :, None] * hinv_blk[:, col, col:c1 - c0][:, None, :]   # [E, N, rest]
-                w_blk[:, :, col:] -= upd
-                # restore the fixed value for this column (it is now quantized)
+                mask = None
+                grp_m = grp
+            state = quantizer.state(grp_m)
+            for j in range(group):
+                col = g0 + j
+                cur = w_blk[:, :, g0:g1]
+                if mask is not None:
+                    cur = cur * mask
+                qcol = quantizer.requant(cur, state)[:, :, j]
+                if mask is not None:
+                    qcol = qcol * mask[:, :, j]
+                d = hdiag[:, col]
+                err = (w_blk[:, :, col] - qcol) / d[:, None]
+                w_blk[:, :, col:] -= err[:, :, None] * hinv_blk[:, col, col:][:, None, :]
                 w_blk[:, :, col] = qcol
                 err_blk[:, :, col] = err
-                fixed[j] = True
-                losses += (err ** 2 * d[:, None]).sum(dim=1) / 2
-            q_blk[:, :, g0 - c0:g1 - c0] = qgrp
-        wq[:, :, c0:c1] = q_blk
-        # propagate the block's accumulated error to all later columns
+                losses += (err ** 2).sum(dim=1) * d ** 2 / 2
         if c1 < k:
             wq[:, :, c1:] -= err_blk @ hinv[:, c0:c1, c1:]
-    return wq.to(w.dtype), losses
+    return wq[:, :, inv].to(w.dtype), losses
 
 
 @torch.no_grad()
@@ -120,14 +129,22 @@ def hessian_weighted_error(w: torch.Tensor, wq: torch.Tensor, h: torch.Tensor) -
 
 
 if __name__ == "__main__":
-    import time
-    from nvfp4 import nvfp4_quantize, NVFP4Config
+    import sys, time
+    sys.path.insert(0, ".")
+    from nvfp4 import GroupQuantizer, nvfp4_quantize, NVFP4Config
     torch.manual_seed(0)
-    e, n, k, t = 8, 768, 2048, 4096
-    w = torch.randn(e, n, k, device="cuda") * 0.02
-    x = torch.randn(e, t, k, device="cuda")
-    h = x.transpose(1, 2) @ x
-    q = lambda s: nvfp4_quantize(s, NVFP4Config(search_grid=6))
-    t0 = time.time(); wq, loss = gptq_quantize(w, h, q); torch.cuda.synchronize()
-    rtn = q(w)
-    print(f"gptq {time.time()-t0:.1f}s  rel-H-err gptq={hessian_weighted_error(w,wq,h).mean():.4g} rtn={hessian_weighted_error(w,rtn,h).mean():.4g}")
+    e, n, k, t = 8, 768, 2048, 3000
+    w = torch.randn(e, n, k, device="cuda") * torch.rand(e, 1, k, device="cuda") * 0.03
+    x = torch.randn(e, t, k, device="cuda") * torch.rand(e, 1, k, device="cuda") * 2
+    h = (x.transpose(1, 2) @ x) / t
+    q = GroupQuantizer("T1_nvfp4", NVFP4Config(search_grid=8))
+    for ao in (False, True):
+        t0 = time.time(); wq, loss = gptq_quantize(w, h, q, act_order_static=ao); torch.cuda.synchronize(); dt = time.time() - t0
+        rtn = nvfp4_quantize(w, NVFP4Config(search_grid=8))
+        eg, er = hessian_weighted_error(w, wq, h).mean(), hessian_weighted_error(w, rtn, h).mean()
+        print(f"act_order={ao}: gptq {dt:.2f}s | H-err gptq={eg:.4g} rtn={er:.4g} ratio={eg/er:.3f}")
+    t0 = time.time(); wq2, _ = gptq_quantize(w, h, q, sparse24=True); torch.cuda.synchronize()
+    nz = (wq2 != 0).float().reshape(e, n, k // 4, 4).sum(-1)
+    print(f"sparse24 gptq {time.time()-t0:.2f}s | H-err={hessian_weighted_error(w, wq2, h).mean():.4g} nnz={(wq2!=0).float().mean():.3f} max-per-4={int(nz.max())}")
+    e = 128; w = torch.randn(e, 1536, k, device="cuda") * 0.02; x = torch.randn(e, 2048, k, device="cuda"); h = (x.transpose(1, 2) @ x) / 2048
+    t0 = time.time(); wq, loss = gptq_quantize(w, h, q); torch.cuda.synchronize(); print(f"full-layer gate+up stack (128 x 1536 x 2048): {time.time()-t0:.1f}s")
