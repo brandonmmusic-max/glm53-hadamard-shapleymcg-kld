@@ -63,13 +63,15 @@ def quantize_stack(w: torch.Tensor, h: torch.Tensor, tier: str, method: str, nv:
         elif tier == "T2_mxfp6":
             wq = mxfp6_quantize(w, mx)
         elif tier == "T0_sparse_nvfp4":
-            m = sparse24_mask(w)
+            from nvfp4 import sparse48_mask, SPARSE_PATTERN
+            m = sparse48_mask(w) if SPARSE_PATTERN == "4:8" else sparse24_mask(w)
             wq = nvfp4_quantize(w * m, nv) * m
         else:
             raise KeyError(tier)
         return wq, hessian_weighted_error(w, wq, h)
+    from nvfp4 import SPARSE_PATTERN
     q = GroupQuantizer(tier, nv, mx)
-    wq, _ = gptq_quantize(w, h, q, sparse24=(tier == "T0_sparse_nvfp4"))
+    wq, _ = gptq_quantize(w, h, q, sparse24=(tier == "T0_sparse_nvfp4"), sparse_pattern=SPARSE_PATTERN)
     return wq, hessian_weighted_error(w, wq, h)
 
 

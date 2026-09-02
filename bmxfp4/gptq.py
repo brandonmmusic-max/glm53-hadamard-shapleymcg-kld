@@ -56,8 +56,12 @@ def gptq_quantize(
     percdamp: float = 0.01,
     act_order_static: bool = True,
     sparse24: bool = False,
+    sparse_pattern: str = "2:4",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return (W_q dequantized [E,N,K] in w.dtype, per-expert accumulated GPTQ loss [E])."""
+    """Return (W_q dequantized [E,N,K] in w.dtype, per-expert accumulated GPTQ loss [E]).
+
+    sparse24=True enables structured sparsity with the given pattern: "2:4" (2 of 4 elements) or
+    "4:8" (two adjacent pairs of the four pairs in each 8-element chunk; FP4 hardware pattern)."""
     e, n, k = w.shape
     dev = w.device
     group = group or getattr(quantizer, "group", 16)
@@ -93,9 +97,15 @@ def gptq_quantize(
                 sal = grp ** 2 / (hdiag[:, None, g0:g1] ** 2 + 1e-12)   # in processing order
                 sal_orig = torch.empty_like(sal)
                 sal_orig[:, :, local] = sal                             # back to original order
-                sal4 = sal_orig.reshape(e, n, group // 4, 4)
-                keep = sal4.topk(2, dim=-1).indices
-                mask_orig = torch.zeros_like(sal4, dtype=torch.bool).scatter_(-1, keep, True).reshape(e, n, group)
+                if sparse_pattern == "4:8":
+                    salp = sal_orig.reshape(e, n, group // 8, 4, 2).sum(-1)      # pair saliency
+                    keep = salp.topk(2, dim=-1).indices
+                    mp = torch.zeros_like(salp, dtype=torch.bool).scatter_(-1, keep, True)
+                    mask_orig = mp.unsqueeze(-1).expand(*mp.shape, 2).reshape(e, n, group)
+                else:
+                    sal4 = sal_orig.reshape(e, n, group // 4, 4)
+                    keep = sal4.topk(2, dim=-1).indices
+                    mask_orig = torch.zeros_like(sal4, dtype=torch.bool).scatter_(-1, keep, True).reshape(e, n, group)
                 mask = mask_orig[:, :, local]                           # into processing order
                 grp_m = grp * mask
             else:
