@@ -229,3 +229,21 @@ Scopes: `full` = every quantized Linear installed (attention + experts, as shipp
 - B5h W4A4 vs B5h W4A16 (activation cost after full rotation): 0.03308 vs 0.01119 (ratio 2.96x; diff +0.02189, 95% CI [+0.01847, +0.02601], excludes 0); B5r: 0.02476 vs 0.01152 (ratio 2.15x; diff +0.01323, 95% CI [+0.01018, +0.01663], excludes 0)
 - B5h W4A4 vs E1b: 0.03308 vs 0.00707 (ratio 4.68x; diff +0.02601, 95% CI [+0.02043, +0.03332], excludes 0); [selection] B5h vs B5r A4: 0.02849 vs 0.02079 (ratio 1.37x; diff +0.00770, 95% CI [+0.00665, +0.00880], excludes 0)
 
+## FP8 heads (embeddings + lm_head, E4M3 per-row; Brandon 09:20): cost and byte recovery on Qwen3-30B-A3B
+Saved B7n expert weights re-installed, heads quantized, scored on all panels. Bytes: emb 0.622 -> 0.312 GB, lm_head 0.622 -> 0.312 GB (rel RMS err 2.65% each). The half-bit multi-tier cost is 1.92 GB; FP8 heads recover 0.62 GB (32%), FP8 embeddings alone 0.31 GB (16%).
+- [final] BF16 experts + FP8 heads (head cost alone, vs teacher): 0.00413
+- [final] B7n + FP8 embeddings only vs B7n: 0.00906 vs 0.00900 (ratio 1.01x; diff +0.00005, 95% CI [-0.00016, +0.00026], includes 0)
+- [final] B7n + FP8 lm_head only vs B7n: 0.01031 vs 0.00900 (ratio 1.14x; diff +0.00130, 95% CI [+0.00100, +0.00163], excludes 0)
+- [final] B7n + FP8 embeddings + lm_head vs B7n: 0.01033 vs 0.00900 (ratio 1.15x; diff +0.00132, 95% CI [+0.00094, +0.00172], excludes 0)
+- [final] B7n + FP8 heads vs stock NVFP4 experts-only (BF16 heads): 0.01033 vs 0.01628 (ratio 0.63x; diff -0.00596, 95% CI [-0.00700, -0.00494], excludes 0)
+- [selection] BF16 experts + FP8 heads (head cost alone, vs teacher): 0.00423
+- [selection] B7n + FP8 embeddings only vs B7n: 0.00679 vs 0.00690 (ratio 0.98x; diff -0.00012, 95% CI [-0.00048, +0.00021], includes 0)
+- [selection] B7n + FP8 lm_head only vs B7n: 0.00831 vs 0.00690 (ratio 1.20x; diff +0.00141, 95% CI [+0.00102, +0.00179], excludes 0)
+- [selection] B7n + FP8 embeddings + lm_head vs B7n: 0.00823 vs 0.00690 (ratio 1.19x; diff +0.00133, 95% CI [+0.00080, +0.00185], excludes 0)
+- [selection] B7n + FP8 heads vs stock NVFP4 experts-only (BF16 heads): 0.00823 vs 0.01438 (ratio 0.57x; diff -0.00614, 95% CI [-0.00793, -0.00449], excludes 0)
+- [wikitext] BF16 experts + FP8 heads (head cost alone, vs teacher): 0.00635
+- [wikitext] B7n + FP8 embeddings only vs B7n: 0.01612 vs 0.01579 (ratio 1.02x; diff +0.00033, 95% CI [-0.00016, +0.00089], includes 0)
+- [wikitext] B7n + FP8 lm_head only vs B7n: 0.01819 vs 0.01579 (ratio 1.15x; diff +0.00241, 95% CI [+0.00212, +0.00269], excludes 0)
+- [wikitext] B7n + FP8 embeddings + lm_head vs B7n: 0.01850 vs 0.01579 (ratio 1.17x; diff +0.00271, 95% CI [+0.00206, +0.00336], excludes 0)
+- [wikitext] B7n + FP8 heads vs stock NVFP4 experts-only (BF16 heads): 0.01850 vs 0.02223 (ratio 0.83x; diff -0.00373, 95% CI [-0.00511, -0.00239], excludes 0)
+- W4A4: B7n-fp8h final 0.02492 vs B7n 0.02308
