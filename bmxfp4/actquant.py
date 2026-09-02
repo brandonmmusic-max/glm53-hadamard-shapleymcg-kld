@@ -45,10 +45,10 @@ class ActQuantHooks:
             if perm is not None:
                 xf = xf[:, perm]
             if R is not None:
-                xf = apply_block_rotation(xf, R.T.to(xf.device))
+                xf = apply_block_rotation(xf, R.T.to(xf.device), group=R.shape[0])
             xq = nvfp4_quantize(xf, self.cfg)
             if R is not None:
-                xq = apply_block_rotation(xq, R.to(xq.device))
+                xq = apply_block_rotation(xq, R.to(xq.device), group=R.shape[0])
             if inv is not None:
                 xq = xq[:, inv]
             return (xq.reshape(shp).to(x.dtype),) + tuple(args[1:])

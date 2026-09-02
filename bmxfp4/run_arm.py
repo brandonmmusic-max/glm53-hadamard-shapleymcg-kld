@@ -40,6 +40,11 @@ def make_rotation(spec: str, layer: int, kind: str, device, learned_dir: Path | 
         return None
     if spec == "had16":
         return hadamard16().to(device)
+    if spec == "hadfull":
+        # QuaRot-style full-width Hadamard on the expert input (2048 = 2^11) and on the down_proj input (768 = 12 x 64);
+        # folded into the weights offline, applied to activations online (fast Hadamard transform) -> W4A4 outlier spreading
+        from rotation import hadamard_n
+        return hadamard_n(2048 if kind == "in" else 768).to(device)
     if spec.startswith("random:"):
         seed = int(spec.split(":")[1])
         return random_so16(seed * 1000 + layer * 2 + (0 if kind == "in" else 1)).to(device)
@@ -96,8 +101,8 @@ def process_layer(model, layer, args, nv, mx, tiers_for_unit, device, learned_di
             Ht = H[:, perm][:, :, perm]
         R = make_rotation(args.rotation, layer, kind, device, learned_dir)
         if R is not None:
-            w = apply_block_rotation(w, R)
-            Ht = rotate_hessian(Ht, R)
+            w = apply_block_rotation(w, R, group=R.shape[0])
+            Ht = rotate_hessian(Ht, R, group=R.shape[0])
         transforms[(layer, kind)] = {"R": R, "perm": perm}
         # group experts by tier
         tier_of = [tiers_for_unit(e, projs[0]) for e in range(E)]
@@ -110,7 +115,7 @@ def process_layer(model, layer, args, nv, mx, tiers_for_unit, device, learned_di
                 losses[(e, kind)] = (tier, float(loss_t[j]))
         # back to the original basis
         if R is not None:
-            wq = apply_block_rotation(wq, R.T)
+            wq = apply_block_rotation(wq, R.T, group=R.shape[0])
         if perm is not None:
             wq = wq[:, :, inverse_permutation(perm)]
         # split rows back into projections and install

@@ -91,6 +91,25 @@ def main():
     for panel in ("selection", "wikitext"):
         out.append(f"- [{panel}] B7 vs E1b: {fmt(cmp('B7', 'E1b', panel))}; B7a vs E1a: {fmt(cmp('B7a', 'E1a', panel))}; B7u vs E1b: {fmt(cmp('B7u', 'E1b', panel))}; B7ua vs E1a: {fmt(cmp('B7ua', 'E1a', panel))}")
     out.append("")
+    out.append("## Stock NVFP4 anchors (B1/B2 of the plan): dequantized through the same harness; final role W4A16 unless stated")
+    out.append("Scopes: `full` = every quantized Linear installed (attention + experts, as shipped); `-experts` = routed experts only, attention BF16 (the scope of every BMXFP4 arm). Routed-expert bytes of stock NVFP4 = 4.500 bpw = B5r; B7n carries 5.029 bpw.")
+    for st in ("S1-nvidia", "S2-redhat"):
+        for sc in ("", "-experts"):
+            arm = st + sc
+            out.append(f"- {arm} vs E1b: {fmt(cmp(arm, 'E1b', 'final'))}")
+        out.append(f"- {st}-experts vs E1b-experts: {fmt(cmp(st + '-experts', 'E1b-experts', 'final'))}")
+        out.append(f"- B5r (uniform NVFP4 Had16 GPTQ REAP, same bytes) vs {st}-experts: {fmt(cmp('B5r', st + '-experts', 'final'))}")
+        out.append(f"- B7n (Shapley multi-tier, +0.53 bpw) vs {st}-experts: {fmt(cmp('B7n', st + '-experts', 'final'))}")
+        out.append(f"- B7 (main run, 4:8 tier) vs {st}-experts: {fmt(cmp('B7', st + '-experts', 'final'))}")
+        out.append(f"- W4A4: {st} full A4 vs {st} full A16: {fmt(cmp(st, st, 'final', mode_a='a4'))}; {st}-experts A4: {fmt(cmp(st + '-experts', st + '-experts', 'final', mode_a='a4'))}")
+        out.append(f"- [selection] {st}-experts vs E1b: {fmt(cmp(st + '-experts', 'E1b', 'selection'))}; B5r vs {st}-experts: {fmt(cmp('B5r', st + '-experts', 'selection'))}; [wikitext] B5r vs {st}-experts: {fmt(cmp('B5r', st + '-experts', 'wikitext'))}")
+    out.append("")
+    out.append("## W4A4 lever: full-width Hadamard (QuaRot-style, 2048 on expert inputs, 12x64 Kronecker on down_proj inputs) vs block-16 Hadamard, uniform NVFP4, GPTQ, REAP Hessians")
+    out.append(f"- B5h vs B5r W4A16: {fmt(cmp('B5h', 'B5r', 'final'))}")
+    out.append(f"- B5h vs B5r W4A4: {fmt(cmp('B5h', 'B5r', 'final', mode_a='a4', mode_b='a4'))}")
+    out.append(f"- B5h W4A4 vs B5h W4A16 (activation cost after full rotation): {fmt(cmp('B5h', 'B5h', 'final', mode_a='a4'))}; B5r: {fmt(cmp('B5r', 'B5r', 'final', mode_a='a4'))}")
+    out.append(f"- B5h W4A4 vs E1b: {fmt(cmp('B5h', 'E1b', 'final', mode_a='a4'))}; [selection] B5h vs B5r A4: {fmt(cmp('B5h', 'B5r', 'selection', mode_a='a4', mode_b='a4'))}")
+    out.append("")
     p = ROOT / "REPORT.md"
     txt = p.read_text()
     marker = "# Round 2 — ShapleyMCG path"
