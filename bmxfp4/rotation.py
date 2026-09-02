@@ -101,3 +101,35 @@ def inverse_permutation(perm: torch.Tensor) -> torch.Tensor:
     inv = torch.empty_like(perm)
     inv[perm] = torch.arange(perm.numel(), device=perm.device)
     return inv
+
+
+def hadamard_n(n: int) -> torch.Tensor:
+    """Orthonormal Hadamard matrix of order n for n = 2^k (Sylvester) or n = 12 * 2^k (Paley H12 (x) Sylvester)."""
+    def sylvester(m):
+        h = torch.ones(1, 1, dtype=torch.float64)
+        while h.shape[0] < m:
+            h = torch.cat([torch.cat([h, h], 1), torch.cat([h, -h], 1)], 0)
+        assert h.shape[0] == m, m
+        return h
+
+    def paley12():
+        q = 11
+        chi = {0: 0}
+        for x in range(1, q):
+            chi[x] = 1 if any((y * y) % q == x for y in range(1, q)) else -1
+        Q = torch.tensor([[chi[(j - i) % q] for j in range(q)] for i in range(q)], dtype=torch.float64)
+        h = torch.zeros(12, 12, dtype=torch.float64)
+        h[0, 1:] = 1; h[1:, 0] = -1; h[1:, 1:] = Q
+        h = h + torch.eye(12, dtype=torch.float64)
+        return h
+
+    if n & (n - 1) == 0:
+        h = sylvester(n)
+    elif n % 12 == 0 and (n // 12) & (n // 12 - 1) == 0:
+        h = torch.kron(paley12(), sylvester(n // 12))
+    else:
+        raise ValueError(f"no Hadamard construction for n={n}")
+    h = h / (n ** 0.5)
+    err = (h @ h.T - torch.eye(n, dtype=torch.float64)).abs().max().item()
+    assert err < 1e-9, err
+    return h.to(torch.float32)
