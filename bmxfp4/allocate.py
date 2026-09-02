@@ -25,7 +25,16 @@ import numpy as np
 TIERS = ["T0_sparse_nvfp4", "T1_nvfp4", "T2_mxfp6", "T3_fp8", "T4_bf16"]
 
 
-def load_candidates(cdir: Path, calib: dict | None, ladder: list[str]):
+def expert_frequency(layer: int, hess_dir: Path | None):
+    """Route-weight^2 mass share of each expert in the fit role (from the Hessian receipts), normalized to mean 1."""
+    if hess_dir is None:
+        return None
+    from safetensors.torch import load_file
+    w = load_file(str(hess_dir / f"layer-{layer:03d}.safetensors"))["wsum"].double().numpy()
+    return w / max(w.mean(), 1e-12)
+
+
+def load_candidates(cdir: Path, calib: dict | None, ladder: list[str], hess_dir: Path | None = None):
     units = []  # (layer, expert, proj)
     losses = []  # [U, T]
     bytes_ = []  # [U, T]
@@ -35,11 +44,13 @@ def load_candidates(cdir: Path, calib: dict | None, ladder: list[str]):
         layer = int(f.stem.split("-")[1])
         d = json.load(open(f))
         factor = 1.0 if calib is None else calib.get(str(layer), 1.0)
+        freq = expert_frequency(layer, hess_dir)
         for proj, tiers in d.items():
             E = len(tiers[ladder[0]]["loss"])
             for e in range(E):
                 units.append((layer, e, proj))
-                losses.append([tiers[t]["loss"][e] * factor for t in ladder])
+                fe = 1.0 if freq is None else float(freq[e])
+                losses.append([tiers[t]["loss"][e] * factor * fe for t in ladder])
                 bytes_.append([tiers[t]["bytes"] for t in ladder])
                 elems.append(tiers["T4_bf16"]["bytes"] // 2 if "T4_bf16" in tiers else tiers[ladder[-1]]["bytes"] // 2)
     return units, np.array(losses, dtype=np.float64), np.array(bytes_, dtype=np.int64), np.array(elems, dtype=np.int64)
@@ -98,10 +109,11 @@ def main():
     ap.add_argument("--calib", type=Path, default=None, help="json {layer: factor}")
     ap.add_argument("--ladder", default=",".join(TIERS))
     ap.add_argument("--name", default="alloc")
+    ap.add_argument("--freq-hessians", type=Path, default=None, help="hessians dir; weight each unit's value by its expert's route-weight^2 mass share")
     a = ap.parse_args()
     ladder = a.ladder.split(",")
     calib = json.load(open(a.calib)) if a.calib else None
-    units, losses, bytes_, elems = load_candidates(a.candidates, calib, ladder)
+    units, losses, bytes_, elems = load_candidates(a.candidates, calib, ladder, a.freq_hessians)
     total_elems = int(elems.sum())
     budget = a.budget_bytes if a.budget_bytes is not None else int(a.budget_bpw * total_elems / 8)
     sel = solve(losses, bytes_, budget)
@@ -122,7 +134,8 @@ def main():
     summary = {"name": a.name, "budget_bytes": budget, "used_bytes": used, "budget_bpw": 8.0 * budget / total_elems, "used_bpw": 8.0 * used / total_elems,
                "units": U, "total_loss": float(losses[np.arange(U), sel].sum()), "uniform_T1_loss": float(losses[:, ladder.index("T1_nvfp4")].sum()) if "T1_nvfp4" in ladder else None,
                "uniform_T1_bytes": int(bytes_[:, ladder.index("T1_nvfp4")].sum()) if "T1_nvfp4" in ladder else None,
-               "histogram": hist, "per_layer": per_layer, "per_projection": per_proj, "calibrated": calib is not None, "ladder": ladder}
+               "histogram": hist, "per_layer": per_layer, "per_projection": per_proj, "calibrated": calib is not None, "ladder": ladder,
+               "frequency_weighted": a.freq_hessians is not None}
     (a.out / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps({k: v for k, v in summary.items() if k not in ("per_layer",)}, indent=1))
 

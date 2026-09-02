@@ -1,0 +1,23 @@
+# BMXFP4 pilot on Qwen/Qwen3-30B-A3B — methodology notes (to accompany REPORT.md)
+
+Generated 2026-09-02 overnight on 4x RTX PRO 6000 Blackwell (SM120a). Plan: BMXFP4_plan_v2.md; pre-registration: bmxfp4 repo PREREGISTRATION.md (committed before any candidate).
+
+## What was measured, and how
+- Teacher: Qwen/Qwen3-30B-A3B @ 4c446470 (weights identical to main), BF16, HF transformers 4.52, sdpa, use_cache off, fp32 logits per window stored (teacher/<panel>/row-NNN.safetensors). B0 = the first selection window recomputed 3x and compared bitwise (teacher/b0-receipt.json).
+- Panels (token ids reused from the prior ShapleyMCG Qwen seal in brandonmusic/shapleymcg-qwen3-30b-a3b-reproducibility): selection 16 x 2048, final 25 x 2048, confirmation 16 x 2048 (four domains: general / legal / code-agentic / reasoning), plus the WikiText-2 10 x 2048 control panel. Fit (32 x 2048) was used only for Hessians, routed samples, and rotation learning.
+- Metric: per-token KL(teacher || student), full vocabulary, float32 log-softmax, positions 0..2046; per-window mean; mean over windows; p90/p99 of per-token KLD; top-1 agreement; paired bootstrap 95% CI (20,000 draws over windows) of the difference vs the named comparator. Same definition as the repository's scoring/kld.py (which reports p95/p99 rather than p90).
+- Pseudo-quantization: every arm is scored as an expanded-BF16 reconstruction installed into the HF model (routed experts only for BMXFP4 arms; the EXL3 anchors are scored both as the deployable full reconstruction and as an experts-only variant). W4A4 rows add NVFP4 activation quantization at every routed-expert input (per-token blocks of 16, dynamic E4M3 block scales, dynamic FP32 tensor scale) in the same transform basis as the weights.
+- Byte budgets: exact routed-expert payload bytes of turboderp/Qwen3-30B-A3B-exl3 5.0bpw (E1b, primary) and 4.0bpw (E1a, stress) from their safetensors headers (seals/bytes-exl3-*.json). BMXFP4 tier bytes: NVFP4 = n/2 + n/16 + 4; 2:4-sparse NVFP4 = n/4 + n/8 (2-bit metadata per stored nonzero) + n/16 + 4 (one UE4M3 per 16 logical elements; the ISA question in the plan is recorded as this constant); MXFP6 = 6n/8 + n/32; FP8 = n + 4·rows; BF16 = 2n.
+
+## Codec details (bmxfp4/nvfp4.py, gptq.py, rotation.py)
+- NVFP4: E2M1 elements, UE4M3 per-16 block scale, per-tensor FP32 scale (ModelOpt convention amax/(6*448)), MSE-optimal block scale search (12 shrink factors) with 4-vs-6 range-max choice, two rounds of alternating per-tensor refit; straight-through roundings.
+- GPTQ: batched over the 128 experts of a layer with per-expert route-weight^2 Hessians (fit role, 32 windows), 1% damping, column blocks of 128, in-group static act-order (descending Hessian diagonal inside each fixed 16-group, implemented as a permutation that leaves the storage layout unchanged), block scale searched once per group on the error-updated values.
+- 2:4: SparseGPT-style saliency w^2/[H^-1]_ii^2 on the original 4-column layout, mask decided at group start, pruning error fed forward like rounding error.
+- Rotations: block-diagonal 16x16 on the input dimension; W' = W R, H' = R^T H R, W_eff = Q(W')R^T; gate and up share one R per layer (they share the input), down has its own. Fixed Hadamard-16, seeded random SO(16) (five seeds), and Cayley-learned R = R0 (I-A)(I+A)^-1 with A = 0 at init, R0 in {I, Had16}.
+
+## Declared deviations from the plan (for speed; each is a caveat on the corresponding row)
+1. Allocation value: not the repository's Aumann-Shapley path integration. Each unit's value under each tier is the route-weight^2-weighted mean squared full-expert output error on 256 stored routed samples per expert when only that unit is quantized (others BF16). B8/B7-uncal use it directly; if per-layer KLD calibration runs were completed, B7 scales it by the measured per-layer KLD-per-unit-error factor.
+2. Learned rotation objective: Hessian-weighted per-projection reconstruction through the NVFP4 quantizer with MSE scales (RTN inside the optimizer, 100 Adam steps on 16-expert batches), then GPTQ with the frozen R; not the full expert-function objective.
+3. The codec is NOT integrated into the shapleymcg competitive ledger (its attestation gate is hard-bound to the EXL3/MCG codec and integer bits {3,4,5}); in the repository's terms this pilot codec is a diagnostic oracle. The results are therefore comparable in method (roles, metric, pseudo-quant scoring, exact bytes) but do not carry the repository's sealed-ledger receipts.
+4. External NVFP4 anchors (RedHatAI, nvidia) were not scored.
+5. The 89th sealed window (confirmation, code-agentic) re-tokenizes to 2047 tokens under the post-trained tokenizer; token ids were used directly, so all windows are 2048 tokens.
