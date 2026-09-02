@@ -16,9 +16,12 @@ PROJS = ("gate_proj", "up_proj", "down_proj")
 
 def load_model(path: str | Path, device: str = "cuda:0", attn: str = "sdpa"):
     model = AutoModelForCausalLM.from_pretrained(
-        str(path), torch_dtype=torch.bfloat16, device_map={"": device}, attn_implementation=attn, low_cpu_mem_usage=True
+        str(path), torch_dtype=torch.bfloat16, attn_implementation=attn, low_cpu_mem_usage=True
     )
+    model = model.to(device)
     model.eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
     model.config.use_cache = False
     return model
 

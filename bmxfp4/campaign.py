@@ -9,9 +9,10 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path("/media/brandonmusic/klcstore/bmxfp4")
+ROOT = Path(os.environ.get("BMXFP4_ROOT", "/media/brandonmusic/klcstore/bmxfp4"))
 MODELS = ROOT / "models"
-BF16 = MODELS / "Qwen3-30B-A3B"
+BF16 = Path(os.environ.get("BMXFP4_MODEL", str(MODELS / "Qwen3-30B-A3B")))
+SEAL_OVERRIDE = os.environ.get("BMXFP4_SEAL_JSON")  # local seal file (tiny smoke tests)
 SEALS = ROOT / "seals"
 WORK = ROOT / "work"
 LOGS = ROOT / "logs"
@@ -51,8 +52,11 @@ def receipt(path: Path, kind: str, **fields):
 
 
 def load_seal() -> dict:
-    from huggingface_hub import hf_hub_download
-    p = hf_hub_download(SEAL_DATASET, SEAL_FILE, repo_type="dataset")
+    if SEAL_OVERRIDE:
+        p = SEAL_OVERRIDE
+    else:
+        from huggingface_hub import hf_hub_download
+        p = hf_hub_download(SEAL_DATASET, SEAL_FILE, repo_type="dataset")
     d = json.load(open(p))
     d["_local_path"] = p
     d["_sha256"] = sha256_file(Path(p))
@@ -64,6 +68,9 @@ def role_ids(seal: dict, role: str) -> np.ndarray:
 
 
 def wiki_ids() -> np.ndarray:
+    if SEAL_OVERRIDE:
+        d = json.load(open(SEAL_OVERRIDE))
+        return np.array([w["token_ids"] for w in d["windows"]["selection"][:2]], dtype=np.int64)
     from huggingface_hub import hf_hub_download
     p = hf_hub_download(SEAL_DATASET, WIKI_FILE, repo_type="dataset")
     return np.load(p)["input_ids"].astype(np.int64)
