@@ -28,7 +28,11 @@ downloaded can replace it. The Shapley attribution is not needed (below) and is 
    re-encode, MXFP6/FP8/BF16 upgrade tiers for the 5.03 bpw arm, FP8 embeddings (free), BF16 lm_head (FP8 costs +15%).
 4. Do not use the full-width Hadamard (W4A4 +34% worse on NVFP4).
 
-## 2. Phase 0 — deployability questions, answered on Qwen3 first (today, ~2 GPU-hours, no download needed)
+## 2. Phase 0 — SUPERSEDED (Brandon 11:45: no Qwen phase 0; stage zero is done; the deployability questions are answered inside the GLM run — see SOL_PROMPT_GLM53_NVFP4.md sections 3 and 5, gate G4)
+
+(Original Phase 0 text kept for reference.)
+
+### Original Phase 0 — deployability questions on Qwen3
 
 The runtime NVFP4 kernels compute W·x. A rotated weight W·R needs R^T·x at runtime. There are two ways to get it
 without touching the MoE kernel, and Phase 0 measures what each keeps:
