@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from campaign import ARMS, ROOT, write_json
 from kld import paired_bootstrap
 
-COMPARATOR = {"B3": "B3p", "B4s1": "B3p", "B4s2": "B3p", "B4s3": "B3p", "B4s4": "B3p", "B4s5": "B3p", "B5": "B3p", "B6": "B3p", "B6h": "B3p", "B6p": "B3p",
-              "B7": "E1b", "B7a": "E1a", "B7t": "B7", "B8": "B7", "E1b-experts": "E1b", "E1a-experts": "E1a", "B7-uncal": "B7"}
+COMPARATOR = {"B3": "B3p", "B4s1": "B3p", "B4s2": "B3p", "B4s3": "B3p", "B4s4": "B3p", "B4s5": "B3p", "B5": "B3p", "B6i": "B3p", "B6h": "B3p", "B5p": "B5",
+              "B7": "E1b", "B7a": "E1a", "B7t": "B7", "B8": "E1b", "B8a": "E1a", "B8b": "E1b", "B8c": "E1b", "B5-final": "B3p",
+              "E1b-experts": "E1b", "E1a-experts": "E1a"}
 
 
 def load_arm(name: str, panel: str, mode: str):
