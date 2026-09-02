@@ -110,10 +110,41 @@ def main():
     ap.add_argument("--ladder", default=",".join(TIERS))
     ap.add_argument("--name", default="alloc")
     ap.add_argument("--freq-hessians", type=Path, default=None, help="hessians dir; weight each unit's value by its expert's route-weight^2 mass share")
+    ap.add_argument("--attribution", type=Path, default=None, help="attribution.json (path-integrated per-unit KLD shares of the provisional endpoint)")
+    ap.add_argument("--provisional-tier", default="T1_nvfp4", help="tier of the provisional endpoint the attribution was measured on")
     a = ap.parse_args()
     ladder = a.ladder.split(",")
     calib = json.load(open(a.calib)) if a.calib else None
     units, losses, bytes_, elems = load_candidates(a.candidates, calib, ladder, a.freq_hessians)
+    attribution_stats = None
+    if a.attribution:
+        # Repository rule (qwen_services.py:1146-1171): per unit, scale = causal share / anchor proxy, applied to every
+        # tier's proxy, then a non-negative per-unit offset so the objective is finite and non-negative; within-unit
+        # ordering is preserved.  Units whose anchor proxy is ~0 (never routed in fit) fall back to the layer-median scale.
+        att = json.load(open(a.attribution))
+        share = {u: v for u, v in zip(att["units"], att["attribution"])}
+        pt = ladder.index(a.provisional_tier)
+        scaled = np.zeros_like(losses)
+        layer_scales = {}
+        raw_scale = np.full(len(units), np.nan)
+        for i, (layer, e, p) in enumerate(units):
+            s_u = share.get(f"{layer}.{e}.{p}", 0.0)
+            anchor = losses[i, pt]
+            if anchor > 1e-12:
+                raw_scale[i] = s_u / anchor
+                layer_scales.setdefault(layer, []).append(raw_scale[i])
+        med = {l: float(np.median(v)) for l, v in layer_scales.items()}
+        n_fallback = 0
+        for i, (layer, e, p) in enumerate(units):
+            sc = raw_scale[i]
+            if not np.isfinite(sc):
+                sc = med.get(layer, 1.0); n_fallback += 1
+            row = losses[i] * sc
+            off = max(0.0, -row.min())
+            scaled[i] = row + off
+        attribution_stats = {"kld_end": att["kld_end"], "sum_attribution": att["sum_attribution"], "remainder": att["remainder"],
+                             "negative_shares": int(sum(1 for v in share.values() if v < 0)), "fallback_units": n_fallback}
+        losses = scaled
     total_elems = int(elems.sum())
     budget = a.budget_bytes if a.budget_bytes is not None else int(a.budget_bpw * total_elems / 8)
     sel = solve(losses, bytes_, budget)
@@ -135,7 +166,8 @@ def main():
                "units": U, "total_loss": float(losses[np.arange(U), sel].sum()), "uniform_T1_loss": float(losses[:, ladder.index("T1_nvfp4")].sum()) if "T1_nvfp4" in ladder else None,
                "uniform_T1_bytes": int(bytes_[:, ladder.index("T1_nvfp4")].sum()) if "T1_nvfp4" in ladder else None,
                "histogram": hist, "per_layer": per_layer, "per_projection": per_proj, "calibrated": calib is not None, "ladder": ladder,
-               "frequency_weighted": a.freq_hessians is not None}
+               "frequency_weighted": a.freq_hessians is not None, "attribution": str(a.attribution) if a.attribution else None,
+               "attribution_stats": attribution_stats}
     (a.out / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps({k: v for k, v in summary.items() if k not in ("per_layer",)}, indent=1))
 

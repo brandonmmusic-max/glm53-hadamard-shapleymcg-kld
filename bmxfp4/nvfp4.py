@@ -146,17 +146,44 @@ def sparse24_mask(w: torch.Tensor, importance: torch.Tensor | None = None) -> to
     return mask.reshape_as(w)
 
 
-def sparse_nvfp4_payload_bytes(shape, group: int = 16, scale_per_logical: bool = True) -> int:
-    """2:4 NVFP4: stored nonzeros = n/2 at 4 bit + 2-bit metadata per stored nonzero + E4M3 scales.
+def sparse48_mask(w: torch.Tensor, importance: torch.Tensor | None = None, pairs: bool = True) -> torch.Tensor:
+    """4:8 structured sparsity along the last dim: keep 4 of every 8 elements.
 
-    scale_per_logical=True assumes one UE4M3 covers 16 LOGICAL elements (8 stored)  -> 3.5 bpw class.
-    scale_per_logical=False assumes one UE4M3 per 16 STORED elements                -> 3.25 bpw class.
-    The plan flags this as an ISA question; the constant is explicit so the report can state it.
+    pairs=True (FP4 hardware pattern: elements are packed two per byte, so the kept elements come as two
+    adjacent pairs out of the four pairs in each chunk of 8, selected by pair importance).
+    pairs=False keeps any 4 of 8 (upper bound, not storable with 2-bit-per-pair metadata).
+    """
+    x = (w if importance is None else importance).to(torch.float32)
+    k = x.shape[-1]
+    assert k % 8 == 0
+    if pairs:
+        xp = x.reshape(*x.shape[:-1], k // 8, 4, 2).abs().sum(-1)          # pair importance [.., K/8, 4]
+        idx = xp.topk(2, dim=-1).indices
+        mp = torch.zeros_like(xp, dtype=torch.bool).scatter_(-1, idx, True)   # [.., K/8, 4]
+        mask = mp.unsqueeze(-1).expand(*mp.shape, 2).reshape(*x.shape[:-1], k)
+    else:
+        x8 = x.reshape(*x.shape[:-1], k // 8, 8).abs()
+        idx = x8.topk(4, dim=-1).indices
+        mask = torch.zeros_like(x8, dtype=torch.bool).scatter_(-1, idx, True).reshape_as(x)
+    return mask.reshape(w.shape)
+
+
+SPARSE_PATTERN = "4:8"   # campaign default (Brandon 2026-09-02): 4:8 pair-structured for FP4
+
+
+def sparse_nvfp4_payload_bytes(shape, group: int = 16, scale_per_logical: bool = True, pattern: str = SPARSE_PATTERN) -> int:
+    """Sparse NVFP4 payload bytes.
+
+    2:4 : stored nonzeros n/2 at 4 bit + 2-bit metadata per stored nonzero (1 bit/element) + scales.
+    4:8 : stored nonzeros n/2 at 4 bit + pair-index metadata: 2 bits per kept pair, 2 pairs per 8
+          elements = 4 bits per 8 elements (0.5 bit/element) + scales.
+    scale_per_logical=True: one UE4M3 per 16 LOGICAL elements; False: per 16 STORED elements.
     """
     n = math.prod(shape)
     stored = n // 2
     scales = (n // group) if scale_per_logical else (stored // group)
-    return stored // 2 + (stored * 2) // 8 + scales + 4
+    meta_bits = n if pattern == "2:4" else n // 2
+    return stored // 2 + meta_bits // 8 + scales + 4
 
 
 # ----------------------------------------------------------------------------- MXFP6 (T2)
@@ -340,7 +367,7 @@ def make_quantizer(tier: str, nv: NVFP4Config | None = None, mx: MXFP6Config | N
         return lambda w: w
     if tier == "T0_sparse_nvfp4":
         def f(w):
-            m = sparse24_mask(w)
+            m = sparse48_mask(w) if SPARSE_PATTERN == "4:8" else sparse24_mask(w)
             return nvfp4_quantize(w * m, nv) * m
         return f
     raise KeyError(tier)
