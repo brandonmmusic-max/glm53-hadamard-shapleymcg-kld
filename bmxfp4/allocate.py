@@ -127,10 +127,13 @@ def main():
         scaled = np.zeros_like(losses)
         layer_scales = {}
         raw_scale = np.full(len(units), np.nan)
+        n_nonpos = 0
         for i, (layer, e, p) in enumerate(units):
             s_u = share.get(f"{layer}.{e}.{p}", 0.0)
             anchor = losses[i, pt]
-            if anchor > 1e-12:
+            if s_u <= 0:
+                n_nonpos += 1          # DECISIONS #14: non-positive share = noise around zero -> layer-median scale
+            elif anchor > 1e-12:
                 raw_scale[i] = s_u / anchor
                 layer_scales.setdefault(layer, []).append(raw_scale[i])
         med = {l: float(np.median(v)) for l, v in layer_scales.items()}
@@ -143,7 +146,8 @@ def main():
             off = max(0.0, -row.min())
             scaled[i] = row + off
         attribution_stats = {"kld_end": att["kld_end"], "sum_attribution": att["sum_attribution"], "remainder": att["remainder"],
-                             "negative_shares": int(sum(1 for v in share.values() if v < 0)), "fallback_units": n_fallback}
+                             "negative_shares": int(sum(1 for v in share.values() if v < 0)), "nonpositive_shares": n_nonpos,
+                             "fallback_units": n_fallback, "layer_median_scale": med}
         losses = scaled
     total_elems = int(elems.sum())
     budget = a.budget_bytes if a.budget_bytes is not None else int(a.budget_bpw * total_elems / 8)

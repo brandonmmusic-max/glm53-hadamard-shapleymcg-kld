@@ -65,12 +65,13 @@ def main():
     ap.add_argument("--reanchor", type=int, default=4)
     ap.add_argument("--save-weights", action="store_true")
     ap.add_argument("--search-grid", type=int, default=8)
+    ap.add_argument("--calib-role", default="calib", help="windows used for the per-layer Hessian recapture (calib = REAP calibration corpus)")
     a = ap.parse_args()
     out_dir = ARMS / a.arm; out_dir.mkdir(parents=True, exist_ok=True)
     hess_dir = out_dir / "causal-hessians"; hess_dir.mkdir(exist_ok=True)
     log = LOGS / f"arm-{a.arm}.log"
     seal = load_seal()
-    fit_ids = role_ids(seal, "fit")
+    fit_ids = role_ids(seal, a.calib_role)
     conf_ids = role_ids(seal, "confirmation")
     device = a.device
     nv = NVFP4Config(search_grid=a.search_grid); mx = MXFP6Config()
@@ -87,12 +88,17 @@ def main():
     for l in range(L):
         t1 = time.time()
         stats = capture_layer_hessian(model, l, fit_ids, device, hess_dir)
+        t2 = time.time()
         tiers_for_unit = (lambda e, p: a.tier) if tiermap is None else (lambda e, p, lm=tiermap[str(l)]: lm[str(e)][p])
         losses, tr = run_arm.process_layer(model, l, a, nv, mx, tiers_for_unit, device, None, record)
         transforms.update(tr)
         if record is not None:
             save_file(record[l], str(out_dir / f"weights-layer-{l:03d}.safetensors")); record.pop(l)
-        log_line(log, f"[{a.arm}] layer {l}: hessian {stats} ; quantized ({time.time()-t1:.0f}s)")
+        # the per-layer causal Hessian is scratch (2.5 GB/layer, 4 arms x 48 layers would be ~480 GB): keep only stats
+        for f in (hess_dir / f"layer-{l:03d}.safetensors", hess_dir / f"samples-{l:03d}.safetensors"):
+            f.unlink(missing_ok=True)
+        write_json(hess_dir / f"stats-{l:03d}.json", stats)
+        log_line(log, f"[{a.arm}] layer {l}: hessian {stats} capture {t2-t1:.0f}s ; quantized {time.time()-t2:.0f}s")
         if (l + 1) % a.reanchor == 0 or l == L - 1:
             rep = score_student(model, conf_ids, TEACHER / "confirmation", device=device)
             reanchors.append({"after_layer": l, "confirmation_mean_kld": rep["mean_kld"], "top1": rep["top1_agreement"]})

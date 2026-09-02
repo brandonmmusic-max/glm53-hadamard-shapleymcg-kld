@@ -17,12 +17,10 @@ $PY attribution.py --merge $ARMS/attrib-B5prov --out $ARMS/attrib-B5prov/attribu
 grep -E "kld_end|sum_attribution|remainder|windows" $L/attrib-merge.out | tr -d '\n' | tee -a $L/campaign.log; echo
 $PY allocate.py --candidates $CAND --out $ARMS/alloc-B7 --budget-bytes $E1B --name B7 --attribution $ARMS/attrib-B5prov/attribution.json > $L/alloc-B7.out 2>&1 || { log "alloc B7 FAILED"; exit 1; }
 $PY allocate.py --candidates $CAND --out $ARMS/alloc-B7a --budget-bytes $E1A --name B7a --attribution $ARMS/attrib-B5prov/attribution.json > $L/alloc-B7a.out 2>&1 || { log "alloc B7a FAILED"; exit 1; }
-$PY allocate.py --candidates $CAND --out $ARMS/alloc-B7u --budget-bytes $E1B --name B7u > $L/alloc-B7u.out 2>&1 || { log "alloc B7u FAILED"; exit 1; }
-for a in B7 B7a B7u; do log "alloc $a: $(python3 -c "import json;d=json.load(open('$ARMS/alloc-$a/summary.json'));print({t:v['units'] for t,v in d['histogram'].items()}, 'used_bpw=%.4f'%d['used_bpw'])")"; done
-log "START causal B7 (gpu0) B7a (gpu1) B7u (gpu2)"
+for a in B7 B7a; do log "alloc $a: $(python3 -c "import json;d=json.load(open('$ARMS/alloc-$a/summary.json'));print({t:v['units'] for t,v in d['histogram'].items()}, 'used_bpw=%.4f'%d['used_bpw'])")"; done
+log "START causal B7 (gpu0) B7a (gpu1)"
 CUDA_VISIBLE_DEVICES=0 $PY run_causal.py --arm B7  --device cuda:0 --rotation $ROT --tiermap $ARMS/alloc-B7/tiermap.json  --panels selection,final,wikitext --a4 --save-weights > $L/B7.out 2>&1 &  P0=$!
 CUDA_VISIBLE_DEVICES=1 $PY run_causal.py --arm B7a --device cuda:0 --rotation $ROT --tiermap $ARMS/alloc-B7a/tiermap.json --panels selection,final,wikitext --a4 --save-weights > $L/B7a.out 2>&1 & P1=$!
-CUDA_VISIBLE_DEVICES=2 $PY run_causal.py --arm B7u --device cuda:0 --rotation $ROT --tiermap $ARMS/alloc-B7u/tiermap.json --panels selection,final --a4 > $L/B7u.out 2>&1 & P2=$!
-wait $P0; log "END B7 rc=$?";  wait $P1; log "END B7a rc=$?";  wait $P2; log "END B7u rc=$?"
-for a in B7 B7a B7u; do tail -n 1 $L/arm-$a.log; done
+wait $P0; log "END B7 rc=$?";  wait $P1; log "END B7a rc=$?"
+for a in B7 B7a; do tail -n 1 $L/arm-$a.log; done
 log "ROUND 2 chain done"

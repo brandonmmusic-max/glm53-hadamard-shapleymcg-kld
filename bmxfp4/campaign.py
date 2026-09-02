@@ -17,7 +17,8 @@ SEALS = ROOT / "seals"
 WORK = ROOT / "work"
 LOGS = ROOT / "logs"
 TEACHER = ROOT / "teacher"
-HESS = ROOT / "hessians"
+HESS = Path(os.environ.get("BMXFP4_HESS_DIR", str(ROOT / "hessians")))   # round 2: hessians-calib (REAP calibration corpus)
+CALIB = ROOT / "calib"
 ARMS = ROOT / "arms"
 CODE = Path("/home/brandonmusic/KLC_SANDBOXES/bmxfp4-qwen3-30b-a3b")
 
@@ -63,7 +64,17 @@ def load_seal() -> dict:
     return d
 
 
+def calib_ids() -> np.ndarray:
+    """Calibration windows built from Brandon's REAP calibration corpus (build_calib.py), NOT sealed eval windows."""
+    p = Path(os.environ.get("BMXFP4_CALIB_NPZ", str(CALIB / "reap-calib-windows.npz")))
+    return np.load(p)["input_ids"].astype(np.int64)
+
+
 def role_ids(seal: dict, role: str) -> np.ndarray:
+    if role == "calib":
+        return calib_ids()
+    if role == "calib-attrib":          # first 32 calibration windows (8 per axis): attribution subset
+        return calib_ids()[:32]
     return np.array([w["token_ids"] for w in seal["windows"][role]], dtype=np.int64)
 
 
