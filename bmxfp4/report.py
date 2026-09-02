@@ -16,7 +16,7 @@ from campaign import ARMS, ROOT, write_json
 from kld import paired_bootstrap
 
 COMPARATOR = {"B3": "B3p", "B4s1": "B3p", "B4s2": "B3p", "B4s3": "B3p", "B4s4": "B3p", "B4s5": "B3p", "B5": "B3p", "B6i": "B3p", "B6h": "B3p", "B5p": "B5",
-              "B7": "E1b", "B7a": "E1a", "B7u": "E1b", "B7t": "B7", "B5L": "B5", "B5-prov": "B3p", "B8": "E1b", "B8a": "E1a", "B8b": "E1b", "B8c": "E1b", "B5-final": "B3p",
+              "B7": "E1b", "B7a": "E1a", "B7u": "E1b", "B7ua": "E1a", "B7n": "E1b", "B7un": "E1b", "B5L2": "B5", "B5-prov2": "B3p", "B7t": "B7", "B5L": "B5", "B5-prov": "B3p", "B8": "E1b", "B8a": "E1a", "B8b": "E1b", "B8c": "E1b", "B5-final": "B3p",
               "E1b-experts": "E1b", "E1a-experts": "E1a"}
 
 
