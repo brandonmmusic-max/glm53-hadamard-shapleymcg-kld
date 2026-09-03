@@ -79,11 +79,31 @@ if MIXED_MXFP6:
     )
 
     _ORIGINAL_ROUTED_WEIGHT_LOADER = _RoutedExperts.weight_loader
+    _W13_SCALE_NORMALIZATION_LOGGED = False
 
     def _diagnostic_routed_weight_loader(
         self, param, loaded_weight, weight_name, shard_id, expert_id,
         return_success=False,
     ):
+        global _W13_SCALE_NORMALIZATION_LOGGED
+        if (
+            self.quant_method.__class__.__name__ == "_VllmMoEMethod"
+            and weight_name.endswith("w13_weight_scale")
+            and loaded_weight.ndim >= 2
+            and loaded_weight.shape[-1] == 2 * param.shape[-1]
+        ):
+            # The virtual-TP preload pads this group-32 axis to the carrier's
+            # group-16 width.  The second half is padding, not FP6 scales.
+            loaded_weight = loaded_weight.narrow(
+                loaded_weight.ndim - 1, 0, param.shape[-1]
+            ).contiguous()
+            if not _W13_SCALE_NORMALIZATION_LOGGED:
+                print(
+                    "GLM53_MXFP6_W13_SCALE_GEOMETRY_ACTIVE "
+                    f"groups={param.shape[-1]}",
+                    flush=True,
+                )
+                _W13_SCALE_NORMALIZATION_LOGGED = True
         try:
             return _ORIGINAL_ROUTED_WEIGHT_LOADER(
                 self, param, loaded_weight, weight_name, shard_id, expert_id,
