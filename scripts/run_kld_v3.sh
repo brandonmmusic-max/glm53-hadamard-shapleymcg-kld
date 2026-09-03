@@ -117,4 +117,9 @@ python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$CAMPAIGN/roles/roles-v
   --config-id "nvfp4-v3-$ROTATION-tp4-ep4-dcp4-eager-nomtp-kvfp8" \
   --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
   --capture-root "$CAPTURES" --container "$TEST" --resume "${extra[@]}" 2>&1 | tee "$SESSION/role-eval.log"
+if [ "$ROTATION" != identity ]; then
+  docker logs "$TEST" >"$SESSION/rotation-forward.log" 2>&1
+  python3 -m glm53_nvfp4.verify_rotation_runtime --log "$SESSION/rotation-forward.log" \
+    --layers "$LAYERS" --ranks 4 --output "$SESSION/rotation-runtime-proof.json"
+fi
 log "$ROLE KLD run $RUN_ID complete"

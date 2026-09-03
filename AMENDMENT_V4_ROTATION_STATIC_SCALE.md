@@ -1,0 +1,9 @@
+# V4 rotation-specific static activation-scale correction
+
+Date: 2026-09-03. The V3 fixed-H16 result is retained as a valid measurement of its exact checkpoint/runtime pair but is reclassified as a stale-activation-scale diagnostic, not a fair qualification of calibrated H16. V3 rotated chunks replaced routed gate/up weights and weight scales while inheriting ModelOpt NVFP4 `input_scale` tensors calibrated in the unrotated basis. The runtime uses static W4A4 activations, so a non-identity basis change must also recalibrate those input scales.
+
+The V4 exploratory correction computes one routed fit-only activation amax per expert after the exact runtime transform and exports gate/up `input_scale = amax / (6 * 448)`. Down-projection input scales remain unchanged because its input is not rotated. Identity-GPTQ receives the same fresh-scale treatment as the H16 arm, preserving the causal factorial and identical tensor count/BPW. No evaluation row is used to calibrate weights, rotations, or scales.
+
+Before any new protected rotation claim, the minimum diagnostic is stock versus identity-GPTQ/fresh-scale versus H16-GPTQ/stale-scale versus the identical H16 weights with fresh H16 scales. Initial work uses layer 44 and opened conditional-fit rows. A layer-3 replication follows before a full-model rebuild. Every non-identity KLD run must record and validate first-forward evidence for every intended layer/rank, exact rotation checksum, hidden width 4096, and BF16 input dtype.
+
+The actual qualified runtime selects FlashInfer CUTLASS NVFP4. This deviates from the original prompt's MARLIN-then-HUMMING rule and remains explicitly labeled; no W4A16 result will be mixed into the W4A4 claim. Selection wave 1 is already opened, so all V4 development uses fit or conditional-fit data until a new candidate family is frozen under a fresh selection-wave authorization.

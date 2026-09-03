@@ -8,7 +8,10 @@ from pathlib import Path
 
 from safetensors import safe_open
 
-ALLOWED_SUFFIXES = (".weight", ".weight_scale", ".weight_scale_2")
+# A non-identity W4A4 basis change must carry activation scales calibrated in
+# that same basis.  Inventory/freeze code decides which tensors are required;
+# the sparse overlay builder merely permits the complete ModelOpt payload.
+ALLOWED_SUFFIXES = (".weight", ".weight_scale", ".weight_scale_2", ".input_scale")
 ROUTED_LAYERS = range(3, 45)
 
 

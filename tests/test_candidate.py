@@ -23,6 +23,23 @@ def test_candidate_redirects_only_chunk_tensors(tmp_path):
     assert (output / "base.safetensors").is_symlink()
 
 
+def test_candidate_accepts_rotation_calibrated_input_scale(tmp_path):
+    carrier = tmp_path / "carrier"
+    carrier.mkdir()
+    save_file({"a.input_scale": torch.tensor(1.0)}, str(carrier / "base.safetensors"))
+    (carrier / "config.json").write_text("{}")
+    (carrier / "model.safetensors.index.json").write_text(
+        json.dumps({"metadata": {}, "weight_map": {"a.input_scale": "base.safetensors"}})
+    )
+    chunk = tmp_path / "scale.safetensors"
+    save_file({"a.input_scale": torch.tensor(0.5)}, str(chunk))
+    output = tmp_path / "candidate"
+    result = build(carrier, output, [chunk])
+    index = json.loads((output / "model.safetensors.index.json").read_text())
+    assert result["redirected_tensors"] == 1
+    assert index["weight_map"]["a.input_scale"] == "scale.safetensors"
+
+
 def test_routed_payload_inventory_excludes_nextn_layer_45():
     weight_map = {
         "model.language_model.layers.3.mlp.experts.0.down_proj.weight": "a",
