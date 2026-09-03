@@ -55,6 +55,9 @@ def main() -> None:
         "commands": {
             "gpu": run("nvidia-smi", "--query-gpu=index,name,uuid,memory.total,compute_cap", "--format=csv,noheader"),
             "service": run("systemctl", "--user", "is-active", "glm53-r10-tp2-mtp3.service"),
+            "backend_service": run("systemctl", "--user", "is-active", "klc-backend.service"),
+            "model_stack_timer": run("systemctl", "is-active", "klc-model-stack.timer"),
+            "production_container": run("docker", "inspect", "-f", "{{.State.Running}}", "glm53-flash-exl3-k4-tp4-vision-mtp3"),
             "port_8000": run("ss", "-ltn", "sport = :8000"),
             "docker_image": run("docker", "image", "inspect", "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate", "--format", "{{.Id}}"),
             "hf_version": run("hf", "version"),
@@ -74,4 +77,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
