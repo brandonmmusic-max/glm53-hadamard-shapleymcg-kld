@@ -35,8 +35,8 @@ learn_layer() {
   GLM53_V3_CHUNK_ROOT="$LEARNED_ROOT/chunks" "$REPO/scripts/run_rotation_layer.sh" "$layer" learned "$selected" >>"$LOG" 2>&1
 }
 
-for first in 3 9 15 21 27 33 39; do
-  last=$((first + 5)); [ "$last" -le 44 ] || last=44
+for first in 3 5 7 9 11 13 15 17 19 21 23 25 27 29 31 33 35 37 39 41 43; do
+  last=$((first + 1)); [ "$last" -le 44 ] || last=44
   layers=()
   for ((layer=first; layer<=last; layer++)); do layers+=("$layer"); done
   "$REPO/scripts/prefetch_capture_batch.sh" "${layers[@]}" >>"$LOG" 2>&1
