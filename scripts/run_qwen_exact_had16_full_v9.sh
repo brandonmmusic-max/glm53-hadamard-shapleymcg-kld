@@ -24,8 +24,18 @@ cd "$REPO"
 
 available_root=$(df -B1 --output=avail / | tail -1 | tr -d ' ')
 available_media=$(df -B1 --output=avail /media/brandonmusic/klcstore | tail -1 | tr -d ' ')
-[ "$available_root" -ge 185000000000 ] || {
-  echo "less than 185 GB free on root before the full H16 build" >&2
+completed_receipts=$(find "$LAYERS_ROOT" -path '*/evidence/layer-validation.json' -type f 2>/dev/null | wc -l)
+[ "$completed_receipts" -le 41 ] || {
+  echo "unexpected number of completed layer receipts: $completed_receipts" >&2
+  exit 1
+}
+remaining_layers=$((41 - completed_receipts))
+# A resumed build must not demand the original whole-campaign free space after
+# already-validated layer payloads have consumed it. Reserve 4.5 GB per
+# unfinished routed layer plus 20 GB for streamed capture and filesystem headroom.
+required_root=$((20000000000 + remaining_layers * 4500000000))
+[ "$available_root" -ge "$required_root" ] || {
+  echo "insufficient root space: need $required_root bytes for $remaining_layers remaining layers" >&2
   exit 1
 }
 [ "$available_media" -ge 15000000000 ] || {
