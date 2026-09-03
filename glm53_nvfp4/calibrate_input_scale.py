@@ -192,6 +192,10 @@ def main() -> None:
             "calibration": "fit-only routed amax / (6*448)",
         },
     )
+    partial_capture_path = (
+        args.capture_root
+        / f"layers/layer-{args.layer:03d}/partial-fit-capture.json"
+    )
     receipt = {
         "schema": "glm53-nvfp4-v5.qwen-exact-rotated-input-scale-receipt.v1" if mid_maxima is not None else "glm53-nvfp4-v4.rotated-input-scale-receipt.v1",
         "layer": args.layer,
@@ -200,6 +204,14 @@ def main() -> None:
         "rotation_file": str(args.rotation_file.resolve()) if args.rotation_file else None,
         "roles_sha256": sha256_file(args.roles),
         "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
+        "partial_capture": (
+            {
+                "path": str(partial_capture_path),
+                "sha256": sha256_file(partial_capture_path),
+            }
+            if partial_capture_path.is_file()
+            else None
+        ),
         "fit_windows": len(capture.window_indices),
         "formula": "amax / (6 * 448)",
         "amax": {

@@ -15,7 +15,7 @@ ROOT=${GLM53_EXACT_FULL_ROOT:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v9-l
 LAYERS_ROOT=$ROOT/layers
 CANDIDATE=$ROOT/candidate
 LOG=$ROOT/full-build.log
-REUSE_LAYER3=$CAMPAIGN/exact-v6/layer-003/had16
+REUSE_LAYER3=$CAMPAIGN/exact-v10/layer-003/had16
 LOCK=/run/lock/klc/model-stack.lock
 PRODUCTION=glm53-flash-exl3-k4-tp4-vision-mtp3
 
@@ -71,7 +71,7 @@ quantize_layer() {
       --output "$chunks/had16-layer-$l3-experts-$s3-$e3.safetensors" \
       --receipt "$evidence/had16-layer-$l3-experts-$s3-$e3.json" \
       --layer "$layer" --expert-start "$start" --expert-end "$end" --device cuda:0 \
-      --max-samples 10000 --search-grid 12 --rotation had16 --rotation-scope all \
+      --max-samples 256 --search-grid 12 --rotation had16 --rotation-scope all \
       --gptq-geometry full --projections all >"$logs/quant-gpu-$gpu.log" 2>&1 &
     pids+=("$!")
   done
@@ -91,7 +91,7 @@ quantize_layer() {
   CUDA_VISIBLE_DEVICES=0 /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.calibrate_input_scale \
     --capture-root "$CAPTURE" --source "$SOURCE" --source-index "$SOURCE_INDEX" \
     --roles "$ROLES" --layer "$layer" --rotation had16 --rotation-scope all \
-    --device cuda:0 --max-samples 10000 \
+    --device cuda:0 --max-samples 256 \
     --output "$chunks/had16-layer-$l3-input-scales.safetensors" \
     --receipt "$evidence/input-scales.json" >"$logs/input-scales.log" 2>&1
 }
@@ -102,6 +102,15 @@ remove_capture() {
   for path in hidden.bf16.bin topk_ids.u16le.bin topk_weights.f32le.bin; do
     [ ! -f "$CAPTURE/layers/layer-$l3/$path" ] || unlink -- "$CAPTURE/layers/layer-$l3/$path"
   done
+}
+
+prefetch_layer() {
+  local layer=$1 l3
+  printf -v l3 '%03d' "$layer"
+  /usr/bin/python3 -m glm53_nvfp4.prefetch_partial_capture \
+    --capture-root "$CAPTURE" --roles "$ROLES" --layer "$layer" \
+    --role fit --workers 8 \
+    --receipt "$CAPTURE/layers/layer-$l3/partial-fit-capture.json"
 }
 
 # The winning layer-3 payload is immutable and already verified.  Reuse it
@@ -137,7 +146,7 @@ trap restore EXIT
 prefetch_pid=
 prefetch_layer=
 if ! layer_complete 4; then
-  "$REPO/scripts/prefetch_capture_batch.sh" 4 >>"$LOG" 2>&1 &
+  prefetch_layer 4 >>"$LOG" 2>&1 &
   prefetch_pid=$!
   prefetch_layer=4
 fi
@@ -149,7 +158,7 @@ for layer in $(seq 4 44); do
     continue
   fi
   if [ "$prefetch_layer" != "$layer" ]; then
-    "$REPO/scripts/prefetch_capture_batch.sh" "$layer" >>"$LOG" 2>&1 &
+    prefetch_layer "$layer" >>"$LOG" 2>&1 &
     prefetch_pid=$!
     prefetch_layer=$layer
   fi
@@ -159,7 +168,7 @@ for layer in $(seq 4 44); do
 
   next=$((layer + 1))
   if [ "$next" -le 44 ] && ! layer_complete "$next"; then
-    "$REPO/scripts/prefetch_capture_batch.sh" "$next" >>"$LOG" 2>&1 &
+    prefetch_layer "$next" >>"$LOG" 2>&1 &
     prefetch_pid=$!
     prefetch_layer=$next
   fi
@@ -214,7 +223,8 @@ payload={
     "gptq_geometry":"full",
     "projections":["gate_proj","up_proj","down_proj"],
     "runtime_load_format":"instanttensor",
-    "layer3_reused_from":"/media/brandonmusic/klcstore/bmxfp4-glm53/exact-v6/layer-003/had16",
+    "calibration_max_samples_per_expert":256,
+    "layer3_reused_from":"/media/brandonmusic/klcstore/bmxfp4-glm53/exact-v10/layer-003/had16",
     "candidate":str(candidate),
     "candidate_index_sha256":hashlib.sha256((candidate/"model.safetensors.index.json").read_bytes()).hexdigest(),
     "overlay_sha256":hashlib.sha256((candidate/"OVERLAY.json").read_bytes()).hexdigest(),
