@@ -51,7 +51,11 @@ def main() -> None:
             "samples": len(values),
         })
     selected = sorted(
-        (row["layer"] for row in sorted(rows, key=lambda row: (-row["mean"], row["layer"]))[: design["allocation"]["mxfp6_layers"]])
+        row["layer"]
+        for row in sorted(rows, key=lambda row: (-row["mean"], row["layer"]))[
+            : design["allocation"]["mxfp6_layers"]
+        ]
+    )
     overlap = len(set(running_allocations[0]) & set(running_allocations[-1])) if len(running_allocations) > 1 else None
     full_id = next(cid for cid, layers in design["coalitions"].items() if len(layers) == len(design["layers"]))
     empty_id = next(cid for cid, layers in design["coalitions"].items() if not layers)

@@ -25,6 +25,14 @@ DTYPE_BYTES = {
     "I32": 4,
     "I64": 8,
 }
+_SHA_CACHE: dict[Path, str] = {}
+
+
+def _cached_sha256(path: Path) -> str:
+    resolved = path.resolve()
+    if resolved not in _SHA_CACHE:
+        _SHA_CACHE[resolved] = sha256_file(resolved)
+    return _SHA_CACHE[resolved]
 
 
 def _slice_nbytes(handle, name: str) -> tuple[int, int]:
@@ -128,7 +136,7 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
         "carrier": str(carrier.resolve()),
         "mxfp6_layers": sorted(mxfp6_layers),
         "nvfp4_layers": sorted(set(ROUTED_LAYERS) - mxfp6_layers),
-        "chunks": [{"path": str(p.resolve()), "sha256": sha256_file(p)} for p in chunks],
+        "chunks": [{"path": str(p.resolve()), "sha256": _cached_sha256(p)} for p in chunks],
         "redirected_tensors": len(redirected),
         "logical_elements": logical_elements,
         "payload_bytes": payload_bytes,
