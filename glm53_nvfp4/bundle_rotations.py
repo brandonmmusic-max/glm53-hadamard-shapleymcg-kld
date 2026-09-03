@@ -21,21 +21,30 @@ def main() -> None:
     inputs = []
     for path in args.input:
         item = load_file(str(path), device="cpu")
-        if len(item) != 1:
-            raise ValueError(f"{path} must contain exactly one rotation")
-        key, tensor = next(iter(item.items()))
-        if key in tensors:
-            raise ValueError(f"duplicate {key}")
-        if orthogonality_error(tensor) > 2e-4:
-            raise ValueError(f"nonorthogonal {key}")
-        tensors[key] = tensor.contiguous()
+        if len(item) not in (1, 2):
+            raise ValueError(f"{path} must contain one legacy rotation or one in/mid pair")
+        for key, tensor in item.items():
+            if key in tensors:
+                raise ValueError(f"duplicate {key}")
+            if orthogonality_error(tensor) > 2e-4:
+                raise ValueError(f"nonorthogonal {key}")
+            tensors[key] = tensor.contiguous()
         inputs.append({"path": str(path), "sha256": sha256_file(path)})
-    expected = {f"layer_{layer:03d}" for layer in range(3, 45)}
+    paired = any(key.endswith(("_in", "_mid")) for key in tensors)
+    expected = (
+        {
+            f"layer_{layer:03d}_{kind}"
+            for layer in range(3, 45)
+            for kind in ("in", "mid")
+        }
+        if paired
+        else {f"layer_{layer:03d}" for layer in range(3, 45)}
+    )
     if set(tensors) != expected:
         raise ValueError(f"rotation coverage mismatch: missing={sorted(expected-set(tensors))}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    save_file(tensors, str(args.output), metadata={"schema": "glm53-nvfp4-v3.learned-block16-bundle.v1"})
-    receipt = {"schema": "glm53-nvfp4-v3.rotation-bundle-receipt.v1", "layers": len(tensors), "inputs": inputs, "output": {"path": str(args.output), "sha256": sha256_file(args.output)}}
+    save_file(tensors, str(args.output), metadata={"schema": "glm53-nvfp4-v5.qwen-rotation-pair-bundle.v1" if paired else "glm53-nvfp4-v3.learned-block16-bundle.v1"})
+    receipt = {"schema": "glm53-nvfp4-v5.qwen-rotation-pair-bundle-receipt.v1" if paired else "glm53-nvfp4-v3.rotation-bundle-receipt.v1", "layers": len(tensors) // (2 if paired else 1), "rotation_tensors": len(tensors), "scope": "all" if paired else "gate-up", "inputs": inputs, "output": {"path": str(args.output), "sha256": sha256_file(args.output)}}
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(json.dumps(receipt["output"], sort_keys=True))

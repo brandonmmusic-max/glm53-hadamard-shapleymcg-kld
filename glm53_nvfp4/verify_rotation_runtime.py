@@ -12,6 +12,11 @@ MARKER = re.compile(
     r"rotation_sha256=(?P<sha>[0-9a-f]{64}) hidden_width=(?P<width>\d+) "
     r"dtype=(?P<dtype>torch\.[a-z0-9_]+)"
 )
+MID_MARKER = re.compile(
+    r"GLM53_BLOCK_MID_ROTATION_FORWARD layer=(?P<layer>\d+) rank=(?P<rank>\d+) "
+    r"rotation_sha256=(?P<sha>[0-9a-f]{64}) hidden_width=(?P<width>\d+) "
+    r"dtype=(?P<dtype>torch\.[a-z0-9_]+)"
+)
 
 
 def parse_layers(spec: str) -> set[int]:
@@ -28,11 +33,18 @@ def parse_layers(spec: str) -> set[int]:
     return result
 
 
-def verify(text: str, layers: set[int], ranks: set[int]) -> dict:
+def verify(
+    text: str,
+    layers: set[int],
+    ranks: set[int],
+    *,
+    require_mid: bool = False,
+    require_input: bool = True,
+) -> dict:
     rows = [m.groupdict() for m in MARKER.finditer(text)]
     observed = {(int(row["layer"]), int(row["rank"])) for row in rows}
     expected = {(layer, rank) for layer in layers for rank in ranks}
-    missing = sorted(expected - observed)
+    missing = sorted(expected - observed) if require_input else []
     unexpected = sorted(observed - expected)
     bad_geometry = sorted(
         (int(row["layer"]), int(row["rank"]), int(row["width"]), row["dtype"])
@@ -54,16 +66,51 @@ def verify(text: str, layers: set[int], ranks: set[int]) -> dict:
         )
         for layer in sorted(layers)
     }
-    if any(len(shas) != 1 for shas in by_layer.values()):
+    if require_input and any(len(shas) != 1 for shas in by_layer.values()):
         raise RuntimeError(f"rotation checksum differs across ranks: {by_layer}")
+    mid_by_layer = None
+    mid_observed: set[tuple[int, int]] = set()
+    if require_mid:
+        mid_rows = [m.groupdict() for m in MID_MARKER.finditer(text)]
+        mid_observed = {
+            (int(row["layer"]), int(row["rank"])) for row in mid_rows
+        }
+        mid_missing = sorted(expected - mid_observed)
+        mid_unexpected = sorted(mid_observed - expected)
+        mid_bad_geometry = sorted(
+            (int(row["layer"]), int(row["rank"]), int(row["width"]), row["dtype"])
+            for row in mid_rows
+            if int(row["width"]) != 2048 or row["dtype"] != "torch.bfloat16"
+        )
+        if mid_missing or mid_unexpected or mid_bad_geometry:
+            raise RuntimeError(
+                f"mid rotation forward evidence mismatch missing={mid_missing} "
+                f"unexpected={mid_unexpected} bad_geometry={mid_bad_geometry}"
+            )
+        mid_by_layer = {
+            str(layer): sorted(
+                {
+                    row["sha"]
+                    for row in mid_rows
+                    if int(row["layer"]) == layer
+                }
+            )
+            for layer in sorted(layers)
+        }
+        if any(len(shas) != 1 for shas in mid_by_layer.values()):
+            raise RuntimeError(
+                f"mid rotation checksum differs across ranks: {mid_by_layer}"
+            )
     return {
-        "schema": "glm53-nvfp4-v4.rotation-runtime-proof.v1",
+        "schema": "glm53-nvfp4-v6.rotation-family-runtime-proof.v1" if require_mid and not require_input else ("glm53-nvfp4-v5.qwen-exact-rotation-runtime-proof.v1" if require_mid else "glm53-nvfp4-v4.rotation-runtime-proof.v1"),
         "status": "pass",
         "layers": sorted(layers),
         "ranks": sorted(ranks),
         "forward_pairs": len(observed),
         "rotation_sha256_by_layer": by_layer,
-        "hidden_width": 4096,
+        "mid_forward_pairs": len(mid_observed) if require_mid else None,
+        "mid_rotation_sha256_by_layer": mid_by_layer,
+        "hidden_width": 4096 if require_input else None,
         "dtype": "torch.bfloat16",
     }
 
@@ -73,9 +120,17 @@ def main() -> None:
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--layers", required=True)
     parser.add_argument("--ranks", type=int, default=4)
+    parser.add_argument("--require-mid", action="store_true")
+    parser.add_argument("--skip-input", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    result = verify(args.log.read_text(errors="replace"), parse_layers(args.layers), set(range(args.ranks)))
+    result = verify(
+        args.log.read_text(errors="replace"),
+        parse_layers(args.layers),
+        set(range(args.ranks)),
+        require_mid=args.require_mid,
+        require_input=not args.skip_input,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, sort_keys=True))

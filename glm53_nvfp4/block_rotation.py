@@ -98,14 +98,32 @@ def rotate_block_hessian(hessian: torch.Tensor, rotation: torch.Tensor) -> torch
     return torch.einsum("bij,bjk,bkl->bil", r.transpose(-1, -2), hessian, r)
 
 
-def load_layer_rotation(path: Path, layer: int, *, device=None) -> torch.Tensor:
-    """Load ``layer_NNN`` from a safetensors transform bundle."""
+def load_layer_rotation(
+    path: Path,
+    layer: int,
+    *,
+    kind: str = "in",
+    width: int = 4096,
+    device=None,
+) -> torch.Tensor:
+    """Load one layer/projection-family transform from a safetensors bundle.
+
+    Legacy bundles name the routed gate/up transform ``layer_NNN``.  Exact
+    Qwen-style bundles may instead use ``layer_NNN_in`` and must use
+    ``layer_NNN_mid`` for the independently transformed down-projection input.
+    """
+    if kind not in {"in", "mid"}:
+        raise ValueError(f"invalid rotation kind {kind!r}")
+    if width <= 0 or width % GROUP_SIZE:
+        raise ValueError(f"invalid transformed width {width}")
     tensors = load_file(str(path), device="cpu")
-    key = f"layer_{layer:03d}"
+    preferred = f"layer_{layer:03d}_{kind}"
+    legacy = f"layer_{layer:03d}"
+    key = preferred if preferred in tensors else legacy
     if key not in tensors:
-        raise KeyError(f"{key} absent from {path}")
+        raise KeyError(f"{preferred} absent from {path}")
     rotation = tensors[key].float()
-    _validate_rotation(rotation, 4096 // GROUP_SIZE)
+    _validate_rotation(rotation, width // GROUP_SIZE)
     if orthogonality_error(rotation) > 2e-4:
         raise ValueError(f"{key} is not orthogonal")
     return rotation.to(device=device) if device is not None else rotation
