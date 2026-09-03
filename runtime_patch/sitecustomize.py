@@ -12,6 +12,48 @@ import re
 
 
 MODE = os.environ.get("GLM53_ROUTED_ROTATION", "").strip().lower()
+MIXED_MXFP6 = os.environ.get("GLM53_MIXED_MXFP6", "").strip().lower()
+
+
+if MIXED_MXFP6:
+    if MIXED_MXFP6 not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(f"invalid GLM53_MIXED_MXFP6={MIXED_MXFP6!r}")
+
+    # The pinned image already contains both implementations needed by the
+    # exact 6-bpw ladder: ModelOpt's mixed NVFP4 dispatcher and B12X's native
+    # MXFP6/W6A8 method.  Upstream ModelOpt does not name MXFP6 in its mixed
+    # switch, so bridge only that one declared per-layer algorithm and leave
+    # every existing FP8/NVFP4/MXFP8 branch untouched.
+    os.environ.setdefault("B12X_ENABLE_FP6", "1")
+    os.environ.setdefault("B12X_FP6_MODEL_DIR", "/model")
+
+    from b12x.integration.vllm import plugin as _fp6_plugin
+    from vllm.model_executor.layers.quantization import modelopt as _modelopt
+
+    _fp6_plugin.register_b12x_fp6()
+    if _fp6_plugin._CONFIG_CLS is None:
+        raise RuntimeError("B12X MXFP6 quantization plugin did not register")
+    _B12X_FP6_CONFIG = _fp6_plugin._CONFIG_CLS(
+        os.environ["B12X_FP6_MODEL_DIR"]
+    )
+    _ORIGINAL_MIXED_GET_QUANT_METHOD = (
+        _modelopt.ModelOptMixedPrecisionConfig.get_quant_method
+    )
+
+    def _mixed_get_quant_method(self, layer, prefix):
+        if self._resolve_quant_algo(prefix) == "MXFP6":
+            method = _B12X_FP6_CONFIG.get_quant_method(layer, prefix)
+            if method is None:
+                raise RuntimeError(
+                    f"MXFP6 layer {prefix!r} did not bind to the B12X method"
+                )
+            return method
+        return _ORIGINAL_MIXED_GET_QUANT_METHOD(self, layer, prefix)
+
+    _modelopt.ModelOptMixedPrecisionConfig.get_quant_method = (
+        _mixed_get_quant_method
+    )
+    print("GLM53_MIXED_MXFP6_PATCH_ACTIVE", flush=True)
 
 
 if MODE:
