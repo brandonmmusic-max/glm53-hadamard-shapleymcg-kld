@@ -56,7 +56,17 @@ def build(carrier: Path, output: Path, chunks: list[Path]) -> dict:
     updated = dict(original)
     updated["weight_map"] = weight_map
     (output / "model.safetensors.index.json").write_text(json.dumps(updated, indent=2, sort_keys=True) + "\n")
-    overlay = {"schema": "glm53-nvfp4-v2.candidate-overlay.v1", "carrier": str(carrier.resolve()), "chunks": [str(x.resolve()) for x in chunks], "redirected_tensors": len(redirected)}
+    overlay = {
+        "schema": "glm53-nvfp4-v2.candidate-overlay.v2",
+        "carrier": str(carrier.resolve()),
+        "chunks": [str(x.resolve()) for x in chunks],
+        "redirected_tensors": len(redirected),
+        # Ordinary safetensors iteration yields every key physically present
+        # in each selected shard, including stale copies in carrier shards.
+        # InstantTensor consumes the index map and therefore implements the
+        # copy-on-write semantics this directory declares.
+        "required_load_format": "instanttensor",
+    }
     (output / "OVERLAY.json").write_text(json.dumps(overlay, indent=2, sort_keys=True) + "\n")
     return overlay
 

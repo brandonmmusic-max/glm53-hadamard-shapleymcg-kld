@@ -18,6 +18,8 @@ def test_candidate_redirects_only_chunk_tensors(tmp_path):
     result = build(carrier, output, [chunk])
     index = json.loads((output / "model.safetensors.index.json").read_text())
     assert result["redirected_tensors"] == 1
+    assert result["required_load_format"] == "instanttensor"
+    assert result["schema"] == "glm53-nvfp4-v2.candidate-overlay.v2"
     assert index["weight_map"]["a.weight"] == "new.safetensors"
     assert index["weight_map"]["b.weight"] == "base.safetensors"
     assert (output / "base.safetensors").is_symlink()
