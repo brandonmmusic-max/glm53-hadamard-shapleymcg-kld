@@ -33,9 +33,15 @@ cd "$REPO"
 
 rotation_env=()
 rotation_mount=()
+if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
+  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e B12X_ENABLE_FP6=1 -e B12X_FP6_MODEL_DIR=/model )
+  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+fi
 if [ "$ROTATION" != identity ]; then
   rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$LAYERS" )
-  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  if [ ${#rotation_mount[@]} -eq 0 ]; then
+    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  fi
 fi
 if [ "$ROTATION" = learned ]; then
   ROTATION_FILE=$(readlink -f "$ROTATION_FILE")
