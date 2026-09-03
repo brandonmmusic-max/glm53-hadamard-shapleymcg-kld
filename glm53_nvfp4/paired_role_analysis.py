@@ -49,13 +49,14 @@ def main() -> None:
     parser.add_argument("--stock-run", type=Path, required=True)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--role", choices=("selection", "confirmation"), default="confirmation")
     args = parser.parse_args()
     roles = json.loads(args.roles.read_text())
-    expected = [item["id"] for item in roles["roles"]["confirmation"]]
+    expected = [item["id"] for item in roles["roles"][args.role]]
     candidate = load_window_means(args.candidate_run)
     stock = load_window_means(args.stock_run)
     if set(candidate) != set(expected) or set(stock) != set(expected):
-        raise RuntimeError("paired runs do not contain the exact confirmation role")
+        raise RuntimeError(f"paired runs do not contain the exact {args.role} role")
     candidate_values = np.array([candidate[key] for key in expected])
     stock_values = np.array([stock[key] for key in expected])
     delta = candidate_values - stock_values
@@ -69,8 +70,10 @@ def main() -> None:
     stock_mean = float(stock_values.mean())
     improvement = 1.0 - candidate_mean / stock_mean
     passed = improvement >= 0.10 and bca[1] < 0.0
+    decision = ("pass" if passed else "fail") if args.role == "confirmation" else ("continue" if float(delta.mean()) < 0.0 else "stop")
     payload = {
-        "schema": "glm53-nvfp4-v2.paired-confirmation.v1",
+        "schema": f"glm53-nvfp4-v2.paired-{args.role}.v1",
+        "role": args.role,
         "estimand": "equal-window mean of candidate KLD minus stock KLD",
         "windows": len(expected),
         "candidate_mean_kld": candidate_mean,
@@ -82,7 +85,7 @@ def main() -> None:
         "ratio_ci95_percentile": tuple(float(x) for x in np.quantile(boot_ratio, [0.025, 0.975])),
         "bootstrap": {"replicates": BOOTSTRAP_B, "seed": BOOTSTRAP_SEED, "unit": "window"},
         "threshold": {"minimum_relative_improvement": 0.10, "maximum_bca_upper_delta": 0.0},
-        "decision": "pass" if passed else "fail",
+        "decision": decision,
         "roles_sha256": sha256_file(args.roles),
         "candidate_records": [{"window_id": key, "mean_kld": candidate[key]} for key in expected],
         "stock_records": [{"window_id": key, "mean_kld": stock[key]} for key in expected],
