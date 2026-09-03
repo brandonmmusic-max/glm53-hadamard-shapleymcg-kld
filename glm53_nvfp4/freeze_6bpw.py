@@ -42,6 +42,11 @@ def _model(path: Path, *, mixed: bool) -> dict:
     }
     if mixed:
         result["mixed_receipt"] = _file(path / "MIXED_RECEIPT.json")
+    if (path / "OVERLAY.json").is_file():
+        overlay = json.loads((path / "OVERLAY.json").read_text())
+        if overlay.get("required_load_format") != "instanttensor":
+            raise RuntimeError(f"{path}: sparse overlay is not bound to instanttensor")
+        result["overlay"] = _file(path / "OVERLAY.json")
     return result
 
 
@@ -87,7 +92,9 @@ def main() -> None:
     design = json.loads(args.design.read_text())
     control_design = json.loads(args.control_design.read_text())
     winner = json.loads(args.rotation_winner.read_text())
-    if winner.get("status") != "pass" or winner.get("winner") is None:
+    if winner.get("status") != "pass" or not (
+        winner.get("winner") is not None or winner.get("model") is not None
+    ):
         raise RuntimeError("rotation winner is not a passing frozen endpoint")
     if analysis.get("design_sha256") != sha256_file(args.design):
         raise RuntimeError("Shapley analysis/design identity mismatch")
@@ -108,7 +115,7 @@ def main() -> None:
         raise RuntimeError("full MXFP6 endpoint has unexpected exact bpw")
 
     # Confirmation must still be unopened at the moment of authorization.
-    opened = sorted(args.run_root.glob("run-confirmation-*.json"))
+    opened = sorted(args.run_root.glob("run-*confirmation*.json"))
     if opened:
         raise RuntimeError(f"confirmation already opened: {opened}")
 

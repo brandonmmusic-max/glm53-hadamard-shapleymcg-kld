@@ -16,12 +16,13 @@ def main() -> None:
     parser.add_argument("--design", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--run-prefix", default="shapley")
     args = parser.parse_args()
     design = json.loads(args.design.read_text())
     means = {}
     evidence = []
     for cid in design["coalitions"]:
-        run_id = f"shapley-{cid}"
+        run_id = f"{args.run_prefix}-{cid}"
         path = args.run_root / f"run-{run_id}.json"
         run = json.loads(path.read_text())
         if run.get("status") != "complete" or run.get("role") != "conditional-fit":
@@ -63,6 +64,7 @@ def main() -> None:
         "schema": "glm53-nvfp4-v3.layer-shapley-analysis.v1",
         "design": str(args.design),
         "design_sha256": sha256_file(args.design),
+        "run_prefix": args.run_prefix,
         "baseline_empty_kld": means[empty_id],
         "full_mxfp6_kld": means[full_id],
         "full_path_delta": means[empty_id] - means[full_id],
