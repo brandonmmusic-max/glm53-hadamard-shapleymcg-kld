@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -ne 2 ]; then
-  echo "usage: $0 MODEL_DIR SESSION_DIR" >&2
+if [ "$#" -lt 2 ] || [ "$#" -gt 5 ]; then
+  echo "usage: $0 MODEL_DIR SESSION_DIR [identity|had16|learned] [LAYERS] [ROTATION_FILE]" >&2
   exit 2
 fi
 
 MODEL_DIR=$(readlink -f "$1")
 SESSION=$(readlink -m "$2")
+REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
+ROTATION=${3:-identity}
+ROTATED_LAYERS=${4:-3-44}
+ROTATION_FILE=${5:-}
+[ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
+[ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned rotation requires a file" >&2; exit 2; }
 IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate
 MODEL_NAME=GLM-5.3-Flash-NVFP4-V2-PILOT
 TEST=glm53-nvfp4-v2-canary
@@ -17,6 +23,18 @@ LOCK=/run/lock/klc/model-stack.lock
 CACHE_DIR=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 mkdir -p "$SESSION"
+
+rotation_env=()
+rotation_mount=()
+if [ "$ROTATION" != identity ]; then
+  rotation_env+=( -e PYTHONPATH=/runtime-patch -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$ROTATED_LAYERS" )
+  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+fi
+if [ "$ROTATION" = learned ]; then
+  ROTATION_FILE=$(readlink -f "$ROTATION_FILE")
+  rotation_env+=( -e GLM53_ROTATION_FILE=/rotation/rotations.safetensors )
+  rotation_mount+=( -v "$ROTATION_FILE:/rotation/rotations.safetensors:ro" )
+fi
 
 log() { echo "[$(date --iso-8601=seconds)] $*" | tee -a "$SESSION/session.log"; }
 
@@ -55,9 +73,10 @@ docker run -d --name "$TEST" --gpus all --network host --shm-size 32g --restart 
   -e VLLM_PCIE_ALLREDUCE_BACKEND=cpp -e VLLM_CPP_AR_1STAGE_NCCL_CUTOFF=56KB \
   -e VLLM_CPP_AR_IGNORE_CUTOFF_MAX_ROWS=0 -e KV_FP8_ROPE=0 -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
   -e CUBLAS_WORKSPACE_CONFIG=:4096:8 -e NVIDIA_TF32_OVERRIDE=0 \
+  "${rotation_env[@]}" \
   -v "$MODEL_DIR:/model:ro" \
   -v /home/brandonmusic/models/GLM-5.3-Flash-NVFP4:/home/brandonmusic/models/GLM-5.3-Flash-NVFP4:ro \
-  -v "$CAMPAIGN:$CAMPAIGN:ro" -v "$CACHE_DIR:/cache:rw" \
+  -v "$CAMPAIGN:$CAMPAIGN:ro" -v "$CACHE_DIR:/cache:rw" "${rotation_mount[@]}" \
   "$IMAGE" -lc "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model \
     --served-model-name $MODEL_NAME --host 0.0.0.0 --port $PORT --language-model-only \
     --tensor-parallel-size 4 --enable-expert-parallel --decode-context-parallel-size 4 \
@@ -90,5 +109,6 @@ if len(text) < 20 or len(set(text.split())) < 5:
     raise SystemExit(f'degenerate canary: {text!r}')
 print(text)
 PY
-grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt" "$SESSION/server-ready.log" >"$SESSION/backend-proof.log" || true
+grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt|GLM53_BLOCK_ROTATION_PATCH_ACTIVE" "$SESSION/server-ready.log" >"$SESSION/backend-proof.log" || true
+[ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$ROTATED_LAYERS" "$SESSION/server-ready.log"
 log "candidate canary passed"
