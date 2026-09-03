@@ -46,7 +46,7 @@ CAPTURE_FILES=(
   "calibration/main-ep4-full/layers/layer-$L3/topk_ids.u16le.bin"
   "calibration/main-ep4-full/layers/layer-$L3/topk_weights.f32le.bin"
 )
-/home/brandonmusic/.local/bin/hf download brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits "${CAPTURE_FILES[@]}" \
+HF_XET_HIGH_PERFORMANCE=1 /home/brandonmusic/.local/bin/hf download brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits "${CAPTURE_FILES[@]}" \
   --type dataset --revision 95f4fdd94bf29989db2e0d1054e4931f55edb6aa --local-dir "$CAMPAIGN/teacher" --max-workers 3 --format agent \
   >"$LOGS/capture-download.log" 2>&1
 /usr/bin/python3 -m glm53_nvfp4.verify_capture --capture-root "$CAPTURE" --layer "$LAYER" \
