@@ -50,6 +50,24 @@ ROTATION_FILE=${WINNER_FIELDS[2]}
 # conservative headroom gate before creating the roughly 238 GB tensor set.
 available=$(df -B1 --output=avail /media/brandonmusic/klcstore | tail -1 | tr -d ' ')
 [ "$available" -ge 300000000000 ] || { echo "less than 300 GB free before MXFP6 production" >&2; exit 1; }
+"$REPO/scripts/run_mxfp6_layer.sh" 3 "$ROTATION" "$ROTATION_FILE"
+pilot_chunks=()
+while IFS= read -r chunk; do pilot_chunks+=(--chunk "$chunk"); done \
+  < <(find "$CHUNKS" -maxdepth 1 -type f -name 'mxfp6-layer-003-experts-*.safetensors' | sort)
+[ "${#pilot_chunks[@]}" -eq 4 ] || { echo "MXFP6 pilot layer is incomplete" >&2; exit 1; }
+PILOT=$CAMPAIGN/candidates-v3/mxfp6-layer3-pilot
+PILOT_SESSION=$CAMPAIGN/evidence-v3/mxfp6-layer3-pilot-runtime
+if [ ! -f "$PILOT/MIXED_RECEIPT.json" ]; then
+  python3 -m glm53_nvfp4.mixed_candidate --carrier "$CARRIER" --output "$PILOT" \
+    --mxfp6-layers 3 "${pilot_chunks[@]}"
+fi
+if ! stage_recorded mxfp6-layer3-runtime-pilot; then
+  "$REPO/scripts/run_candidate_canary.sh" "$PILOT" "$PILOT_SESSION" "$ROTATION" 3-44 "$ROTATION_FILE"
+  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage mxfp6-layer3-runtime-pilot \
+    --evidence "$PILOT/MIXED_RECEIPT.json" --evidence "$PILOT_SESSION/canary.json" \
+    --evidence "$PILOT_SESSION/server-ready.log" --evidence "$PILOT_SESSION/backend-proof.log" \
+    --note 'A one-layer native MXFP6 mixed checkpoint passed exact image loading, mixed-method binding marker, rotation marker, and deterministic coherent generation before bulk MXFP6 production.'
+fi
 "$REPO/scripts/run_mxfp6_all.sh" "$ROTATION" "$ROTATION_FILE" 3
 [ "$(find "$CHUNKS" -maxdepth 1 -type f -name 'mxfp6-layer-*-experts-*.safetensors' | wc -l)" -eq 168 ] || {
   echo "full MXFP6 chunk set is incomplete" >&2
