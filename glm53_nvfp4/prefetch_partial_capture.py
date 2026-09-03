@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 import requests
@@ -30,6 +31,8 @@ PAYLOADS = {
     "topk_ids_u16le": ("topk_ids.u16le.bin", 2),
     "topk_weights_f32le": ("topk_weights.f32le.bin", 4),
 }
+RANGE_FETCH_ATTEMPTS = 8
+RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
 
 
 def merge_windows(indices: list[int]) -> list[tuple[int, int]]:
@@ -68,12 +71,33 @@ def _session() -> requests.Session:
 
 
 def _fetch_range(url: str, start: int, end: int) -> tuple[int, bytes, str]:
-    response = _session().get(
-        url,
-        headers={"Range": f"bytes={start}-{end}"},
-        timeout=(30, 600),
-    )
-    response.raise_for_status()
+    response = None
+    error: Exception | None = None
+    for attempt in range(RANGE_FETCH_ATTEMPTS):
+        try:
+            response = _session().get(
+                url,
+                headers={"Range": f"bytes={start}-{end}"},
+                timeout=(30, 600),
+            )
+            response.raise_for_status()
+            break
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            error = exc
+        except requests.HTTPError as exc:
+            error = exc
+            if response is None or response.status_code not in RETRYABLE_HTTP_STATUS:
+                raise
+        if attempt + 1 == RANGE_FETCH_ATTEMPTS:
+            assert error is not None
+            raise error
+        retry_after = response.headers.get("Retry-After") if response is not None else None
+        try:
+            delay = float(retry_after) if retry_after is not None else 2**attempt
+        except ValueError:
+            delay = 2**attempt
+        time.sleep(min(max(delay, 0.0), 30.0))
+    assert response is not None
     expected = end - start + 1
     content_range = response.headers.get("Content-Range", "")
     if response.status_code != 206 or len(response.content) != expected:
