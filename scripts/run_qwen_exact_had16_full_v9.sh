@@ -209,7 +209,7 @@ if overlay.get("required_load_format") != "instanttensor":
     raise SystemExit("full candidate is not bound to instanttensor")
 validations=[]
 for layer in range(3,45):
-    p=(Path("/media/brandonmusic/klcstore/bmxfp4-glm53/exact-v6/layer-003/had16/evidence/layer-validation.json")
+    p=(Path("/media/brandonmusic/klcstore/bmxfp4-glm53/exact-v10/layer-003/had16/evidence/layer-validation.json")
        if layer == 3 else root/"layers"/f"layer-{layer:03d}"/"had16"/"evidence"/"layer-validation.json")
     v=json.loads(p.read_text())
     if v.get("status") != "pass": raise SystemExit(f"failed validation: {p}")
