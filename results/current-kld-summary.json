@@ -1,0 +1,52 @@
+{
+  "schema": "glm53-hadamard-shapleymcg.current-kld-summary.v1",
+  "as_of": "2026-09-03",
+  "metric": "equal-window mean KL(teacher || student)",
+  "role": "conditional-fit",
+  "windows": 16,
+  "bootstrap": {
+    "unit": "window",
+    "replicates": 20000,
+    "seed": 20260902
+  },
+  "best_qualified": {
+    "candidate": "fixed H16 all projections, layer 3, 10000 calibration cap",
+    "stock_mean_kld": 0.038584691968980296,
+    "candidate_mean_kld": 0.037571712329178816,
+    "mean_delta_kld": -0.0010129796398014761,
+    "relative_improvement": 0.026253407455367306,
+    "delta_ci95_bca": [
+      -0.0017174866045337573,
+      -0.00017657827726406106
+    ],
+    "decision": "pass"
+  },
+  "candidates": [
+    {
+      "name": "same-loader stock NVFP4",
+      "mean_kld": 0.038584691968980296,
+      "comparison_status": "control"
+    },
+    {
+      "name": "identity GPTQ, layer 3",
+      "mean_kld": 0.03900693697271216,
+      "comparison_status": "diagnostic anchor"
+    },
+    {
+      "name": "learned block rotation all projections, layer 3",
+      "mean_kld": 0.03857880292771949,
+      "comparison_status": "failed against H16 and did not pass against stock"
+    },
+    {
+      "name": "fixed H16 all projections, layer 3, 10000 calibration cap",
+      "mean_kld": 0.037571712329178816,
+      "comparison_status": "qualified conditional-fit pass"
+    },
+    {
+      "name": "exact Qwen H16 all projections, layer 3, 256 samples per expert",
+      "mean_kld": 0.03770240445847582,
+      "comparison_status": "mean improved against stock; interval crosses zero"
+    }
+  ],
+  "claim_boundary": "No full-42-layer or final-holdout GLM improvement is claimed yet."
+}
