@@ -14,6 +14,7 @@ def main() -> None:
     parser.add_argument("--receipt", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--layer", type=int, required=True)
+    parser.add_argument("--projections", choices=("all", "gate-up"), default="all")
     args = parser.parse_args()
     seen: dict[int, dict] = {}
     inputs = []
@@ -30,7 +31,8 @@ def main() -> None:
     missing = sorted(set(range(288)) - seen.keys())
     projections = {}
     failed = []
-    for projection in ("gate", "up", "down"):
+    projection_names = ("gate", "up", "down") if args.projections == "all" else ("gate", "up")
+    for projection in projection_names:
         values = [seen[expert][projection]["ratio"] for expert in sorted(seen)]
         projections[projection] = {
             "minimum_ratio": min(values),
