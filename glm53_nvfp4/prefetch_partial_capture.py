@@ -86,6 +86,44 @@ def _fetch_range(url: str, start: int, end: int) -> tuple[int, bytes, str]:
     return start, response.content, hashlib.sha256(response.content).hexdigest()
 
 
+def _sha256_range(path: Path, start: int, byte_count: int) -> str:
+    digest = hashlib.sha256()
+    remaining = byte_count
+    with path.open("rb") as handle:
+        handle.seek(start)
+        while remaining:
+            chunk = handle.read(min(8 << 20, remaining))
+            if not chunk:
+                raise RuntimeError(f"short sparse range while validating {path}")
+            digest.update(chunk)
+            remaining -= len(chunk)
+    return digest.hexdigest()
+
+
+def _reuse_sparse(target: Path, full_bytes: int, prior: dict | None) -> dict | None:
+    """Return a range-verified prior sparse record, or None if unavailable."""
+    if not prior or prior.get("mode") != "sealed-role-sparse-ranges":
+        return None
+    if not target.is_file() or target.stat().st_size != full_bytes:
+        return None
+    if prior.get("path") != str(target) or prior.get("apparent_bytes") != full_bytes:
+        return None
+    for record in prior.get("ranges", []):
+        start, end = int(record["start"]), int(record["end"])
+        byte_count = end - start + 1
+        if record.get("bytes") != byte_count:
+            return None
+        if _sha256_range(target, start, byte_count) != record.get("sha256"):
+            return None
+    if not prior.get("ranges"):
+        return None
+    value = dict(prior)
+    value["allocated_bytes"] = target.stat().st_blocks * 512
+    value["resume_validation"] = "all-materialized-ranges-sha256"
+    value["reused_without_transfer"] = True
+    return value
+
+
 def _materialize(
     *,
     layer: int,
@@ -96,7 +134,11 @@ def _materialize(
     runs: list[tuple[int, int]],
     workers: int,
     expected_sha256: str,
+    prior: dict | None = None,
 ) -> dict:
+    reused = _reuse_sparse(target, full_bytes, prior)
+    if reused is not None:
+        return reused
     if target.is_file() and target.stat().st_size == full_bytes:
         # A complete file may already have been streamed by an earlier run.
         # Verify it against the publication rather than replacing it.
@@ -182,6 +224,22 @@ def main() -> None:
     info = manifest["files"][str(args.layer)]
     abi = manifest["file_abi"]
     layer_root = args.capture_root / f"layers/layer-{args.layer:03d}"
+    prior_payload = None
+    if args.receipt.is_file():
+        candidate = json.loads(args.receipt.read_text())
+        identity = (
+            candidate.get("schema") == "glm53-nvfp4-v9.partial-calibration-capture.v1"
+            and candidate.get("status") == "pass"
+            and candidate.get("dataset") == DATASET
+            and candidate.get("revision") == REVISION
+            and candidate.get("layer") == args.layer
+            and candidate.get("role") == args.role
+            and candidate.get("window_indices") == indices
+            and candidate.get("manifest_sha256") == sha256_file(manifest_path)
+            and candidate.get("roles_sha256") == sha256_file(args.roles)
+        )
+        if identity:
+            prior_payload = candidate
     outputs = {}
     for key, (name, element_bytes) in PAYLOADS.items():
         shape = abi[key]["shape"]
@@ -195,6 +253,7 @@ def main() -> None:
             runs=runs,
             workers=args.workers,
             expected_sha256=info[key]["sha256"],
+            prior=(prior_payload or {}).get("files", {}).get(key),
         )
 
     payload = {
@@ -226,6 +285,12 @@ def main() -> None:
                 "downloaded_bytes": sum(
                     sum(row["bytes"] for row in item["ranges"])
                     for item in outputs.values()
+                    if not item.get("reused_without_transfer")
+                ),
+                "reused_bytes": sum(
+                    sum(row["bytes"] for row in item["ranges"])
+                    for item in outputs.values()
+                    if item.get("reused_without_transfer")
                 ),
             },
             sort_keys=True,
