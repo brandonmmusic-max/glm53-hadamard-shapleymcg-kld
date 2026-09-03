@@ -27,6 +27,9 @@ def main() -> None:
         "--rotation", choices=("identity", "had16", "learned"), required=True
     )
     parser.add_argument("--rotation-file", type=Path)
+    parser.add_argument(
+        "--rotation-scope", choices=("gate-up", "all"), default="all"
+    )
     parser.add_argument("--block-scale-rule", choices=("mse", "ceil"), default="mse")
     args = parser.parse_args()
     if not (3 <= args.layer <= 44 and 0 <= args.expert_start < args.expert_end <= 288):
@@ -45,11 +48,21 @@ def main() -> None:
     torch.empty(0, device=device)
     torch.cuda.reset_peak_memory_stats(device)
     if args.rotation == "identity":
-        rotation = None
+        rotation_in = rotation_mid = None
     elif args.rotation == "had16":
-        rotation = hadamard16(device=device)
+        rotation_in = hadamard16(device=device)
+        rotation_mid = rotation_in if args.rotation_scope == "all" else None
     else:
-        rotation = load_layer_rotation(args.rotation_file, args.layer, device=device)
+        rotation_in = load_layer_rotation(
+            args.rotation_file, args.layer, kind="in", device=device
+        )
+        rotation_mid = (
+            load_layer_rotation(
+                args.rotation_file, args.layer, kind="mid", device=device
+            )
+            if args.rotation_scope == "all"
+            else None
+        )
 
     prefix = checkpoint.expert_prefix(args.layer, args.expert_start).split(
         f"layers.{args.layer}."
@@ -63,7 +76,8 @@ def main() -> None:
             name = f"{base}.{projection}.weight"
             source_files.add(checkpoint.weight_map[name])
             weight = checkpoint.get(name).to(device)
-            if projection != "down_proj" and rotation is not None:
+            rotation = rotation_mid if projection == "down_proj" else rotation_in
+            if rotation is not None:
                 weight = apply_weight_rotation(weight, rotation)
             encoded = quantize_linear_to_fp6(
                 weight,
@@ -92,6 +106,7 @@ def main() -> None:
             "layer": str(args.layer),
             "expert_range": f"{args.expert_start}:{args.expert_end}",
             "rotation": args.rotation,
+            "rotation_scope": args.rotation_scope,
         },
     )
     payload_bytes = sum(t.numel() * t.element_size() for t in output.values())
@@ -106,6 +121,7 @@ def main() -> None:
             "group_size": 32,
             "block_scale_rule": args.block_scale_rule,
             "rotation": args.rotation,
+            "rotation_scope": args.rotation_scope,
             "rotation_file": str(args.rotation_file) if args.rotation_file else None,
         },
         "source_files": [

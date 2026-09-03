@@ -20,7 +20,7 @@ IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candid
 # The superseded V2 payload was removed before this stage, leaving enough room
 # to keep the complete MXFP6 tensor set on the model-storage filesystem.  Do
 # not spill odd layers onto the already 91%-used root filesystem.
-ROOT=$CAMPAIGN/mxfp6-v3
+ROOT=${GLM53_MXFP6_ROOT:-$CAMPAIGN/mxfp6-v10-had16-all}
 mkdir -p "$ROOT/chunks" "$ROOT/evidence"
 printf -v L3 '%03d' "$LAYER"
 
@@ -47,7 +47,7 @@ for GPU in 0 1 2 3; do
     "PYTHONPATH=/work:/opt/infernal-invocation/b12x:/opt/infernal-invocation/vllm exec python -m glm53_nvfp4.mxfp6_layer \
       --source /source --source-index /source-index.json --output /output/chunks/$(basename "$CHUNK") \
       --receipt /output/evidence/$(basename "$RECEIPT") --layer $LAYER --expert-start $FIRST --expert-end $LAST \
-      --device cuda:0 --rotation $ROTATION --block-scale-rule mse ${extra[*]}" \
+      --device cuda:0 --rotation $ROTATION --rotation-scope all --block-scale-rule mse ${extra[*]}" \
     >"$ROOT/evidence/$(basename "${RECEIPT%.json}.log")" 2>&1 &
   pids+=("$!")
 done
@@ -66,7 +66,7 @@ PYTHONPATH="$REPO" /usr/bin/python3 - <<PY
 import json
 from pathlib import Path
 layer=$LAYER
-roots=[Path('$CAMPAIGN/mxfp6-v3/evidence')]
+roots=[Path('$ROOT/evidence')]
 rows=[]
 for root in roots:
     rows += [json.loads(p.read_text()) for p in root.glob(f'mxfp6-layer-{layer:03d}-experts-*.json')]
@@ -74,5 +74,7 @@ if len(rows) != 4 or sorted((r['expert_start'],r['expert_end']) for r in rows) !
     raise SystemExit(f'layer {layer}: incomplete receipt set')
 if any(abs(r['payload_bpw'] - 6.250007629394531) > 1e-9 for r in rows):
     raise SystemExit(f'layer {layer}: unexpected exact payload bpw')
+if any(r['algorithm'].get('rotation_scope') != 'all' for r in rows):
+    raise SystemExit(f'layer {layer}: stale non-all-projection rotation receipt')
 print(json.dumps({'layer':layer,'status':'pass','payload_bytes':sum(r['payload_bytes'] for r in rows),'payload_bpw':rows[0]['payload_bpw']}))
 PY

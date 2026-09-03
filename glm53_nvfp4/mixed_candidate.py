@@ -60,7 +60,7 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
     logical_elements = 0
 
     for item in carrier.iterdir():
-        if item.name in {"model.safetensors.index.json", "config.json", "hf_quant_config.json"} or item.name.startswith(".cache"):
+        if item.name in {"model.safetensors.index.json", "config.json", "hf_quant_config.json", "OVERLAY.json"} or item.name.startswith(".cache"):
             continue
         target = output / item.name
         if not target.exists() and not target.is_symlink():
@@ -136,6 +136,17 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
     (output / "config.json").write_text(json.dumps(qconfig, indent=2, sort_keys=True) + "\n")
     (output / "hf_quant_config.json").write_text(json.dumps(qc, indent=2, sort_keys=True) + "\n")
 
+    overlay = {
+        "schema": "glm53-nvfp4-v10.mixed-candidate-overlay.v1",
+        "carrier": str(carrier.resolve()),
+        "chunks": [str(p.resolve()) for p in chunks],
+        "redirected_tensors": len(redirected),
+        "required_load_format": "instanttensor",
+    }
+    (output / "OVERLAY.json").write_text(
+        json.dumps(overlay, indent=2, sort_keys=True) + "\n"
+    )
+
     receipt = {
         "schema": "glm53-nvfp4-v3.mixed-mxfp6-candidate.v1",
         "carrier": str(carrier.resolve()),
@@ -150,6 +161,8 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
         "index_sha256": sha256_file(output / "model.safetensors.index.json"),
         "config_sha256": sha256_file(output / "config.json"),
         "hf_quant_config_sha256": sha256_file(output / "hf_quant_config.json"),
+        "overlay_sha256": sha256_file(output / "OVERLAY.json"),
+        "required_load_format": "instanttensor",
     }
     (output / "MIXED_RECEIPT.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     return receipt
