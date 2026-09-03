@@ -74,12 +74,12 @@ done
 
 had_chunks=()
 while IFS= read -r chunk; do had_chunks+=(--chunk "$chunk"); done < <(find "$CAMPAIGN/chunks-v3/had16" -maxdepth 1 -type f -name 'had16-layer-*.safetensors' | sort)
-PYTHONPATH="$REPO" /usr/bin/python3 -m glm53_nvfp4.candidate --carrier "$CAMPAIGN/candidates/uniform-gptq" \
+PYTHONPATH="$REPO" /usr/bin/python3 -m glm53_nvfp4.candidate --carrier /home/brandonmusic/models/GLM-5.3-Flash-NVFP4 \
   --output "$CAMPAIGN/candidates-v3/had16-full" "${had_chunks[@]}" >"$CAMPAIGN/evidence-v3/had16/full-overlay.json"
 
 learned_chunks=()
 while IFS= read -r chunk; do learned_chunks+=(--chunk "$chunk"); done < <(find "$LEARNED_ROOT/chunks/learned" -maxdepth 1 -type f -name 'learned-layer-*.safetensors' | sort)
-PYTHONPATH="$REPO" /usr/bin/python3 -m glm53_nvfp4.candidate --carrier "$CAMPAIGN/candidates/uniform-gptq" \
+PYTHONPATH="$REPO" /usr/bin/python3 -m glm53_nvfp4.candidate --carrier /home/brandonmusic/models/GLM-5.3-Flash-NVFP4 \
   --output "$CAMPAIGN/candidates-v3/learned-full" "${learned_chunks[@]}" >"$EVIDENCE/full-overlay.json"
 
 bundle_args=()
