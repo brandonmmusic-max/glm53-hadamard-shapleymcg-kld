@@ -47,6 +47,19 @@ if MIXED_MXFP6:
                 raise RuntimeError(
                     f"MXFP6 layer {prefix!r} did not bind to the B12X method"
                 )
+            # vLLM's virtual-TP MoE loader needs the logical element geometry
+            # for grouped w2 scales.  Without these existing loader attrs it
+            # treats the number of scale groups as the logical K extent and
+            # requests twice the stored groups in the DCP4/EP4 regime.
+            original_create_weights = method.create_weights
+
+            def _create_weights_with_scale_geometry(target, *args, **kwargs):
+                original_create_weights(target, *args, **kwargs)
+                scale = target.w2_weight_scale
+                scale.b12x_mxfp4_w2_scale_group_size = 32
+                scale.b12x_mxfp4_w2_logical_k = int(scale.shape[-1]) * 32
+
+            method.create_weights = _create_weights_with_scale_geometry
             return method
         return _ORIGINAL_MIXED_GET_QUANT_METHOD(self, layer, prefix)
 
