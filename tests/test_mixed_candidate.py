@@ -49,5 +49,8 @@ def test_mixed_candidate_counts_payload_and_patches_configs(tmp_path: Path):
     assert receipt["logical_elements"] == 42 * 4
     assert receipt["payload_bytes"] == 42 * 11 + 1
     config = json.loads((output / "config.json").read_text())["quantization_config"]
+    assert config["weight_format"] == "e2m3"
+    assert config["activation_format"] == "e4m3"
+    assert receipt["source_format"] == "mxfp6_w6a8"
     assert config["quantized_layers"]["model.language_model.layers.3.mlp.experts"]["quant_algo"] == "MXFP6"
     assert config["quantized_layers"]["model.language_model.layers.4.mlp.experts"]["quant_algo"] == "NVFP4"

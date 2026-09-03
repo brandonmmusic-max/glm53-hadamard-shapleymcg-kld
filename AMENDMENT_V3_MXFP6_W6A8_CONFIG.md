@@ -1,0 +1,5 @@
+# V3 MXFP6 W6A8 source-format correction
+
+Date: 2026-09-03. The first coherent mixed runtime canary proved B12X method binding, FP6 checkpoint loading, virtual-TP geometry, learned rotation, and generation. Its runtime log nevertheless identified `source_format=mxfp6_default act_fmt=e3m2`, whereas the frozen ladder and quantization receipts declare `mxfp6_w6a8` with E2M3 weights and dynamic E4M3 activations. No Shapley target or confirmation row had been opened.
+
+Mixed checkpoint generation now writes `weight_format=e2m3` and `activation_format=e4m3` into the ModelOpt quantization config and records `source_format=mxfp6_w6a8` in its exact payload receipt. This changes only runtime activation format selection; the already-running bulk producer's E2M3 packed weight bytes are the same for W6A6 and W6A8. The layer-3 mixed metadata is rebuilt from the same four immutable chunks, and a new canary must show `source_format=mxfp6_w6a8 act_fmt=e4m3` before the candidate set is frozen or any Shapley scoring begins.
