@@ -83,8 +83,7 @@ cd "$REPO"
 sha256sum "$CANDIDATE/model.safetensors.index.json" >"$LOGS/candidate-index.sha256"
 # Streamed capture files are recoverable from the pinned Hub revision. Keep their
 # verified identities and all quantization evidence, but not 464 GB of local copies.
-rm -f \
-  "$CAPTURE/layers/layer-$L3/hidden.bf16.bin" \
-  "$CAPTURE/layers/layer-$L3/topk_ids.u16le.bin" \
-  "$CAPTURE/layers/layer-$L3/topk_weights.f32le.bin"
+unlink -- "$CAPTURE/layers/layer-$L3/hidden.bf16.bin"
+unlink -- "$CAPTURE/layers/layer-$L3/topk_ids.u16le.bin"
+unlink -- "$CAPTURE/layers/layer-$L3/topk_weights.f32le.bin"
 echo "layer $LAYER complete"
