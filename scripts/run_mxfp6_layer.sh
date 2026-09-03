@@ -17,11 +17,10 @@ CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 SOURCE=$CAMPAIGN/downloads/GLM-5.3-Flash-BF16
 SOURCE_INDEX=$CAMPAIGN/downloads/source-metadata/model.safetensors.index.json
 IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate
-if [ $((LAYER % 2)) -eq 0 ]; then
-  ROOT=$CAMPAIGN/mxfp6-v3
-else
-  ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large/mxfp6
-fi
+# The superseded V2 payload was removed before this stage, leaving enough room
+# to keep the complete MXFP6 tensor set on the model-storage filesystem.  Do
+# not spill odd layers onto the already 91%-used root filesystem.
+ROOT=$CAMPAIGN/mxfp6-v3
 mkdir -p "$ROOT/chunks" "$ROOT/evidence"
 printf -v L3 '%03d' "$LAYER"
 
@@ -58,7 +57,7 @@ PYTHONPATH="$REPO" /usr/bin/python3 - <<PY
 import json
 from pathlib import Path
 layer=$LAYER
-roots=[Path('$CAMPAIGN/mxfp6-v3/evidence'),Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large/mxfp6/evidence')]
+roots=[Path('$CAMPAIGN/mxfp6-v3/evidence')]
 rows=[]
 for root in roots:
     rows += [json.loads(p.read_text()) for p in root.glob(f'mxfp6-layer-{layer:03d}-experts-*.json')]
