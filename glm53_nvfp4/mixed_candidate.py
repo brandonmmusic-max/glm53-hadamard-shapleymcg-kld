@@ -116,6 +116,11 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
     nv_targets = [f"model.language_model.layers.{l}.mlp.experts" for l in ROUTED_LAYERS if l not in mxfp6_layers]
     fp6_targets = [f"model.language_model.layers.{l}.mlp.experts" for l in ROUTED_LAYERS if l in mxfp6_layers]
     qc["quant_algo"] = "MIXED_PRECISION"
+    # B12X reconstructs its exact source format from these global tags.  The
+    # FP6 weight encoding is E2M3 and this campaign's declared runtime ladder
+    # is W6A8 with dynamic E4M3 activations.
+    qc["weight_format"] = "e2m3"
+    qc["activation_format"] = "e4m3"
     qc["config_groups"]["group_nvfp4_routed_experts"]["targets"] = nv_targets
     qc["config_groups"]["group_mxfp6_routed_experts"] = {
         "targets": fp6_targets,
@@ -141,6 +146,7 @@ def build(carrier: Path, output: Path, chunks: list[Path], mxfp6_layers: set[int
         "logical_elements": logical_elements,
         "payload_bytes": payload_bytes,
         "payload_bpw": 8.0 * payload_bytes / logical_elements,
+        "source_format": "mxfp6_w6a8",
         "index_sha256": sha256_file(output / "model.safetensors.index.json"),
         "config_sha256": sha256_file(output / "config.json"),
         "hf_quant_config_sha256": sha256_file(output / "hf_quant_config.json"),
