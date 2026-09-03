@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from safetensors.torch import save_file
+from safetensors.torch import load_file, save_file
 
 from .block_gptq import block_hessian, compare_packed_to_rtn, gptq_quantize
 from .block_rotation import (
@@ -33,7 +33,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--source-index", type=Path)
-    parser.add_argument("--capture-root", type=Path, required=True)
+    parser.add_argument("--capture-root", type=Path)
+    parser.add_argument("--hessian-file", type=Path)
+    parser.add_argument("--hessian-output", type=Path)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
@@ -52,9 +54,16 @@ def main() -> None:
 
     started = time.time()
     checkpoint = IndexedCheckpoint(args.source, args.source_index)
-    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples)
-    sample_counts = capture.counts()
+    if (args.capture_root is None) == (args.hessian_file is None):
+        raise ValueError("provide exactly one of --capture-root or --hessian-file")
+    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples) if args.capture_root else None
+    hessian_bundle = load_file(str(args.hessian_file), device="cpu") if args.hessian_file else None
+    sample_counts = capture.counts() if capture else {
+        expert: int(hessian_bundle[f"samples_{expert:03d}"].item())
+        for expert in range(args.expert_start, args.expert_end)
+    }
     output: dict[str, torch.Tensor] = {}
+    hessian_output: dict[str, torch.Tensor] = {}
     metrics = {}
     source_files = set()
     prefix = checkpoint.expert_prefix(args.layer, args.expert_start).split(f"layers.{args.layer}.")[0]
@@ -79,10 +88,17 @@ def main() -> None:
         names = {proj: f"{base}.{proj}.weight" for proj in ("gate_proj", "up_proj", "down_proj")}
         for name in names.values():
             source_files.add(checkpoint.weight_map[name])
-        hidden_cpu, route_cpu = capture.samples(expert)
-        hidden = hidden_cpu.to(args.device)
-        route = route_cpu.to(args.device)
-        h_in = block_hessian(hidden, route)
+        if capture is not None:
+            hidden_cpu, route_cpu = capture.samples(expert)
+            hidden = hidden_cpu.to(args.device)
+            route = route_cpu.to(args.device)
+            h_in = block_hessian(hidden, route)
+        else:
+            hidden = route = None
+            h_in = hessian_bundle[f"hessian_{expert:03d}"].to(args.device)
+        if args.hessian_output is not None:
+            hessian_output[f"hessian_{expert:03d}"] = h_in.cpu().contiguous()
+            hessian_output[f"samples_{expert:03d}"] = torch.tensor(sample_counts[expert], dtype=torch.int32)
         gate = checkpoint.get(names["gate_proj"]).to(args.device)
         up = checkpoint.get(names["up_proj"]).to(args.device)
         if rotation is None:
@@ -102,6 +118,8 @@ def main() -> None:
         down = h_mid = middle = None
         down_cmp = None
         if args.projections == "all":
+            if hidden is None or route is None:
+                raise ValueError("down projection quantization requires routed activation samples")
             down = checkpoint.get(names["down_proj"]).to(args.device)
             middle = F.silu(F.linear(hidden, gate).clamp(max=10.0)) * F.linear(hidden, up).clamp(-10.0, 10.0)
             h_mid = block_hessian(middle, route)
@@ -116,7 +134,9 @@ def main() -> None:
         metrics[str(expert)] = {"samples": sample_counts[expert], "gate": gate_cmp, "up": up_cmp}
         if down_cmp is not None:
             metrics[str(expert)]["down"] = down_cmp
-        del hidden, route, h_in, h_basis, gate, up, gate_basis, up_basis
+        del h_in, h_basis, gate, up, gate_basis, up_basis
+        if hidden is not None:
+            del hidden, route
         if down is not None:
             del h_mid, down, middle
         torch.cuda.empty_cache()
@@ -132,6 +152,16 @@ def main() -> None:
         "expert_range": f"{args.expert_start}:{args.expert_end}",
         "source_revision": "a6c167b62691b2bac901344b65cb651a70f53e43",
     })
+    hessian_receipt = None
+    if args.hessian_output is not None:
+        args.hessian_output.parent.mkdir(parents=True, exist_ok=True)
+        save_file(hessian_output, str(args.hessian_output), metadata={
+            "schema": "glm53-nvfp4-v3.fit-block-hessians.v1",
+            "layer": str(args.layer),
+            "expert_range": f"{args.expert_start}:{args.expert_end}",
+            "roles_sha256": sha256_file(args.roles),
+        })
+        hessian_receipt = {"path": str(args.hessian_output), "bytes": args.hessian_output.stat().st_size, "sha256": sha256_file(args.hessian_output)}
     receipt = {
         "schema": "glm53-nvfp4-v2.layer-chunk-receipt.v1",
         "layer": args.layer,
@@ -139,7 +169,9 @@ def main() -> None:
         "expert_end": args.expert_end,
         "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2, "control": "matched MSE-search-grid RTN", "rotation": args.rotation, "rotation_scope": "routed gate/up input only", "projections": args.projections, "rotation_file": str(args.rotation_file) if args.rotation_file else None, "orthogonality_max_abs": orthogonality_error(rotation) if rotation is not None else 0.0},
         "source_files": [{"path": name, "bytes": (args.source / name).stat().st_size, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
-        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
+        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json") if args.capture_root else None,
+        "hessian_input": {"path": str(args.hessian_file), "sha256": sha256_file(args.hessian_file)} if args.hessian_file else None,
+        "hessian_output": hessian_receipt,
         "roles_sha256": sha256_file(args.roles),
         "output": {"path": str(args.output), "bytes": args.output.stat().st_size, "sha256": sha256_file(args.output), "tensors": len(output)},
         "metrics": metrics,
