@@ -53,8 +53,13 @@ if MIXED_MXFP6:
             # requests twice the stored groups in the DCP4/EP4 regime.
             original_create_weights = method.create_weights
 
-            def _create_weights_with_scale_geometry(target, *args, **kwargs):
-                original_create_weights(target, *args, **kwargs)
+            def _create_weights_with_scale_geometry(*args, **kwargs):
+                original_create_weights(*args, **kwargs)
+                target = kwargs.get("layer")
+                if target is None:
+                    if not args:
+                        raise RuntimeError("MXFP6 create_weights did not receive a layer")
+                    target = args[0]
                 scale = target.w2_weight_scale
                 scale.b12x_mxfp4_w2_scale_group_size = 32
                 scale.b12x_mxfp4_w2_logical_k = int(scale.shape[-1]) * 32
