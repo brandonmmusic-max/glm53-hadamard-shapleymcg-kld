@@ -22,11 +22,19 @@ class LayerCapture:
         self.max_samples = max_samples
         self.manifest = json.loads((capture_root / "capture-manifest.json").read_text())
         roles = json.loads(roles_path.read_text())["roles"]
-        self.fit_ids = {item["id"] for item in roles["fit"]}
+        fit_items = {item["id"]: item for item in roles["fit"]}
+        self.fit_ids = set(fit_items)
         windows = {item["window_id"]: item for item in self.manifest["windows"]}
         missing = self.fit_ids - windows.keys()
         if missing:
             raise ValueError(f"fit windows absent from capture: {sorted(missing)}")
+        mismatched = sorted(
+            window_id
+            for window_id, role_item in fit_items.items()
+            if role_item["input_sha256"] != windows[window_id]["token_ids_sha256"]
+        )
+        if mismatched:
+            raise ValueError(f"fit window token identities disagree with capture manifest: {mismatched}")
         self.window_indices = sorted(windows[wid]["window_index"] for wid in self.fit_ids)
         abi = self.manifest["file_abi"]
         self.rows, self.hidden_size = abi["hidden_bf16"]["shape"]
@@ -74,4 +82,3 @@ class LayerCapture:
 
     def counts(self) -> dict[int, int]:
         return {expert: len(route.rows) for expert, route in self._routes.items()}
-
