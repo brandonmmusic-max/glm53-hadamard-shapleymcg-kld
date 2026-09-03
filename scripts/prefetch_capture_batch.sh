@@ -17,7 +17,7 @@ done
 HF_XET_HIGH_PERFORMANCE=1 /home/brandonmusic/.local/bin/hf download \
   brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits "${files[@]}" \
   --type dataset --revision 95f4fdd94bf29989db2e0d1054e4931f55edb6aa \
-  --local-dir "$CAMPAIGN/teacher" --max-workers 12 --format agent
+  --local-dir "$CAMPAIGN/teacher" --max-workers 6 --format agent
 for layer in "$@"; do
   PYTHONPATH=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53 /usr/bin/python3 -m glm53_nvfp4.verify_capture \
     --capture-root "$CAPTURE" --layer "$layer" \
