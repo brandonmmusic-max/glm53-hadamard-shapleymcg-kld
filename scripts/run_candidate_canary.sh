@@ -26,9 +26,15 @@ mkdir -p "$SESSION"
 
 rotation_env=()
 rotation_mount=()
+if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
+  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e B12X_ENABLE_FP6=1 -e B12X_FP6_MODEL_DIR=/model )
+  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+fi
 if [ "$ROTATION" != identity ]; then
   rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$ROTATED_LAYERS" )
-  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  if [ ${#rotation_mount[@]} -eq 0 ]; then
+    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  fi
 fi
 if [ "$ROTATION" = learned ]; then
   ROTATION_FILE=$(readlink -f "$ROTATION_FILE")
@@ -109,6 +115,9 @@ if len(text) < 20 or len(set(text.split())) < 5:
     raise SystemExit(f'degenerate canary: {text!r}')
 print(text)
 PY
-grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt|GLM53_BLOCK_ROTATION_PATCH_ACTIVE" "$SESSION/server-ready.log" >"$SESSION/backend-proof.log" || true
+grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt|GLM53_BLOCK_ROTATION_PATCH_ACTIVE|GLM53_MIXED_MXFP6_PATCH_ACTIVE" "$SESSION/server-ready.log" >"$SESSION/backend-proof.log" || true
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$ROTATED_LAYERS" "$SESSION/server-ready.log"
+if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
+  grep -q 'GLM53_MIXED_MXFP6_PATCH_ACTIVE' "$SESSION/server-ready.log"
+fi
 log "candidate canary passed"
