@@ -12,6 +12,8 @@ ROTATIONS=$CAMPAIGN/rotations-v3
 EVIDENCE=$CAMPAIGN/evidence-v3/learned
 LOG=$CAMPAIGN/logs-v3/combined-campaign.log
 mkdir -p "$LEARNED_ROOT/chunks" "$ROTATIONS/identity" "$ROTATIONS/had16" "$ROTATIONS/selected" "$EVIDENCE" "$(dirname "$LOG")"
+START_LAYER=${1:-3}
+[[ "$START_LAYER" =~ ^[0-9]+$ ]] && [ "$START_LAYER" -ge 3 ] && [ "$START_LAYER" -le 44 ] || { echo "start layer must be 3..44" >&2; exit 2; }
 
 learn_layer() {
   local layer=$1 l3 identity_rotation had_rotation identity_receipt had_receipt selected p0 p1
@@ -35,21 +37,39 @@ learn_layer() {
   GLM53_V3_CHUNK_ROOT="$LEARNED_ROOT/chunks" "$REPO/scripts/run_rotation_layer.sh" "$layer" learned "$selected" >>"$LOG" 2>&1
 }
 
+starts=()
 for first in 3 5 7 9 11 13 15 17 19 21 23 25 27 29 31 33 35 37 39 41 43; do
+  [ "$first" -ge "$START_LAYER" ] && starts+=("$first")
+done
+batch_layers() {
+  local first=$1 last layer
   last=$((first + 1)); [ "$last" -le 44 ] || last=44
-  layers=()
-  for ((layer=first; layer<=last; layer++)); do layers+=("$layer"); done
-  "$REPO/scripts/prefetch_capture_batch.sh" "${layers[@]}" >>"$LOG" 2>&1
+  for ((layer=first; layer<=last; layer++)); do echo "$layer"; done
+}
+mapfile -t first_layers < <(batch_layers "${starts[0]}")
+"$REPO/scripts/prefetch_capture_batch.sh" "${first_layers[@]}" >>"$LOG" 2>&1
+for ((batch=0; batch<${#starts[@]}; batch++)); do
+  first=${starts[$batch]}
+  mapfile -t layers < <(batch_layers "$first")
+  next_pid=
+  if [ $((batch + 1)) -lt "${#starts[@]}" ]; then
+    mapfile -t next_layers < <(batch_layers "${starts[$((batch + 1))]}")
+    "$REPO/scripts/prefetch_capture_batch.sh" "${next_layers[@]}" >>"$LOG" 2>&1 &
+    next_pid=$!
+  fi
   for layer in "${layers[@]}"; do
     printf -v l3 '%03d' "$layer"
-    if [ ! -s "$CAMPAIGN/evidence-v3/had16/had16-layer-$l3-validation.json" ]; then
+    if ! grep -q '"status": "pass"' "$CAMPAIGN/evidence-v3/had16/had16-layer-$l3-validation.json" 2>/dev/null; then
       "$REPO/scripts/run_rotation_layer.sh" "$layer" had16 >>"$LOG" 2>&1
     fi
-    learn_layer "$layer"
-    unlink -- "$CAPTURE/layers/layer-$l3/hidden.bf16.bin"
-    unlink -- "$CAPTURE/layers/layer-$l3/topk_ids.u16le.bin"
-    unlink -- "$CAPTURE/layers/layer-$l3/topk_weights.f32le.bin"
+    if ! grep -q '"status": "pass"' "$EVIDENCE/learned-layer-$l3-validation.json" 2>/dev/null; then
+      learn_layer "$layer"
+    fi
+    [ ! -f "$CAPTURE/layers/layer-$l3/hidden.bf16.bin" ] || unlink -- "$CAPTURE/layers/layer-$l3/hidden.bf16.bin"
+    [ ! -f "$CAPTURE/layers/layer-$l3/topk_ids.u16le.bin" ] || unlink -- "$CAPTURE/layers/layer-$l3/topk_ids.u16le.bin"
+    [ ! -f "$CAPTURE/layers/layer-$l3/topk_weights.f32le.bin" ] || unlink -- "$CAPTURE/layers/layer-$l3/topk_weights.f32le.bin"
   done
+  [ -z "$next_pid" ] || wait "$next_pid"
 done
 
 had_chunks=()
