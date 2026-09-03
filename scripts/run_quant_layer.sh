@@ -49,6 +49,8 @@ CAPTURE_FILES=(
 /home/brandonmusic/.local/bin/hf download brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits "${CAPTURE_FILES[@]}" \
   --type dataset --revision 95f4fdd94bf29989db2e0d1054e4931f55edb6aa --local-dir "$CAMPAIGN/teacher" --max-workers 3 --format agent \
   >"$LOGS/capture-download.log" 2>&1
+/usr/bin/python3 -m glm53_nvfp4.verify_capture --capture-root "$CAPTURE" --layer "$LAYER" \
+  --output "$CAMPAIGN/evidence/capture-layer-$L3.json" | tee "$LOGS/capture-integrity.log"
 
 pids=()
 for gpu in 0 1 2 3; do
@@ -65,10 +67,24 @@ failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
 [ "$failed" -eq 0 ] || { echo "one or more layer chunks failed; see $LOGS" >&2; exit 1; }
 
+receipts=()
+for gpu in 0 1 2 3; do
+  start=$((gpu * 72)); end=$((start + 72))
+  receipts+=(--receipt "$CAMPAIGN/evidence/layer-$L3-experts-$(printf '%03d' "$start")-$(printf '%03d' "$end").json")
+done
+/usr/bin/python3 -m glm53_nvfp4.validate_layer --layer "$LAYER" "${receipts[@]}" \
+  --output "$CAMPAIGN/evidence/layer-$L3-validation.json" | tee "$LOGS/layer-validation.log"
+
 mapfile -t all_chunks < <(find "$CHUNKS" -maxdepth 1 -type f -name 'layer-*.safetensors' | sort)
 args=()
 for chunk in "${all_chunks[@]}"; do args+=(--chunk "$chunk"); done
 cd "$REPO"
 /usr/bin/python3 -m glm53_nvfp4.candidate --carrier /home/brandonmusic/models/GLM-5.3-Flash-NVFP4 --output "$CANDIDATE" "${args[@]}" >"$LOGS/candidate-overlay.json"
 sha256sum "$CANDIDATE/model.safetensors.index.json" >"$LOGS/candidate-index.sha256"
+# Streamed capture files are recoverable from the pinned Hub revision. Keep their
+# verified identities and all quantization evidence, but not 464 GB of local copies.
+rm -f \
+  "$CAPTURE/layers/layer-$L3/hidden.bf16.bin" \
+  "$CAPTURE/layers/layer-$L3/topk_ids.u16le.bin" \
+  "$CAPTURE/layers/layer-$L3/topk_weights.f32le.bin"
 echo "layer $LAYER complete"
