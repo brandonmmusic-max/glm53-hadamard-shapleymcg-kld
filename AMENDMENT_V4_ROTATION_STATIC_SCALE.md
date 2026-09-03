@@ -8,4 +8,6 @@ Before any new protected rotation claim, the minimum diagnostic is stock versus 
 
 The first layer-44 stale-scale run emitted one first-forward marker per worker but exposed that `LOCAL_RANK` is absent in the vLLM worker environment. Rank evidence is therefore taken from the initialized PyTorch distributed process group on subsequent runs; the original `rank=unknown` markers are preserved rather than rewritten.
 
+After the W4A4 scale factorial, matched W4A16 checkpoint views may be used as a diagnostic only. They retain identical packed weights and payload bytes while selecting the existing `W4A16_NVFP4` BF16-activation method for the chosen layer. W4A16 and W4A4 results remain separate estimands; W4A16 is used to isolate activation quantization/kernel behavior, not to qualify the W4A4 deliverable.
+
 The actual qualified runtime selects FlashInfer CUTLASS NVFP4. This deviates from the original prompt's MARLIN-then-HUMMING rule and remains explicitly labeled; no W4A16 result will be mixed into the W4A4 claim. Selection wave 1 is already opened, so all V4 development uses fit or conditional-fit data until a new candidate family is frozen under a fresh selection-wave authorization.
