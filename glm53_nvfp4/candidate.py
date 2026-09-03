@@ -9,6 +9,18 @@ from pathlib import Path
 from safetensors import safe_open
 
 ALLOWED_SUFFIXES = (".weight", ".weight_scale", ".weight_scale_2")
+ROUTED_LAYERS = range(3, 45)
+
+
+def routed_expert_payload_names(weight_map: dict[str, str]) -> set[str]:
+    prefixes = tuple(f"model.language_model.layers.{layer}.mlp.experts." for layer in ROUTED_LAYERS)
+    return {
+        name
+        for name in weight_map
+        if name.startswith(prefixes)
+        and name.endswith(ALLOWED_SUFFIXES)
+        and not name.endswith(".input_scale")
+    }
 
 
 def build(carrier: Path, output: Path, chunks: list[Path]) -> dict:
@@ -57,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

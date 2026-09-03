@@ -3,7 +3,7 @@ import json
 import torch
 from safetensors.torch import save_file
 
-from glm53_nvfp4.candidate import build
+from glm53_nvfp4.candidate import build, routed_expert_payload_names
 
 
 def test_candidate_redirects_only_chunk_tensors(tmp_path):
@@ -21,3 +21,16 @@ def test_candidate_redirects_only_chunk_tensors(tmp_path):
     assert index["weight_map"]["a.weight"] == "new.safetensors"
     assert index["weight_map"]["b.weight"] == "base.safetensors"
     assert (output / "base.safetensors").is_symlink()
+
+
+def test_routed_payload_inventory_excludes_nextn_layer_45():
+    weight_map = {
+        "model.language_model.layers.3.mlp.experts.0.down_proj.weight": "a",
+        "model.language_model.layers.44.mlp.experts.0.gate_proj.weight_scale_2": "b",
+        "model.language_model.layers.45.mlp.experts.0.down_proj.weight": "c",
+        "model.language_model.layers.3.mlp.experts.0.down_proj.input_scale": "d",
+    }
+    assert routed_expert_payload_names(weight_map) == {
+        "model.language_model.layers.3.mlp.experts.0.down_proj.weight",
+        "model.language_model.layers.44.mlp.experts.0.gate_proj.weight_scale_2",
+    }

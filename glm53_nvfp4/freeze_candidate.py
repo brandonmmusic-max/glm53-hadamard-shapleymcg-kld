@@ -8,6 +8,7 @@ from pathlib import Path
 
 from safetensors import safe_open
 
+from .candidate import routed_expert_payload_names
 from .shard_index import sha256_file
 
 HARNESS = Path("/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval")
@@ -57,11 +58,7 @@ def main() -> None:
     original = json.loads((args.carrier / "model.safetensors.index.json").read_text())
     candidate = json.loads((args.candidate / "model.safetensors.index.json").read_text())
     overlay = json.loads((args.candidate / "OVERLAY.json").read_text())
-    target_names = {
-        name for name in original["weight_map"]
-        if ".mlp.experts." in name and name.endswith((".weight", ".weight_scale", ".weight_scale_2"))
-        and not name.endswith(".input_scale")
-    }
+    target_names = routed_expert_payload_names(original["weight_map"])
     expected_target_count = 42 * 288 * 3 * 3
     if len(target_names) != expected_target_count:
         raise RuntimeError(f"unexpected carrier target inventory: {len(target_names)}")
