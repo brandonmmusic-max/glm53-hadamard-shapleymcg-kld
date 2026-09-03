@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 import torch
-from safetensors.torch import save_file
+from safetensors.torch import load_file, save_file
 
 from .block_gptq import _best_scales, block_hessian
 from .block_rotation import (
@@ -70,7 +70,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--source-index", type=Path)
-    parser.add_argument("--capture-root", type=Path, required=True)
+    parser.add_argument("--capture-root", type=Path)
+    parser.add_argument("--hessian-file", type=Path, action="append")
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--layer", type=int, required=True)
     parser.add_argument("--init", choices=("identity", "had16"), required=True)
@@ -90,6 +91,8 @@ def main() -> None:
         raise ValueError("layer must be 3..44")
     if args.batch < 1 or args.batch > args.experts:
         raise ValueError("invalid batch")
+    if (args.capture_root is None) == (not args.hessian_file):
+        raise ValueError("provide exactly one of --capture-root or --hessian-file")
 
     started = time.time()
     device = torch.device(args.device)
@@ -97,7 +100,15 @@ def main() -> None:
     torch.empty(0, device=device)
     torch.cuda.reset_peak_memory_stats(device)
     checkpoint = IndexedCheckpoint(args.source, args.source_index)
-    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples)
+    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples) if args.capture_root else None
+    saved_hessians = {}
+    if args.hessian_file:
+        for path in args.hessian_file:
+            for key, tensor in load_file(str(path), device="cpu").items():
+                if key.startswith("hessian_"):
+                    if key in saved_hessians:
+                        raise ValueError(f"duplicate {key}")
+                    saved_hessians[key] = tensor
     experts = _selected_experts(args.experts)
     prefix = checkpoint.expert_prefix(args.layer, experts[0]).split(f"layers.{args.layer}.")[0]
     weights: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
@@ -108,8 +119,11 @@ def main() -> None:
         gate_name, up_name = f"{stem}.gate_proj.weight", f"{stem}.up_proj.weight"
         source_files.update((checkpoint.weight_map[gate_name], checkpoint.weight_map[up_name]))
         weights[expert] = (checkpoint.get(gate_name).to(device), checkpoint.get(up_name).to(device))
-        hidden, route = capture.samples(expert)
-        hessians[expert] = block_hessian(hidden.to(device), route.to(device))
+        if capture is not None:
+            hidden, route = capture.samples(expert)
+            hessians[expert] = block_hessian(hidden.to(device), route.to(device))
+        else:
+            hessians[expert] = saved_hessians[f"hessian_{expert:03d}"].to(device)
 
     base = torch.eye(16, device=device) if args.init == "identity" else hadamard16(device=device)
     parameter_shape = (16, 16) if args.sharing == "shared" else (4096 // 16, 16, 16)
@@ -154,7 +168,8 @@ def main() -> None:
         "orthogonality_max_abs": orthogonality_error(learned),
         "source_files": [{"path": name, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
         "roles_sha256": sha256_file(args.roles),
-        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
+        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json") if args.capture_root else None,
+        "hessian_inputs": [{"path": str(path), "sha256": sha256_file(path)} for path in (args.hessian_file or [])],
         "output": {"path": str(args.output), "bytes": args.output.stat().st_size, "sha256": sha256_file(args.output)},
         "elapsed_seconds": time.time() - started,
         "peak_cuda_bytes": torch.cuda.max_memory_allocated(device),
