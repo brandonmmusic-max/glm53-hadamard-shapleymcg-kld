@@ -1,0 +1,113 @@
+"""Quantize a GLM routed-expert range from BF16 and write ModelOpt tensors plus a receipt."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import time
+from pathlib import Path
+
+import torch
+import torch.nn.functional as F
+from safetensors.torch import save_file
+
+from .block_gptq import block_hessian, compare_packed_to_rtn, gptq_quantize
+from .capture import LayerCapture
+from .modelopt import choose_global_scale
+from .shard_index import IndexedCheckpoint, sha256_file
+
+
+def tensor_names(prefix: str, expert: int) -> dict[str, str]:
+    base = f"{prefix}layers.{{layer}}.mlp.experts.{expert}.{{proj}}"
+    return {proj: base.format(layer="{layer}", proj=proj) for proj in ("gate_proj", "up_proj", "down_proj")}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source-index", type=Path)
+    parser.add_argument("--capture-root", type=Path, required=True)
+    parser.add_argument("--roles", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--layer", type=int, required=True)
+    parser.add_argument("--expert-start", type=int, default=0)
+    parser.add_argument("--expert-end", type=int, default=288)
+    parser.add_argument("--max-samples", type=int, default=256)
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--search-grid", type=int, default=8)
+    args = parser.parse_args()
+    if not (3 <= args.layer <= 44 and 0 <= args.expert_start < args.expert_end <= 288):
+        raise ValueError("invalid layer or expert range")
+
+    started = time.time()
+    checkpoint = IndexedCheckpoint(args.source, args.source_index)
+    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples)
+    sample_counts = capture.counts()
+    output: dict[str, torch.Tensor] = {}
+    metrics = {}
+    source_files = set()
+    prefix = checkpoint.expert_prefix(args.layer, args.expert_start).split(f"layers.{args.layer}.")[0]
+    torch.cuda.reset_peak_memory_stats(torch.device(args.device))
+
+    for expert in range(args.expert_start, args.expert_end):
+        base = f"{prefix}layers.{args.layer}.mlp.experts.{expert}"
+        names = {proj: f"{base}.{proj}.weight" for proj in ("gate_proj", "up_proj", "down_proj")}
+        for name in names.values():
+            source_files.add(checkpoint.weight_map[name])
+        hidden_cpu, route_cpu = capture.samples(expert)
+        hidden = hidden_cpu.to(args.device)
+        route = route_cpu.to(args.device)
+        h_in = block_hessian(hidden, route)
+        gate = checkpoint.get(names["gate_proj"]).to(args.device)
+        up = checkpoint.get(names["up_proj"]).to(args.device)
+        down = checkpoint.get(names["down_proj"]).to(args.device)
+        shared = choose_global_scale(gate, up).to(args.device)
+        packed_gate = gptq_quantize(gate, h_in, global_scale=shared, search_grid=args.search_grid)
+        packed_up = gptq_quantize(up, h_in, global_scale=shared, search_grid=args.search_grid)
+        gate_cmp = compare_packed_to_rtn(gate, h_in, packed_gate, shared)
+        up_cmp = compare_packed_to_rtn(up, h_in, packed_up, shared)
+
+        # Match the official Glm5NextTextExperts activation exactly.
+        middle = F.silu(F.linear(hidden, gate).clamp(max=10.0)) * F.linear(hidden, up).clamp(-10.0, 10.0)
+        h_mid = block_hessian(middle, route)
+        packed_down = gptq_quantize(down, h_mid, search_grid=args.search_grid)
+        down_cmp = compare_packed_to_rtn(down, h_mid, packed_down, packed_down.weight_scale_2)
+        for proj, packed in (("gate_proj", packed_gate), ("up_proj", packed_up), ("down_proj", packed_down)):
+            stem = f"{base}.{proj}"
+            output[f"{stem}.weight"] = packed.weight
+            output[f"{stem}.weight_scale"] = packed.weight_scale
+            output[f"{stem}.weight_scale_2"] = packed.weight_scale_2
+        metrics[str(expert)] = {"samples": sample_counts[expert], "gate": gate_cmp, "up": up_cmp, "down": down_cmp}
+        del hidden, route, h_in, h_mid, gate, up, down, middle
+        torch.cuda.empty_cache()
+        print(json.dumps({"layer": args.layer, "expert": expert, "ratios": {"gate": gate_cmp["ratio"], "up": up_cmp["ratio"], "down": down_cmp["ratio"]}}), flush=True)
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    save_file(output, str(args.output), metadata={
+        "schema": "glm53-nvfp4-v2.modelopt-layer-chunk.v1",
+        "layer": str(args.layer),
+        "expert_range": f"{args.expert_start}:{args.expert_end}",
+        "source_revision": "a6c167b62691b2bac901344b65cb651a70f53e43",
+    })
+    receipt = {
+        "schema": "glm53-nvfp4-v2.layer-chunk-receipt.v1",
+        "layer": args.layer,
+        "expert_start": args.expert_start,
+        "expert_end": args.expert_end,
+        "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2},
+        "source_files": [{"path": name, "bytes": (args.source / name).stat().st_size, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
+        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
+        "roles_sha256": sha256_file(args.roles),
+        "output": {"path": str(args.output), "bytes": args.output.stat().st_size, "sha256": sha256_file(args.output), "tensors": len(output)},
+        "metrics": metrics,
+        "peak_cuda_bytes": torch.cuda.max_memory_allocated(torch.device(args.device)),
+        "elapsed_seconds": time.time() - started,
+    }
+    args.receipt.parent.mkdir(parents=True, exist_ok=True)
+    args.receipt.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    print(json.dumps({"receipt": str(args.receipt), "output_sha256": receipt["output"]["sha256"]}, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
