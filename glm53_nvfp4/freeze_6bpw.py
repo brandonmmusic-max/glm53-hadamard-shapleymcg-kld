@@ -177,6 +177,7 @@ def main() -> None:
             _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/fp6_serving.py"),
             _file(root / "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py"),
             _file(root / "scripts/run_kld_v3.sh"),
+            _file(root / "scripts/run_candidate_canary.sh"),
         ],
         "candidate_build_files": [
             _file(root / "glm53_nvfp4/mxfp6_layer.py"),

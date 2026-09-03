@@ -79,6 +79,7 @@ def main() -> None:
             _file(root / "glm53_nvfp4/role_eval.py"),
             _file(root / "glm53_nvfp4/shapley_analysis.py"),
             _file(root / "scripts/run_kld_v3.sh"),
+            _file(root / "scripts/run_candidate_canary.sh"),
             _file(root / "runtime_patch/sitecustomize.py"),
             _file(root / "runtime_patch/b12x_h16/Dockerfile"),
             _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/plugin.py"),
