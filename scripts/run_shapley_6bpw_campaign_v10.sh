@@ -35,6 +35,9 @@ available=$(df -B1 --output=avail /media/brandonmusic/klcstore | tail -1 | tr -d
   exit 1
 }
 export GLM53_MXFP6_ROOT=$MXROOT
+export GLM53_RUNTIME_IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v80-mxfp6-h16-all
+export GLM53_RUNTIME_IMAGE_ID=sha256:8e6856039c449aa202f113c3834af09e4e1dcb4c9c9b7e7eb009608f3772627a
+export GLM53_RUNTIME_CACHE_DIR=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-mxfp6-h16-v80
 
 "$REPO/scripts/run_mxfp6_layer.sh" 3 had16
 pilot_chunks=()
