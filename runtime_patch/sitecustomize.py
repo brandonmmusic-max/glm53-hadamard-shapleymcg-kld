@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 
 
 MODE = os.environ.get("GLM53_ROUTED_ROTATION", "").strip().lower()
@@ -199,6 +200,10 @@ if MODE:
             # part of checkpoint loading.
             self.register_buffer("rotation", rotation, persistent=False)
             self.layer = layer
+            self._rotation_sha256 = hashlib.sha256(
+                rotation.detach().float().cpu().numpy().tobytes()
+            ).hexdigest()
+            self._forward_logged = False
 
         def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
             blocks = hidden_states.shape[-1] // 16
@@ -217,6 +222,15 @@ if MODE:
                 output = view @ rotation
             else:
                 output = torch.einsum("...bg,bgh->...bh", view, rotation)
+            if not self._forward_logged:
+                print(
+                    "GLM53_BLOCK_ROTATION_FORWARD "
+                    f"layer={self.layer} rank={os.environ.get('LOCAL_RANK', 'unknown')} "
+                    f"rotation_sha256={self._rotation_sha256} "
+                    f"hidden_width={hidden_states.shape[-1]} dtype={hidden_states.dtype}",
+                    flush=True,
+                )
+                self._forward_logged = True
             return output.reshape_as(hidden_states)
 
 
