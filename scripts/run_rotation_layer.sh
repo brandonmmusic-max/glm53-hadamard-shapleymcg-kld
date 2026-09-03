@@ -24,9 +24,10 @@ ROLES=$CAMPAIGN/roles/roles-v3.json
 CHUNK_ROOT=${GLM53_V3_CHUNK_ROOT:-$CAMPAIGN/chunks-v3}
 CHUNKS=$CHUNK_ROOT/$ROTATION
 EVIDENCE=$CAMPAIGN/evidence-v3/$ROTATION
+HESSIANS=$CAMPAIGN/hessians-v3/layer-$(printf '%03d' "$LAYER")
 LOGS=$CAMPAIGN/logs-v3/$ROTATION/layer-$(printf '%03d' "$LAYER")
 LOCK=/run/lock/klc/model-stack.lock
-mkdir -p "$CHUNKS" "$EVIDENCE" "$LOGS"
+mkdir -p "$CHUNKS" "$EVIDENCE" "$LOGS" "$HESSIANS"
 
 exec 9>"$LOCK"
 flock -w 900 9
@@ -53,6 +54,7 @@ for gpu in 0 1 2 3; do
   receipt="$EVIDENCE/$ROTATION-layer-$L3-experts-$S3-$E3.json"
   extra=()
   [ -n "$ROTATION_FILE" ] && extra+=(--rotation-file "$ROTATION_FILE")
+  [ "$ROTATION" != had16 ] || extra+=(--hessian-output "$HESSIANS/experts-$S3-$E3.safetensors")
   CUDA_VISIBLE_DEVICES=$gpu /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.quantize_layer \
     --source "$SOURCE" --source-index "$SOURCE_INDEX" --capture-root "$CAPTURE" --roles "$ROLES" \
     --output "$out" --receipt "$receipt" --layer "$LAYER" --expert-start "$start" --expert-end "$end" \
