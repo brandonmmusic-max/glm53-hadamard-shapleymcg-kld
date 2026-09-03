@@ -71,6 +71,37 @@ if MIXED_MXFP6:
     _modelopt.ModelOptMixedPrecisionConfig.get_quant_method = (
         _mixed_get_quant_method
     )
+    # Preserve exact tensor geometry on any remaining mixed-loader failure.
+    # This wrapper is observational on success and re-raises the original
+    # exception unchanged.
+    from vllm.model_executor.layers.fused_moe.routed_experts import (
+        RoutedExperts as _RoutedExperts,
+    )
+
+    _ORIGINAL_ROUTED_WEIGHT_LOADER = _RoutedExperts.weight_loader
+
+    def _diagnostic_routed_weight_loader(
+        self, param, loaded_weight, weight_name, shard_id, expert_id,
+        return_success=False,
+    ):
+        try:
+            return _ORIGINAL_ROUTED_WEIGHT_LOADER(
+                self, param, loaded_weight, weight_name, shard_id, expert_id,
+                return_success,
+            )
+        except Exception:
+            print(
+                "GLM53_MXFP6_LOAD_DIAGNOSTIC "
+                f"name={weight_name} shard={shard_id} expert={expert_id} "
+                f"param_shape={tuple(param.shape)} "
+                f"loaded_shape={tuple(loaded_weight.shape)} "
+                f"tp_size={self.moe_config.moe_parallel_config.tp_size} "
+                f"tp_rank={self.moe_config.tp_rank}",
+                flush=True,
+            )
+            raise
+
+    _RoutedExperts.weight_loader = _diagnostic_routed_weight_loader
     print("GLM53_MIXED_MXFP6_PATCH_ACTIVE", flush=True)
 
 
