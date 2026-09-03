@@ -18,8 +18,9 @@ CHUNKS=$CAMPAIGN/chunks
 CANDIDATE=$CAMPAIGN/candidates/uniform-gptq
 LOGS=$CAMPAIGN/logs/layer-$(printf '%03d' "$LAYER")
 LOCK=/run/lock/klc/model-stack.lock
+CAPTURE_LOCKS=$CAMPAIGN/locks
 PRODUCTION=glm53-flash-exl3-k4-tp4-vision-mtp3
-mkdir -p "$CHUNKS" "$CANDIDATE" "$LOGS"
+mkdir -p "$CHUNKS" "$CANDIDATE" "$LOGS" "$CAPTURE_LOCKS"
 
 exec 9>"$LOCK"
 flock -w 900 9
@@ -46,11 +47,14 @@ CAPTURE_FILES=(
   "calibration/main-ep4-full/layers/layer-$L3/topk_ids.u16le.bin"
   "calibration/main-ep4-full/layers/layer-$L3/topk_weights.f32le.bin"
 )
+exec 8>"$CAPTURE_LOCKS/capture-layer-$L3.lock"
+flock -w 7200 8
 HF_XET_HIGH_PERFORMANCE=1 /home/brandonmusic/.local/bin/hf download brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits "${CAPTURE_FILES[@]}" \
   --type dataset --revision 95f4fdd94bf29989db2e0d1054e4931f55edb6aa --local-dir "$CAMPAIGN/teacher" --max-workers 3 --format agent \
   >"$LOGS/capture-download.log" 2>&1
 /usr/bin/python3 -m glm53_nvfp4.verify_capture --capture-root "$CAPTURE" --layer "$LAYER" \
   --output "$CAMPAIGN/evidence/capture-layer-$L3.json" | tee "$LOGS/capture-integrity.log"
+flock -u 8
 
 pids=()
 for gpu in 0 1 2 3; do
