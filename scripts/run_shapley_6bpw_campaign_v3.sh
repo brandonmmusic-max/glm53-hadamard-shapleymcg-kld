@@ -54,7 +54,9 @@ available=$(df -B1 --output=avail /media/brandonmusic/klcstore | tail -1 | tr -d
 pilot_chunks=()
 while IFS= read -r chunk; do pilot_chunks+=(--chunk "$chunk"); done \
   < <(find "$CHUNKS" -maxdepth 1 -type f -name 'mxfp6-layer-003-experts-*.safetensors' | sort)
-[ "${#pilot_chunks[@]}" -eq 4 ] || { echo "MXFP6 pilot layer is incomplete" >&2; exit 1; }
+# Each discovered shard contributes the option and its value, hence eight
+# array elements for the four required expert-range chunks.
+[ "${#pilot_chunks[@]}" -eq 8 ] || { echo "MXFP6 pilot layer is incomplete" >&2; exit 1; }
 PILOT=$CAMPAIGN/candidates-v3/mxfp6-layer3-pilot
 PILOT_SESSION=$CAMPAIGN/evidence-v3/mxfp6-layer3-pilot-runtime
 if [ ! -f "$PILOT/MIXED_RECEIPT.json" ]; then
