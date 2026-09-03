@@ -97,3 +97,16 @@ the ShapleyMCG License 1.0 in `LICENSE`. Required attribution:
 
 Third-party models, runtimes, and libraries remain under their own licenses.
 See `THIRD_PARTY_NOTICES.md`.
+
+## Related pinned context
+
+The surrounding Local Inference Lab documentation was inspected at
+`local-inference-lab/rtx6kpro@704e7974d0e052ac4d7427f328fc7bd412cb632d`:
+
+- [GLM-5.3-Flash model hub](https://github.com/local-inference-lab/rtx6kpro/blob/704e7974d0e052ac4d7427f328fc7bd412cb632d/models/glm-5.3-flash.md)
+- [BF16-to-NVFP4 KLD record](https://github.com/local-inference-lab/rtx6kpro/blob/704e7974d0e052ac4d7427f328fc7bd412cb632d/kld/glm-5.3-flash-bf16-nvfp4.md)
+- [NVFP4 quantization comparison](https://github.com/local-inference-lab/rtx6kpro/blob/704e7974d0e052ac4d7427f328fc7bd412cb632d/benchmarks/nvfp4-quantization-comparison.md)
+
+The earlier `glm52-sqg-mcg-experiments` repository is related prior work but
+answers a different model/codec question. The canonical `shapleymcg`
+repository remains the method and license authority.
