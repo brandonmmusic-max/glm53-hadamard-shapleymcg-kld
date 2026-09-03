@@ -4,6 +4,7 @@ from glm53_nvfp4.block_gptq import block_hessian
 from glm53_nvfp4.block_rotation import (
     apply_activation_rotation,
     apply_weight_rotation,
+    cayley_rotation,
     hadamard16,
     orthogonality_error,
     rotate_block_hessian,
@@ -43,3 +44,12 @@ def test_per_block_rotation_preserves_linear_map():
     xr = apply_activation_rotation(x, r)
     wr = apply_weight_rotation(w, r)
     torch.testing.assert_close(torch.nn.functional.linear(xr, wr), torch.nn.functional.linear(x, w), atol=2e-5, rtol=2e-5)
+
+
+def test_cayley_is_orthogonal_and_respects_base():
+    generator = torch.Generator().manual_seed(56)
+    parameter = torch.randn(16, 16, generator=generator) * 0.1
+    rotation = cayley_rotation(parameter)
+    based = cayley_rotation(torch.zeros_like(parameter), hadamard16())
+    assert orthogonality_error(rotation) < 2e-6
+    assert torch.equal(based, hadamard16())
