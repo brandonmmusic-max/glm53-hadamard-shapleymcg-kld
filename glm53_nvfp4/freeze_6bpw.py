@@ -12,6 +12,8 @@ from .shard_index import sha256_file
 EXPECTED_MXFP6_LAYERS = 35
 EXPECTED_NVFP4_LAYERS = 7
 MAX_BPW = 6.0
+RUNTIME_IMAGE = "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v80-mxfp6-h16-all"
+RUNTIME_IMAGE_ID = "sha256:8e6856039c449aa202f113c3834af09e4e1dcb4c9c9b7e7eb009608f3772627a"
 
 
 def _file(path: Path) -> dict:
@@ -87,6 +89,14 @@ def main() -> None:
     harness = Path("/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval")
     implementation = _git(root)
     harness_identity = _git(harness)
+    runtime_image_id = subprocess.check_output(
+        ["docker", "image", "inspect", RUNTIME_IMAGE, "--format", "{{.Id}}"],
+        text=True,
+    ).strip()
+    if runtime_image_id != RUNTIME_IMAGE_ID:
+        raise RuntimeError(
+            f"runtime image mismatch: expected {RUNTIME_IMAGE_ID}, got {runtime_image_id}"
+        )
 
     analysis = json.loads(args.analysis.read_text())
     design = json.loads(args.design.read_text())
@@ -153,12 +163,32 @@ def main() -> None:
         },
         "implementation": implementation,
         "analysis_harness": harness_identity,
+        "runtime_image": {
+            "tag": RUNTIME_IMAGE,
+            "id": runtime_image_id,
+        },
         "analysis_files": [
             _file(root / "glm53_nvfp4/role_eval.py"),
             _file(root / "glm53_nvfp4/paired_role_analysis.py"),
             _file(root / "glm53_nvfp4/shapley_analysis.py"),
             _file(root / "runtime_patch/sitecustomize.py"),
+            _file(root / "runtime_patch/b12x_h16/Dockerfile"),
+            _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/plugin.py"),
+            _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/fp6_serving.py"),
+            _file(root / "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py"),
             _file(root / "scripts/run_kld_v3.sh"),
+        ],
+        "candidate_build_files": [
+            _file(root / "glm53_nvfp4/mxfp6_layer.py"),
+            _file(root / "glm53_nvfp4/mixed_candidate.py"),
+            _file(root / "glm53_nvfp4/prepare_shapley_candidates.py"),
+            _file(root / "glm53_nvfp4/shapley_design.py"),
+            _file(root / "glm53_nvfp4/freeze_shapley_inputs.py"),
+            _file(root / "glm53_nvfp4/freeze_6bpw.py"),
+            _file(root / "scripts/run_mxfp6_layer.sh"),
+            _file(root / "scripts/run_mxfp6_all.sh"),
+            _file(root / "scripts/run_shapley_v10.sh"),
+            _file(root / "scripts/run_shapley_6bpw_campaign_v10.sh"),
         ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
