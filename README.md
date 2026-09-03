@@ -42,12 +42,16 @@ holdout claim.
 
 ## Why this is not yet the Qwen-sized gain
 
-The earlier Qwen result was a **full-model recipe compared with a stock RTN
-NVFP4 checkpoint**: -29% on the final panel, -36% on selection, and -9% on
-WikiText at the same routed-weight rate. It combined REAP calibration, GPTQ,
-fixed H16, and every routed layer. The present GLM winner changes only layer 3
-while the other 41 routed layers remain stock. Its 2.625% end-to-end effect is
-therefore not an apples-to-apples estimate of the completed full-model gain.
+The earlier Qwen headline was a **full-model recipe compared with a shipped
+RTN NVFP4 checkpoint**: -29% on the final panel, -36% on selection, and -9%
+on WikiText at the same routed-weight rate. It combined REAP calibration,
+GPTQ, fixed H16, and every routed layer. H16 was not responsible for that
+entire gap: against the already calibrated GPTQ control, fixed H16 contributed
+about -9% on final, -15% on selection, and -6% on WikiText. The present GLM
+winner changes only layer 3 while the other 41 routed layers remain stock. Its
+2.625% end-to-end effect is therefore not an apples-to-apples estimate of the
+completed full-model gain. Exact Qwen inputs and source hashes are recorded in
+`evidence/qwen-reference/comparison.json`.
 
 The live next tests are:
 
