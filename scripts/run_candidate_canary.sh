@@ -16,21 +16,31 @@ ROTATION_SCOPE=${6:-gate-up}
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned rotation requires a file" >&2; exit 2; }
 [ "$ROTATION_SCOPE" = gate-up ] || [ "$ROTATION_SCOPE" = all ] || { echo "invalid rotation scope" >&2; exit 2; }
-IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate
+IMAGE=${GLM53_RUNTIME_IMAGE:-klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate}
+IMAGE_ID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+if [ -n "${GLM53_RUNTIME_IMAGE_ID:-}" ] && [ "$IMAGE_ID" != "$GLM53_RUNTIME_IMAGE_ID" ]; then
+  echo "runtime image digest mismatch: expected $GLM53_RUNTIME_IMAGE_ID, got $IMAGE_ID" >&2
+  exit 1
+fi
 MODEL_NAME=GLM-5.3-Flash-NVFP4-V2-PILOT
 TEST=glm53-nvfp4-v2-canary
 PRODUCTION=glm53-flash-exl3-k4-tp4-vision-mtp3
 PORT=8016
 LOCK=/run/lock/klc/model-stack.lock
-CACHE_DIR=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77
+CACHE_DIR=${GLM53_RUNTIME_CACHE_DIR:-/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77}
 LEARNED_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 mkdir -p "$SESSION"
+mkdir -p "$CACHE_DIR"
 
 rotation_env=()
 rotation_mount=()
 if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
-  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e B12X_ENABLE_FP6=1 -e B12X_FP6_MODEL_DIR=/model )
+  [ "$ROTATION" = had16 ] && [ "$ROTATION_SCOPE" = all ] || {
+    echo "the corrected MXFP6 endpoint requires fixed H16 with all-projection scope" >&2
+    exit 2
+  }
+  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e GLM53_MXFP6_H16_ALL=1 -e B12X_ENABLE_FP6=1 -e B12X_ENABLE_FP6_MICRO=0 -e B12X_FP6_MODEL_DIR=/model )
   rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
 fi
 if [ "$ROTATION" != identity ]; then
@@ -106,6 +116,8 @@ until curl -fsS --max-time 5 "http://127.0.0.1:$PORT/v1/models" >"$SESSION/model
   sleep 5
 done
 docker inspect "$TEST" >"$SESSION/container.json"
+[ "$(docker inspect "$TEST" --format '{{.Image}}')" = "$IMAGE_ID" ]
+docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 curl -fsS --max-time 300 "http://127.0.0.1:$PORT/v1/completions" \
   -H 'Content-Type: application/json' \
@@ -124,5 +136,8 @@ grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt|GLM5
 if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
   grep -q 'GLM53_MIXED_MXFP6_PATCH_ACTIVE' "$SESSION/server-ready.log"
   grep -q 'source_format=mxfp6_w6a8 act_fmt=e4m3' "$SESSION/server-ready.log"
+  grep -q 'GLM53_MXFP6_H16_ALL_PROJECTION_PATCH_ACTIVE' "$SESSION/server-ready.log"
+  grep -q 'GLM53_MXFP6_H16_INPUT_FORWARD' "$SESSION/server-final.log" 2>/dev/null || \
+    docker logs "$TEST" 2>&1 | grep -q 'GLM53_MXFP6_H16_INPUT_FORWARD'
 fi
 log "candidate canary passed"

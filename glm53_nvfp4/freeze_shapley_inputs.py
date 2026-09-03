@@ -9,6 +9,9 @@ from pathlib import Path
 from .shard_index import sha256_file
 
 
+RUNTIME_IMAGE = "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v80-mxfp6-h16-all"
+
+
 def _file(path: Path) -> dict:
     return {"path": str(path.resolve()), "bytes": path.stat().st_size, "sha256": sha256_file(path)}
 
@@ -59,11 +62,22 @@ def main() -> None:
         "rotation_winner": _file(args.winner),
         "implementation": _git(root),
         "analysis_harness": _git(harness),
+        "runtime_image": {
+            "tag": RUNTIME_IMAGE,
+            "id": subprocess.check_output(
+                ["docker", "image", "inspect", RUNTIME_IMAGE, "--format", "{{.Id}}"],
+                text=True,
+            ).strip(),
+        },
         "analysis_files": [
             _file(root / "glm53_nvfp4/role_eval.py"),
             _file(root / "glm53_nvfp4/shapley_analysis.py"),
             _file(root / "scripts/run_kld_v3.sh"),
             _file(root / "runtime_patch/sitecustomize.py"),
+            _file(root / "runtime_patch/b12x_h16/Dockerfile"),
+            _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/plugin.py"),
+            _file(root / "runtime_patch/b12x_h16/b12x/integration/vllm/fp6_serving.py"),
+            _file(root / "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py"),
         ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
