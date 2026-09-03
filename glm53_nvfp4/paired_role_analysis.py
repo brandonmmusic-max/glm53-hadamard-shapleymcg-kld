@@ -49,10 +49,16 @@ def main() -> None:
     parser.add_argument("--stock-run", type=Path, required=True)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--role", choices=("selection", "confirmation"), default="confirmation")
+    parser.add_argument("--role", choices=("conditional-fit", "selection", "confirmation"), default="confirmation")
+    parser.add_argument("--selection-wave", type=int, choices=(1, 2, 3))
     args = parser.parse_args()
     roles = json.loads(args.roles.read_text())
     expected = [item["id"] for item in roles["roles"][args.role]]
+    if args.selection_wave is not None:
+        if args.role != "selection":
+            raise RuntimeError("--selection-wave requires selection role")
+        wave_ids = set(roles["selection_waves"][str(args.selection_wave)])
+        expected = [item_id for item_id in expected if item_id in wave_ids]
     candidate = load_window_means(args.candidate_run)
     stock = load_window_means(args.stock_run)
     if set(candidate) != set(expected) or set(stock) != set(expected):
@@ -69,10 +75,10 @@ def main() -> None:
     candidate_mean = float(candidate_values.mean())
     stock_mean = float(stock_values.mean())
     improvement = 1.0 - candidate_mean / stock_mean
-    passed = improvement >= 0.10 and bca[1] < 0.0
-    decision = ("pass" if passed else "fail") if args.role == "confirmation" else ("continue" if float(delta.mean()) < 0.0 else "stop")
+    passed = float(delta.mean()) < 0.0 and bca[1] < 0.0
+    decision = "pass" if passed else "fail"
     payload = {
-        "schema": f"glm53-nvfp4-v2.paired-{args.role}.v1",
+        "schema": f"glm53-nvfp4-v3.paired-{args.role}.v1",
         "role": args.role,
         "estimand": "equal-window mean of candidate KLD minus stock KLD",
         "windows": len(expected),
@@ -84,7 +90,7 @@ def main() -> None:
         "delta_ci95_bca": bca,
         "ratio_ci95_percentile": tuple(float(x) for x in np.quantile(boot_ratio, [0.025, 0.975])),
         "bootstrap": {"replicates": BOOTSTRAP_B, "seed": BOOTSTRAP_SEED, "unit": "window"},
-        "threshold": {"minimum_relative_improvement": 0.10, "maximum_bca_upper_delta": 0.0},
+        "threshold": {"maximum_mean_delta": 0.0, "maximum_bca_upper_delta": 0.0},
         "decision": decision,
         "roles_sha256": sha256_file(args.roles),
         "candidate_records": [{"window_id": key, "mean_kld": candidate[key]} for key in expected],

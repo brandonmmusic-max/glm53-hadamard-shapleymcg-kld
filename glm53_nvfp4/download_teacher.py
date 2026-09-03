@@ -24,12 +24,17 @@ def main() -> None:
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--local-dir", type=Path, required=True)
     parser.add_argument("--role", action="append", choices=("conditional-fit", "selection", "confirmation"), required=True)
+    parser.add_argument("--selection-wave", type=int, choices=(1, 2, 3))
     parser.add_argument("--max-workers", type=int, default=4)
     args = parser.parse_args()
     manifest = json.loads(args.roles.read_text())
     files = list(METADATA)
     for role in args.role:
-        files.extend(item["teacher_path"] for item in manifest["roles"][role])
+        items = manifest["roles"][role]
+        if role == "selection" and args.selection_wave is not None:
+            wave_ids = set(manifest["selection_waves"][str(args.selection_wave)])
+            items = [item for item in items if item["id"] in wave_ids]
+        files.extend(item["teacher_path"] for item in items)
     if len(files) != len(set(files)):
         raise RuntimeError("duplicate teacher download path")
     command = [
