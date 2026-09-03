@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 6 ] || [ "$#" -gt 8 ]; then
-  echo "usage: $0 ROLE RUN_ID MODEL_DIR MODEL_NAME ROTATION LAYERS [ROTATION_FILE] [SELECTION_WAVE]" >&2
+if [ "$#" -lt 6 ] || [ "$#" -gt 9 ]; then
+  echo "usage: $0 ROLE RUN_ID MODEL_DIR MODEL_NAME ROTATION LAYERS [ROTATION_FILE] [SELECTION_WAVE] [FREEZE_RECEIPT]" >&2
   exit 2
 fi
 ROLE=$1
@@ -13,10 +13,12 @@ ROTATION=$5
 LAYERS=$6
 ROTATION_FILE=${7:-}
 SELECTION_WAVE=${8:-}
-[ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || { echo "V3 development runner permits conditional-fit or selection" >&2; exit 2; }
+FREEZE_RECEIPT=${9:-}
+[ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
 [ "$ROLE" != selection ] || [ -n "$SELECTION_WAVE" ] || { echo "selection requires wave" >&2; exit 2; }
+[ "$ROLE" != confirmation ] || [ -n "$FREEZE_RECEIPT" ] || { echo "confirmation requires freeze receipt" >&2; exit 2; }
 
 REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
@@ -103,6 +105,7 @@ docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 
 extra=()
 [ -z "$SELECTION_WAVE" ] || extra+=(--selection-wave "$SELECTION_WAVE")
+[ -z "$FREEZE_RECEIPT" ] || extra+=(--freeze-receipt "$(readlink -f "$FREEZE_RECEIPT")")
 python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$CAMPAIGN/roles/roles-v3.json" \
   --teacher-root "$CAMPAIGN/teacher" --run-root "$CAMPAIGN/kld-v3" --run-id "$RUN_ID" \
   --config-id "nvfp4-v3-$ROTATION-tp4-ep4-dcp4-eager-nomtp-kvfp8" \
