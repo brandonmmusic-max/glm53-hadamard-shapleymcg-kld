@@ -14,6 +14,8 @@ CONDITIONAL=$EVIDENCE/conditional-fit-vs-stock.json
 SELECTION=$EVIDENCE/selection-wave2-vs-stock.json
 WINNER=$EVIDENCE/rotation-winner.json
 RUN_ROOT=$CAMPAIGN/kld-v3
+export GLM53_RUNTIME_IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate
+export GLM53_RUNTIME_IMAGE_ID=sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe
 
 mkdir -p "$EVIDENCE"
 cd "$REPO"
