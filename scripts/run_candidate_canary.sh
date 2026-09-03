@@ -121,5 +121,6 @@ grep -Ei "Using .*NvFp4|NvFp4.*backend|FLASHINFER_MLA_SPARSE_SM120|modelopt|GLM5
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$ROTATED_LAYERS" "$SESSION/server-ready.log"
 if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
   grep -q 'GLM53_MIXED_MXFP6_PATCH_ACTIVE' "$SESSION/server-ready.log"
+  grep -q 'source_format=mxfp6_w6a8 act_fmt=e4m3' "$SESSION/server-ready.log"
 fi
 log "candidate canary passed"

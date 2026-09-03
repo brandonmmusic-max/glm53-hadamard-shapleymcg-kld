@@ -63,12 +63,12 @@ if [ ! -f "$PILOT/MIXED_RECEIPT.json" ]; then
   python3 -m glm53_nvfp4.mixed_candidate --carrier "$CARRIER" --output "$PILOT" \
     --mxfp6-layers 3 "${pilot_chunks[@]}"
 fi
-if ! stage_recorded mxfp6-layer3-runtime-pilot; then
+if ! stage_recorded mxfp6-layer3-w6a8-runtime-pilot; then
   "$REPO/scripts/run_candidate_canary.sh" "$PILOT" "$PILOT_SESSION" "$ROTATION" 3-44 "$ROTATION_FILE"
-  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage mxfp6-layer3-runtime-pilot \
+  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage mxfp6-layer3-w6a8-runtime-pilot \
     --evidence "$PILOT/MIXED_RECEIPT.json" --evidence "$PILOT_SESSION/canary.json" \
     --evidence "$PILOT_SESSION/server-ready.log" --evidence "$PILOT_SESSION/backend-proof.log" \
-    --note 'A one-layer native MXFP6 mixed checkpoint passed exact image loading, mixed-method binding marker, rotation marker, and deterministic coherent generation before bulk MXFP6 production.'
+    --note 'A one-layer native MXFP6 W6A8 mixed checkpoint passed exact image loading, source-format binding, mixed-method and scale-geometry markers, rotation marker, and deterministic coherent generation before Shapley scoring.'
 fi
 "$REPO/scripts/run_mxfp6_all.sh" "$ROTATION" "$ROTATION_FILE" 3
 [ "$(find "$CHUNKS" -maxdepth 1 -type f -name 'mxfp6-layer-*-experts-*.safetensors' | wc -l)" -eq 168 ] || {

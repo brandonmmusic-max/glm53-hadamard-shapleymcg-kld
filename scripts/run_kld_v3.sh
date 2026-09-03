@@ -104,6 +104,10 @@ docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' >"$SESSION/image-
 grep -q "$IMAGE_DIGEST" "$SESSION/image-digests.json"
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS" "$SESSION/server-ready.log"
+if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
+  grep -q 'GLM53_MIXED_MXFP6_PATCH_ACTIVE' "$SESSION/server-ready.log"
+  grep -q 'source_format=mxfp6_w6a8 act_fmt=e4m3' "$SESSION/server-ready.log"
+fi
 
 extra=()
 [ -z "$SELECTION_WAVE" ] || extra+=(--selection-wave "$SELECTION_WAVE")
