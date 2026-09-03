@@ -23,3 +23,13 @@
 - Safety check: no active `hf download` process targeted any calibration layer at removal time.
 - Preserved: all completed Hub files and metadata, all layers still pending quantization, and every teacher-logit role file.
 - Recoverability: these were abandoned partial transfers rather than accepted artifacts; Hugging Face can download them again from the pinned teacher revision if needed.
+
+## Losing H16 candidate payload cleanup
+
+- Removed scope: `/media/brandonmusic/klcstore/bmxfp4-glm53/chunks-v3/had16` only, after all 16 conditional-fit and all 16 protected Wave-1 H16 rows completed and the frozen learned-rotation endpoint passed the preregistered selection rule.
+- Pre-removal payload: 168 files, 114162093584 bytes (`du -sh`: 107G).
+- Evidence retained: all H16 per-layer validation and quantization receipts, the three immutable Wave-1 freeze receipts with individual chunk hashes, all runtime logs/captures, and the full conditional-fit and selection KLD records and paired analyses.
+- Preserved for subsequent work: the winning learned chunks, learned rotation bundle, stock carrier, BF16 source, MXFP6 destination, teacher assets, role manifest, and every Shapley/confirmation input.
+- Recoverability: the losing H16 packed tensor payload is not recoverable locally, but it is reproducible from the pinned BF16 source, calibration-derived Hessians still retained for layers 7-44, and the recorded quantization recipe. Layers 3-6 would require reacquiring their pinned calibration captures.
+- Pre-removal model-volume availability: 407808307200 bytes.
+- Post-removal model-volume availability: 521971519488 bytes (`df -h`: 487G available, 69% used).
