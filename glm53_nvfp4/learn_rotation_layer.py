@@ -66,6 +66,36 @@ def _selected_experts(count: int) -> list[int]:
     return torch.linspace(0, 287, count).round().to(torch.int64).unique().tolist()
 
 
+@torch.no_grad()
+def _polar(matrix: torch.Tensor) -> torch.Tensor:
+    left, _, right = torch.linalg.svd(matrix)
+    return left @ right
+
+
+@torch.no_grad()
+def _procrustes_target(
+    weights: dict[int, tuple[torch.Tensor, torch.Tensor]],
+    experts: list[int],
+    rotation: torch.Tensor,
+    search_grid: int,
+) -> torch.Tensor:
+    if rotation.ndim != 3:
+        raise ValueError("alternating Procrustes requires per-block rotations")
+    cross = torch.zeros_like(rotation)
+    for expert in experts:
+        gate, up = weights[expert]
+        gate_r = apply_weight_rotation(gate, rotation)
+        up_r = apply_weight_rotation(up, rotation)
+        global_scale = choose_global_scale(gate_r, up_r).to(gate_r.device)
+        gate_q = _dequantize_on_device(gate_r, global_scale, search_grid)
+        up_q = _dequantize_on_device(up_r, global_scale, search_grid)
+        gate_b = gate.float().reshape(gate.shape[0], -1, 16)
+        up_b = up.float().reshape(up.shape[0], -1, 16)
+        cross += torch.einsum("obg,obh->bgh", gate_b, gate_q.reshape(gate.shape[0], -1, 16))
+        cross += torch.einsum("obg,obh->bgh", up_b, up_q.reshape(up.shape[0], -1, 16))
+    return _polar(cross)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -76,6 +106,7 @@ def main() -> None:
     parser.add_argument("--layer", type=int, required=True)
     parser.add_argument("--init", choices=("identity", "had16"), required=True)
     parser.add_argument("--sharing", choices=("shared", "per-block"), default="shared")
+    parser.add_argument("--optimizer", choices=("cayley", "procrustes"), default="cayley")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
@@ -91,6 +122,8 @@ def main() -> None:
         raise ValueError("layer must be 3..44")
     if args.batch < 1 or args.batch > args.experts:
         raise ValueError("invalid batch")
+    if args.optimizer == "procrustes" and args.sharing != "per-block":
+        raise ValueError("Procrustes optimizer requires per-block sharing")
     if (args.capture_root is None) == (not args.hessian_file):
         raise ValueError("provide exactly one of --capture-root or --hessian-file")
 
@@ -126,11 +159,6 @@ def main() -> None:
             hessians[expert] = saved_hessians[f"hessian_{expert:03d}"].to(device)
 
     base = torch.eye(16, device=device) if args.init == "identity" else hadamard16(device=device)
-    parameter_shape = (16, 16) if args.sharing == "shared" else (4096 // 16, 16, 16)
-    parameter = torch.zeros(parameter_shape, dtype=torch.float32, device=device, requires_grad=True)
-    optimizer = torch.optim.Adam([parameter], lr=args.lr)
-    generator = torch.Generator(device="cpu").manual_seed(args.seed + args.layer + (1000 if args.init == "had16" else 0))
-
     @torch.no_grad()
     def score(rotation: torch.Tensor) -> float:
         return float(sum(_expert_loss(*weights[e], hessians[e], rotation, args.search_grid) for e in experts))
@@ -138,17 +166,39 @@ def main() -> None:
     identity_score = score(torch.eye(16, device=device))
     had16_score = score(hadamard16(device=device))
     history = []
-    for _ in range(args.steps):
-        picked = torch.randperm(len(experts), generator=generator)[: args.batch].tolist()
-        rotation = cayley_rotation(parameter, base)
-        loss = sum(_expert_loss(*weights[experts[i]], hessians[experts[i]], rotation, args.search_grid) for i in picked) / len(picked)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_([parameter], 1.0)
-        optimizer.step()
-        history.append(float(loss.detach()))
-    learned = cayley_rotation(parameter, base).detach()
-    learned_score = score(learned)
+    if args.optimizer == "cayley":
+        parameter_shape = (16, 16) if args.sharing == "shared" else (4096 // 16, 16, 16)
+        parameter = torch.zeros(parameter_shape, dtype=torch.float32, device=device, requires_grad=True)
+        optimizer = torch.optim.Adam([parameter], lr=args.lr)
+        generator = torch.Generator(device="cpu").manual_seed(args.seed + args.layer + (1000 if args.init == "had16" else 0))
+        for _ in range(args.steps):
+            picked = torch.randperm(len(experts), generator=generator)[: args.batch].tolist()
+            rotation = cayley_rotation(parameter, base)
+            loss = sum(_expert_loss(*weights[experts[i]], hessians[experts[i]], rotation, args.search_grid) for i in picked) / len(picked)
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_([parameter], 1.0)
+            optimizer.step()
+            history.append(float(loss.detach()))
+        learned = cayley_rotation(parameter, base).detach()
+        learned_score = score(learned)
+    else:
+        learned = base.expand(4096 // 16, -1, -1).clone()
+        learned_score = score(learned)
+        history.append(learned_score)
+        for _ in range(args.steps):
+            target = _procrustes_target(weights, experts, learned, args.search_grid)
+            candidates = [learned]
+            for alpha in (1.0, 0.5, 0.25, 0.1):
+                candidates.append(_polar((1.0 - alpha) * learned + alpha * target))
+            scores = [score(candidate) for candidate in candidates]
+            best = min(range(len(scores)), key=scores.__getitem__)
+            learned, new_score = candidates[best], scores[best]
+            history.append(new_score)
+            if new_score >= learned_score * (1.0 - 1e-7):
+                learned_score = new_score
+                break
+            learned_score = new_score
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     save_file({f"layer_{args.layer:03d}": learned.cpu().contiguous()}, str(args.output), metadata={
@@ -162,7 +212,7 @@ def main() -> None:
         "layer": args.layer,
         "init": args.init,
         "experts": experts,
-        "algorithm": {"parameterization": "Cayley SO16", "sharing": args.sharing, "steps": args.steps, "batch": args.batch, "lr": args.lr, "search_grid": args.search_grid, "seed": args.seed, "surrogate": "fit Hessian weighted exact-grid RTN reconstruction"},
+        "algorithm": {"parameterization": "Cayley SO16" if args.optimizer == "cayley" else "alternating orthogonal Procrustes O16", "optimizer": args.optimizer, "sharing": args.sharing, "steps": args.steps, "batch": args.batch, "lr": args.lr, "search_grid": args.search_grid, "seed": args.seed, "surrogate": "fit Hessian weighted exact-grid RTN reconstruction"},
         "scores": {"identity": identity_score, "had16": had16_score, "learned": learned_score, "gain_vs_identity": 1.0 - learned_score / identity_score, "gain_vs_init": 1.0 - learned_score / (identity_score if args.init == "identity" else had16_score)},
         "history": history,
         "orthogonality_max_abs": orthogonality_error(learned),
