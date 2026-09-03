@@ -119,7 +119,10 @@ if MODE:
             if rotation.ndim not in (2, 3) or rotation.shape[-2:] != (16, 16):
                 raise RuntimeError(f"invalid layer {layer} rotation shape {tuple(rotation.shape)}")
             gram = rotation.transpose(-1, -2) @ rotation
-            eye = torch.eye(16, dtype=rotation.dtype)
+            # vLLM constructs each worker under a rank-local default CUDA
+            # device.  A learned safetensors matrix may therefore already be
+            # on that device; keep the orthogonality reference colocated.
+            eye = torch.eye(16, dtype=rotation.dtype, device=rotation.device)
             if float((gram - eye).abs().max()) > 2e-4:
                 raise RuntimeError(f"layer {layer} rotation is not orthogonal")
             # vLLM constructs the model in its target-device context.  Keeping
