@@ -1,0 +1,11 @@
+# V3 pre-attribution amendment: executable 6-bpw ladder
+
+Date: 2026-09-03. This amendment is frozen before any Shapley coalition KLD is measured and before confirmation is opened.
+
+The initial plan named allocation units `(layer, expert, projection)` and a ladder `{NVFP4, MXFP6, FP8, BF16}`. Inspection of the pinned runtime established that its fused MoE object requires one weight/activation ABI for an entire routed-expert layer. Expert- or projection-level precision mixing would therefore be an in-process fake-quant result, not a locally served end-to-end measurement.
+
+The executable allocation is consequently restricted to whole routed MoE layers and the native ladder `{ModelOpt NVFP4 W4A4, B12X MXFP6 W6A8}`. Both paths are present in the pinned image. A narrow runtime bridge dispatches `quant_algo=MXFP6` entries in ModelOpt's existing mixed-precision map to the bundled B12X method; all NVFP4 entries retain the existing ModelOpt method. The mixed checkpoint must pass import, weight-binding, deterministic canary, and exact KLD-capture gates before confirmation.
+
+Exact payload accounting includes packed weights, every per-block scale byte, every `weight_scale_2`, and every `input_scale`. Uniform NVFP4 is 4.5000076294 bpw and uniform MXFP6 is 6.2500076294 bpw for these matrices. Thirty-six MXFP6 layers would be 6.0000076294 bpw and is rejected as over budget. The largest whole-layer assignment below 6.0 is therefore 35 MXFP6 plus seven NVFP4 layers, 5.9583409627 bpw. The 0.0416590373-bpw underspend is forced by executable layer granularity.
+
+Teacher-anchored attribution uses the 16-window conditional-fit role and two deterministic antithetic Monte Carlo permutations over the 42 routed layers. Every unique coalition endpoint is served and scored end-to-end. Marginal KLD reductions are averaged per layer; sample standard deviation, standard error, endpoint efficiency remainder, and top-35 allocation stability after each permutation are reported. The 35 layers with highest mean marginal KLD reduction receive MXFP6. The design, candidate recipes, analysis code, seed, and stopping rule are hashed before the first coalition score. Confirmation remains unopened until the resulting mixed checkpoint and declared controls are frozen.
