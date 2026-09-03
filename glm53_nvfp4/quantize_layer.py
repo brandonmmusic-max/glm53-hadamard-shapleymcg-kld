@@ -48,7 +48,13 @@ def main() -> None:
     metrics = {}
     source_files = set()
     prefix = checkpoint.expert_prefix(args.layer, args.expert_start).split(f"layers.{args.layer}.")[0]
-    torch.cuda.reset_peak_memory_stats(torch.device(args.device))
+    cuda_device = torch.device(args.device)
+    if cuda_device.type != "cuda":
+        raise ValueError("quantization requires a CUDA device")
+    # torch 2.11 can reject reset_peak_memory_stats before the CUDA context exists.
+    torch.cuda.set_device(cuda_device)
+    torch.empty(0, device=cuda_device)
+    torch.cuda.reset_peak_memory_stats(cuda_device)
 
     for expert in range(args.expert_start, args.expert_end):
         base = f"{prefix}layers.{args.layer}.mlp.experts.{expert}"
@@ -101,7 +107,7 @@ def main() -> None:
         "roles_sha256": sha256_file(args.roles),
         "output": {"path": str(args.output), "bytes": args.output.stat().st_size, "sha256": sha256_file(args.output), "tensors": len(output)},
         "metrics": metrics,
-        "peak_cuda_bytes": torch.cuda.max_memory_allocated(torch.device(args.device)),
+        "peak_cuda_bytes": torch.cuda.max_memory_allocated(cuda_device),
         "elapsed_seconds": time.time() - started,
     }
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
