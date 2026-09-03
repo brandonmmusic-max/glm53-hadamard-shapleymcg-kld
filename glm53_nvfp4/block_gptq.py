@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import torch
 
-from .modelopt import E2M1_LEVELS, E4M3_MAX, PackedNVFP4, choose_global_scale, dequantize, pack_codes, quantize
+from .modelopt import E2M1_LEVELS, E4M3_MAX, PackedNVFP4, choose_global_scale, dequantize, pack_codes
 
 
 @torch.no_grad()
@@ -102,6 +102,33 @@ def gptq_quantize(
 
 
 @torch.no_grad()
+def mse_rtn_quantize(
+    weight: torch.Tensor,
+    *,
+    global_scale: torch.Tensor | float | None = None,
+    group_size: int = 16,
+    search_grid: int = 8,
+) -> PackedNVFP4:
+    """RTN control with the exact same global scale and MSE scale-search grid."""
+    x = weight.float()
+    if x.ndim != 2 or x.shape[1] % group_size:
+        raise ValueError(f"invalid weight shape {tuple(x.shape)}")
+    blocks = x.reshape(x.shape[0], x.shape[1] // group_size, group_size)
+    gs = choose_global_scale(x).to(x.device) if global_scale is None else torch.as_tensor(global_scale, dtype=torch.float32, device=x.device)
+    block_scale = _best_scales(blocks, gs, search_grid)
+    real_scale = block_scale.float() * gs
+    levels = E2M1_LEVELS.to(x.device)
+    mids = (levels[1:] + levels[:-1]) / 2
+    codes = torch.bucketize((blocks / real_scale[..., None]).abs(), mids).to(torch.uint8)
+    codes |= ((blocks < 0).to(torch.uint8) << 3)
+    return PackedNVFP4(
+        weight=pack_codes(codes.reshape_as(x)).cpu(),
+        weight_scale=block_scale.cpu(),
+        weight_scale_2=gs.reshape(()).cpu(),
+    )
+
+
+@torch.no_grad()
 def weighted_error(weight: torch.Tensor, packed: PackedNVFP4, hessian: torch.Tensor) -> float:
     delta = (weight.float().cpu() - dequantize(packed)).reshape(weight.shape[0], -1, 16)
     value = torch.einsum("nbg,bgh,nbh->", delta, hessian.float().cpu(), delta)
@@ -121,9 +148,10 @@ def compare_packed_to_rtn(
     hessian: torch.Tensor,
     candidate: PackedNVFP4,
     global_scale: torch.Tensor | float,
+    search_grid: int = 8,
 ) -> dict:
     gs = torch.as_tensor(global_scale, dtype=torch.float32)
-    baseline = quantize(weight.cpu(), global_scale=gs)
+    baseline = mse_rtn_quantize(weight, global_scale=gs, search_grid=search_grid)
     candidate_error = weighted_error(weight, candidate, hessian)
     baseline_error = weighted_error(weight, baseline, hessian)
     return {"gptq": candidate_error, "rtn": baseline_error, "ratio": candidate_error / baseline_error}
