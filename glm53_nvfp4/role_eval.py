@@ -19,7 +19,7 @@ HARNESS_COMMIT = "565aca8ded8f015eeecb7f9e2aa99e1da965e5e7"
 TEACHER_REVISION = "95f4fdd94bf29989db2e0d1054e4931f55edb6aa"
 FULL_PANEL_SOURCE_REVISION = "7c378d5f17dba158c4c803eff27c346dd0615660"
 MODEL_REVISION = "a6c167b62691b2bac901344b65cb651a70f53e43"
-METRIC_CODE_SHA256 = "989b6639d559713286345e4c7ed0d964606489f701080572f791611d8147b9d2"
+METRIC_CODE_SHA256 = "752af6740595791f300cf47f15ef81f8ca85245d5282fc600ef26ee57eae41e6"
 VOCAB_LIMIT = 154880
 ALIGNMENT_BAND = (0.20, 0.995)
 
@@ -56,7 +56,8 @@ def _load_teacher(path: Path, window: dict) -> np.ndarray:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--role", choices=("selection", "confirmation"), required=True)
+    parser.add_argument("--role", choices=("conditional-fit", "selection", "confirmation"), required=True)
+    parser.add_argument("--selection-wave", type=int, choices=(1, 2, 3))
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--teacher-root", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -72,6 +73,13 @@ def main() -> None:
     _verify_harness()
     roles = json.loads(args.roles.read_text())
     windows = roles["roles"][args.role]
+    if args.selection_wave is not None:
+        if args.role != "selection":
+            raise RuntimeError("--selection-wave is valid only for selection")
+        wave_ids = set(roles["selection_waves"][str(args.selection_wave)])
+        windows = [window for window in windows if window["id"] in wave_ids]
+        if len(windows) != len(wave_ids):
+            raise RuntimeError("selection wave ids do not resolve exactly")
     teacher_manifest_path = args.teacher_root / "logits/full-panel/full-panel-manifest.json"
     teacher_manifest = json.loads(teacher_manifest_path.read_text())
     if (
@@ -135,9 +143,10 @@ def main() -> None:
             raise RuntimeError(f"{window['id']}: token geometry mismatch")
         teacher_path = args.teacher_root / window["teacher_path"]
         teacher_entry = teacher_files[window["teacher_path"]]
+        expected_manifest_role = "conditional-fit" if args.role == "conditional-fit" else args.role
         if (
             teacher_entry["window_id"] != window["id"]
-            or teacher_entry["role"] != args.role
+            or teacher_entry["role"] != expected_manifest_role
             or teacher_entry["domain"] != window["domain"]
             or teacher_entry["token_ids_sha256"] != window["input_sha256"]
             or teacher_entry["prediction_positions"] != window["prediction_positions"]
