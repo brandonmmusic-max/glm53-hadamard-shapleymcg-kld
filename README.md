@@ -18,7 +18,9 @@ routed MoE layer 3 with the fixed-H16 candidate:
 
 Lower KLD is better. These are 16-window conditional-fit measurements with
 20,000 paired bootstrap replicates. They are not yet a full-model or final
-holdout claim.
+holdout claim. All valid GLM NVFP4 rows use the runtime-qualified packed-W4
+with BF16 expert activations (`W4A16_NVFP4`) at an exact 4.5000076294-bpw
+routed-weight payload; no W4A4 result is claimed.
 
 ![Current layer-3 KLD comparison](figures/current-layer3-kld.png)
 
@@ -59,6 +61,11 @@ The live next tests are:
    rate, followed by a fresh selection wave; and
 2. fixed-H16 NVFP4/MXFP6 candidates with Shapley global allocation constrained
    to 6 bpw, followed by equal-cost controls and confirmation.
+
+The executable 6-bpw ladder mixes whole layers of NVFP4 W4A16 and MXFP6 W6A8.
+Its 5.9583409627-bpw budget is exact routed-weight storage. The Shapley and
+uniform-depth controls have identical 35/7 format counts, so their comparison
+isolates allocation value despite the different native activation formats.
 
 No 10-30% GLM improvement has been measured yet. That range remains a
 hypothesis until the full-model run completes.
