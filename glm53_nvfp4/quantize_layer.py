@@ -12,6 +12,13 @@ import torch.nn.functional as F
 from safetensors.torch import save_file
 
 from .block_gptq import block_hessian, compare_packed_to_rtn, gptq_quantize
+from .block_rotation import (
+    apply_weight_rotation,
+    hadamard16,
+    load_layer_rotation,
+    orthogonality_error,
+    rotate_block_hessian,
+)
 from .capture import LayerCapture
 from .modelopt import choose_global_scale
 from .shard_index import IndexedCheckpoint, sha256_file
@@ -36,6 +43,9 @@ def main() -> None:
     parser.add_argument("--max-samples", type=int, default=256)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--search-grid", type=int, default=8)
+    parser.add_argument("--rotation", choices=("identity", "had16", "learned"), default="identity")
+    parser.add_argument("--rotation-file", type=Path)
+    parser.add_argument("--projections", choices=("all", "gate-up"), default="all")
     args = parser.parse_args()
     if not (3 <= args.layer <= 44 and 0 <= args.expert_start < args.expert_end <= 288):
         raise ValueError("invalid layer or expert range")
@@ -55,6 +65,14 @@ def main() -> None:
     torch.cuda.set_device(cuda_device)
     torch.empty(0, device=cuda_device)
     torch.cuda.reset_peak_memory_stats(cuda_device)
+    if args.rotation == "identity":
+        rotation = None
+    elif args.rotation == "had16":
+        rotation = hadamard16(device=cuda_device)
+    else:
+        if args.rotation_file is None:
+            raise ValueError("learned rotation requires --rotation-file")
+        rotation = load_layer_rotation(args.rotation_file, args.layer, device=cuda_device)
 
     for expert in range(args.expert_start, args.expert_end):
         base = f"{prefix}layers.{args.layer}.mlp.experts.{expert}"
@@ -67,31 +85,46 @@ def main() -> None:
         h_in = block_hessian(hidden, route)
         gate = checkpoint.get(names["gate_proj"]).to(args.device)
         up = checkpoint.get(names["up_proj"]).to(args.device)
-        down = checkpoint.get(names["down_proj"]).to(args.device)
-        shared = choose_global_scale(gate, up).to(args.device)
-        packed_gate = gptq_quantize(gate, h_in, global_scale=shared, search_grid=args.search_grid)
-        packed_up = gptq_quantize(up, h_in, global_scale=shared, search_grid=args.search_grid)
-        gate_cmp = compare_packed_to_rtn(gate, h_in, packed_gate, shared, args.search_grid)
-        up_cmp = compare_packed_to_rtn(up, h_in, packed_up, shared, args.search_grid)
+        if rotation is None:
+            gate_basis, up_basis, h_basis = gate, up, h_in
+        else:
+            gate_basis = apply_weight_rotation(gate, rotation)
+            up_basis = apply_weight_rotation(up, rotation)
+            h_basis = rotate_block_hessian(h_in, rotation)
+        shared = choose_global_scale(gate_basis, up_basis).to(args.device)
+        packed_gate = gptq_quantize(gate_basis, h_basis, global_scale=shared, search_grid=args.search_grid)
+        packed_up = gptq_quantize(up_basis, h_basis, global_scale=shared, search_grid=args.search_grid)
+        gate_cmp = compare_packed_to_rtn(gate_basis, h_basis, packed_gate, shared, args.search_grid)
+        up_cmp = compare_packed_to_rtn(up_basis, h_basis, packed_up, shared, args.search_grid)
 
         # Match the official Glm5NextTextExperts activation exactly.
-        middle = F.silu(F.linear(hidden, gate).clamp(max=10.0)) * F.linear(hidden, up).clamp(-10.0, 10.0)
-        h_mid = block_hessian(middle, route)
-        packed_down = gptq_quantize(down, h_mid, search_grid=args.search_grid)
-        down_cmp = compare_packed_to_rtn(down, h_mid, packed_down, packed_down.weight_scale_2, args.search_grid)
-        for proj, packed in (("gate_proj", packed_gate), ("up_proj", packed_up), ("down_proj", packed_down)):
+        packed_items = [("gate_proj", packed_gate), ("up_proj", packed_up)]
+        down = h_mid = middle = None
+        down_cmp = None
+        if args.projections == "all":
+            down = checkpoint.get(names["down_proj"]).to(args.device)
+            middle = F.silu(F.linear(hidden, gate).clamp(max=10.0)) * F.linear(hidden, up).clamp(-10.0, 10.0)
+            h_mid = block_hessian(middle, route)
+            packed_down = gptq_quantize(down, h_mid, search_grid=args.search_grid)
+            down_cmp = compare_packed_to_rtn(down, h_mid, packed_down, packed_down.weight_scale_2, args.search_grid)
+            packed_items.append(("down_proj", packed_down))
+        for proj, packed in packed_items:
             stem = f"{base}.{proj}"
             output[f"{stem}.weight"] = packed.weight
             output[f"{stem}.weight_scale"] = packed.weight_scale
             output[f"{stem}.weight_scale_2"] = packed.weight_scale_2
-        metrics[str(expert)] = {"samples": sample_counts[expert], "gate": gate_cmp, "up": up_cmp, "down": down_cmp}
-        del hidden, route, h_in, h_mid, gate, up, down, middle
+        metrics[str(expert)] = {"samples": sample_counts[expert], "gate": gate_cmp, "up": up_cmp}
+        if down_cmp is not None:
+            metrics[str(expert)]["down"] = down_cmp
+        del hidden, route, h_in, h_basis, gate, up, gate_basis, up_basis
+        if down is not None:
+            del h_mid, down, middle
         torch.cuda.empty_cache()
         print(json.dumps({"layer": args.layer, "expert": expert, "ratios": {"gate": gate_cmp["ratio"], "up": up_cmp["ratio"], "down": down_cmp["ratio"]}}), flush=True)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     save_file(output, str(args.output), metadata={
-        "schema": "glm53-nvfp4-v2.modelopt-layer-chunk.v1",
+        "schema": "glm53-nvfp4-v3.modelopt-rotated-layer-chunk.v1" if rotation is not None else "glm53-nvfp4-v2.modelopt-layer-chunk.v1",
         "layer": str(args.layer),
         "expert_range": f"{args.expert_start}:{args.expert_end}",
         "source_revision": "a6c167b62691b2bac901344b65cb651a70f53e43",
@@ -101,7 +134,7 @@ def main() -> None:
         "layer": args.layer,
         "expert_start": args.expert_start,
         "expert_end": args.expert_end,
-        "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2, "control": "matched MSE-search-grid RTN"},
+        "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2, "control": "matched MSE-search-grid RTN", "rotation": args.rotation, "rotation_scope": "routed gate/up input only", "projections": args.projections, "rotation_file": str(args.rotation_file) if args.rotation_file else None, "orthogonality_max_abs": orthogonality_error(rotation) if rotation is not None else 0.0},
         "source_files": [{"path": name, "bytes": (args.source / name).stat().st_size, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
         "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
         "roles_sha256": sha256_file(args.roles),
