@@ -71,14 +71,14 @@ def main() -> None:
         shared = choose_global_scale(gate, up).to(args.device)
         packed_gate = gptq_quantize(gate, h_in, global_scale=shared, search_grid=args.search_grid)
         packed_up = gptq_quantize(up, h_in, global_scale=shared, search_grid=args.search_grid)
-        gate_cmp = compare_packed_to_rtn(gate, h_in, packed_gate, shared)
-        up_cmp = compare_packed_to_rtn(up, h_in, packed_up, shared)
+        gate_cmp = compare_packed_to_rtn(gate, h_in, packed_gate, shared, args.search_grid)
+        up_cmp = compare_packed_to_rtn(up, h_in, packed_up, shared, args.search_grid)
 
         # Match the official Glm5NextTextExperts activation exactly.
         middle = F.silu(F.linear(hidden, gate).clamp(max=10.0)) * F.linear(hidden, up).clamp(-10.0, 10.0)
         h_mid = block_hessian(middle, route)
         packed_down = gptq_quantize(down, h_mid, search_grid=args.search_grid)
-        down_cmp = compare_packed_to_rtn(down, h_mid, packed_down, packed_down.weight_scale_2)
+        down_cmp = compare_packed_to_rtn(down, h_mid, packed_down, packed_down.weight_scale_2, args.search_grid)
         for proj, packed in (("gate_proj", packed_gate), ("up_proj", packed_up), ("down_proj", packed_down)):
             stem = f"{base}.{proj}"
             output[f"{stem}.weight"] = packed.weight
@@ -101,7 +101,7 @@ def main() -> None:
         "layer": args.layer,
         "expert_start": args.expert_start,
         "expert_end": args.expert_end,
-        "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2},
+        "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2, "control": "matched MSE-search-grid RTN"},
         "source_files": [{"path": name, "bytes": (args.source / name).stat().st_size, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
         "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
         "roles_sha256": sha256_file(args.roles),
