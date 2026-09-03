@@ -120,7 +120,10 @@ def main() -> None:
         if down is not None:
             del h_mid, down, middle
         torch.cuda.empty_cache()
-        print(json.dumps({"layer": args.layer, "expert": expert, "ratios": {"gate": gate_cmp["ratio"], "up": up_cmp["ratio"], "down": down_cmp["ratio"]}}), flush=True)
+        ratios = {"gate": gate_cmp["ratio"], "up": up_cmp["ratio"]}
+        if down_cmp is not None:
+            ratios["down"] = down_cmp["ratio"]
+        print(json.dumps({"layer": args.layer, "expert": expert, "ratios": ratios}), flush=True)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     save_file(output, str(args.output), metadata={
