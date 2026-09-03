@@ -53,6 +53,15 @@ for GPU in 0 1 2 3; do
 done
 for pid in "${pids[@]}"; do wait "$pid"; done
 
+# The quantizers run as root inside the pinned image and create mode-0600
+# files on the bind mount.  Host-side freezing and candidate assembly run as
+# the invoking user, so normalize only this layer's completed artifacts.
+sudo -n find "$ROOT/chunks" -maxdepth 1 -type f \
+  -name "mxfp6-layer-$L3-experts-*.safetensors" -exec chmod 0644 {} +
+sudo -n find "$ROOT/evidence" -maxdepth 1 -type f \
+  \( -name "mxfp6-layer-$L3-experts-*.json" -o -name "mxfp6-layer-$L3-experts-*.log" \) \
+  -exec chmod 0644 {} +
+
 PYTHONPATH="$REPO" /usr/bin/python3 - <<PY
 import json
 from pathlib import Path
