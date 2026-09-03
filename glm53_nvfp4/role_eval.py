@@ -17,6 +17,7 @@ from .shard_index import sha256_file
 HARNESS = Path("/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval")
 HARNESS_COMMIT = "565aca8ded8f015eeecb7f9e2aa99e1da965e5e7"
 TEACHER_REVISION = "95f4fdd94bf29989db2e0d1054e4931f55edb6aa"
+FULL_PANEL_SOURCE_REVISION = "7c378d5f17dba158c4c803eff27c346dd0615660"
 MODEL_REVISION = "a6c167b62691b2bac901344b65cb651a70f53e43"
 METRIC_CODE_SHA256 = "989b6639d559713286345e4c7ed0d964606489f701080572f791611d8147b9d2"
 VOCAB_LIMIT = 154880
@@ -71,6 +72,17 @@ def main() -> None:
     _verify_harness()
     roles = json.loads(args.roles.read_text())
     windows = roles["roles"][args.role]
+    teacher_manifest_path = args.teacher_root / "logits/full-panel/full-panel-manifest.json"
+    teacher_manifest = json.loads(teacher_manifest_path.read_text())
+    if (
+        teacher_manifest.get("repo_id") != "brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits"
+        or teacher_manifest.get("source_hub_revision") != FULL_PANEL_SOURCE_REVISION
+        or teacher_manifest.get("model_revision") != MODEL_REVISION
+        or teacher_manifest.get("logits_dtype") != "float32"
+        or teacher_manifest.get("vocab_size") != VOCAB_LIMIT
+    ):
+        raise RuntimeError("full-panel teacher manifest identity mismatch")
+    teacher_files = {item["path"]: item for item in teacher_manifest["logit_files"]}
     if args.role == "confirmation":
         if args.freeze_receipt is None:
             raise RuntimeError("confirmation requires a frozen-candidate receipt")
@@ -93,6 +105,7 @@ def main() -> None:
         "config_id": args.config_id,
         "roles_sha256": sha256_file(args.roles),
         "teacher_revision": TEACHER_REVISION,
+        "teacher_manifest_sha256": sha256_file(teacher_manifest_path),
         "harness_commit": HARNESS_COMMIT,
         "metric_code_sha256": METRIC_CODE_SHA256,
         "freeze_receipt_sha256": sha256_file(args.freeze_receipt) if args.freeze_receipt else None,
@@ -101,7 +114,7 @@ def main() -> None:
     }
     if args.resume and manifest_path.is_file():
         prior = json.loads(manifest_path.read_text())
-        for key in ("role", "config_id", "roles_sha256", "teacher_revision", "harness_commit", "metric_code_sha256", "freeze_receipt_sha256"):
+        for key in ("role", "config_id", "roles_sha256", "teacher_revision", "teacher_manifest_sha256", "harness_commit", "metric_code_sha256", "freeze_receipt_sha256"):
             if prior[key] != manifest[key]:
                 raise RuntimeError(f"resume identity mismatch: {key}")
         manifest = prior
@@ -121,7 +134,19 @@ def main() -> None:
         if tokens.shape != (window["prediction_positions"] + 1,):
             raise RuntimeError(f"{window['id']}: token geometry mismatch")
         teacher_path = args.teacher_root / window["teacher_path"]
+        teacher_entry = teacher_files[window["teacher_path"]]
+        if (
+            teacher_entry["window_id"] != window["id"]
+            or teacher_entry["role"] != args.role
+            or teacher_entry["domain"] != window["domain"]
+            or teacher_entry["token_ids_sha256"] != window["input_sha256"]
+            or teacher_entry["prediction_positions"] != window["prediction_positions"]
+            or teacher_path.stat().st_size != teacher_entry["bytes"]
+        ):
+            raise RuntimeError(f"{window['id']}: role and teacher manifest disagree")
         _, expected_teacher_sha = _hub_expected(args.teacher_root, window["teacher_path"])
+        if expected_teacher_sha != teacher_entry["sha256"]:
+            raise RuntimeError(f"{window['id']}: Hub and teacher manifest hashes disagree")
         teacher_sha = sha256_file(teacher_path)
         if teacher_sha != expected_teacher_sha:
             raise RuntimeError(f"{window['id']}: teacher file hash mismatch")
@@ -136,7 +161,7 @@ def main() -> None:
             raise RuntimeError(f"{window['id']}: alignment guard failed: {teacher_alignment}")
         record_path = write_window_records(
             records, run_id=args.run_id, config_id=args.config_id,
-            window_id=window["id"], document_id=window["domain"], domain=window["domain"],
+            window_id=window["id"], document_id=teacher_entry["document_id"], domain=window["domain"],
             context_len=window["prediction_positions"] + 1, scores=scores,
             protocol_sha256=roles["source_panel_sha256"], student_logits_sha256=student.logits_sha256,
             extra_meta={"role": args.role, "teacher_sha256": teacher_sha, "roles_sha256": manifest["roles_sha256"]},
