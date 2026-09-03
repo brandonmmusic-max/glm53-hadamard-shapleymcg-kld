@@ -1,0 +1,165 @@
+"""Fit one shared block-16 orthogonal routed-input rotation for a GLM MoE layer.
+
+Only sealed fit-role BF16 captures and BF16 expert weights enter the optimizer.
+The surrogate is Hessian-weighted gate/up reconstruction on the exact E2M1 and
+E4M3 grid. The selected quantized point is treated as piecewise constant so
+the rotation receives a useful gradient toward the current grid point.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import torch
+from safetensors.torch import save_file
+
+from .block_gptq import _best_scales, block_hessian
+from .block_rotation import (
+    apply_weight_rotation,
+    cayley_rotation,
+    hadamard16,
+    orthogonality_error,
+    rotate_block_hessian,
+)
+from .capture import LayerCapture
+from .modelopt import E2M1_LEVELS, choose_global_scale
+from .shard_index import IndexedCheckpoint, sha256_file
+
+
+@torch.no_grad()
+def _dequantize_on_device(weight: torch.Tensor, global_scale: torch.Tensor, search_grid: int) -> torch.Tensor:
+    blocks = weight.reshape(weight.shape[0], weight.shape[1] // 16, 16)
+    scale = _best_scales(blocks, global_scale, search_grid).float() * global_scale
+    levels = E2M1_LEVELS.to(weight.device)
+    mids = (levels[1:] + levels[:-1]) / 2
+    codes = torch.bucketize((blocks / scale[..., None]).abs(), mids)
+    return (levels[codes] * torch.sign(blocks) * scale[..., None]).reshape_as(weight)
+
+
+def _expert_loss(
+    gate: torch.Tensor,
+    up: torch.Tensor,
+    hessian: torch.Tensor,
+    rotation: torch.Tensor,
+    search_grid: int,
+) -> torch.Tensor:
+    gate_r = apply_weight_rotation(gate, rotation)
+    up_r = apply_weight_rotation(up, rotation)
+    h_r = rotate_block_hessian(hessian, rotation)
+    global_scale = choose_global_scale(gate_r.detach(), up_r.detach()).to(gate_r.device)
+    gate_q = _dequantize_on_device(gate_r.detach(), global_scale, search_grid)
+    up_q = _dequantize_on_device(up_r.detach(), global_scale, search_grid)
+    gate_delta = gate_r - gate_q
+    up_delta = up_r - up_q
+    gate_blocks = gate_delta.reshape(gate.shape[0], -1, 16)
+    up_blocks = up_delta.reshape(up.shape[0], -1, 16)
+    loss = torch.einsum("obg,bgh,obh->", gate_blocks, h_r, gate_blocks)
+    loss = loss + torch.einsum("obg,bgh,obh->", up_blocks, h_r, up_blocks)
+    return loss / (gate.numel() + up.numel())
+
+
+def _selected_experts(count: int) -> list[int]:
+    if not 1 <= count <= 288:
+        raise ValueError("expert count must be 1..288")
+    return torch.linspace(0, 287, count).round().to(torch.int64).unique().tolist()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source-index", type=Path)
+    parser.add_argument("--capture-root", type=Path, required=True)
+    parser.add_argument("--roles", type=Path, required=True)
+    parser.add_argument("--layer", type=int, required=True)
+    parser.add_argument("--init", choices=("identity", "had16"), required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--experts", type=int, default=16)
+    parser.add_argument("--max-samples", type=int, default=256)
+    parser.add_argument("--steps", type=int, default=30)
+    parser.add_argument("--batch", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument("--search-grid", type=int, default=8)
+    parser.add_argument("--seed", type=int, default=20260903)
+    args = parser.parse_args()
+    if not 3 <= args.layer <= 44:
+        raise ValueError("layer must be 3..44")
+    if args.batch < 1 or args.batch > args.experts:
+        raise ValueError("invalid batch")
+
+    started = time.time()
+    device = torch.device(args.device)
+    torch.cuda.set_device(device)
+    torch.empty(0, device=device)
+    torch.cuda.reset_peak_memory_stats(device)
+    checkpoint = IndexedCheckpoint(args.source, args.source_index)
+    capture = LayerCapture(args.capture_root, args.layer, args.roles, args.max_samples)
+    experts = _selected_experts(args.experts)
+    prefix = checkpoint.expert_prefix(args.layer, experts[0]).split(f"layers.{args.layer}.")[0]
+    weights: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+    hessians: dict[int, torch.Tensor] = {}
+    source_files: set[str] = set()
+    for expert in experts:
+        stem = f"{prefix}layers.{args.layer}.mlp.experts.{expert}"
+        gate_name, up_name = f"{stem}.gate_proj.weight", f"{stem}.up_proj.weight"
+        source_files.update((checkpoint.weight_map[gate_name], checkpoint.weight_map[up_name]))
+        weights[expert] = (checkpoint.get(gate_name).to(device), checkpoint.get(up_name).to(device))
+        hidden, route = capture.samples(expert)
+        hessians[expert] = block_hessian(hidden.to(device), route.to(device))
+
+    base = torch.eye(16, device=device) if args.init == "identity" else hadamard16(device=device)
+    parameter = torch.zeros((16, 16), dtype=torch.float32, device=device, requires_grad=True)
+    optimizer = torch.optim.Adam([parameter], lr=args.lr)
+    generator = torch.Generator(device="cpu").manual_seed(args.seed + args.layer + (1000 if args.init == "had16" else 0))
+
+    @torch.no_grad()
+    def score(rotation: torch.Tensor) -> float:
+        return float(sum(_expert_loss(*weights[e], hessians[e], rotation, args.search_grid) for e in experts))
+
+    identity_score = score(torch.eye(16, device=device))
+    had16_score = score(hadamard16(device=device))
+    history = []
+    for _ in range(args.steps):
+        picked = torch.randperm(len(experts), generator=generator)[: args.batch].tolist()
+        rotation = cayley_rotation(parameter, base)
+        loss = sum(_expert_loss(*weights[experts[i]], hessians[experts[i]], rotation, args.search_grid) for i in picked) / len(picked)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_([parameter], 1.0)
+        optimizer.step()
+        history.append(float(loss.detach()))
+    learned = cayley_rotation(parameter, base).detach()
+    learned_score = score(learned)
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    save_file({f"layer_{args.layer:03d}": learned.cpu().contiguous()}, str(args.output), metadata={
+        "schema": "glm53-nvfp4-v3.learned-block16-layer.v1",
+        "layer": str(args.layer),
+        "init": args.init,
+    })
+    receipt = {
+        "schema": "glm53-nvfp4-v3.learned-block16-layer-receipt.v1",
+        "layer": args.layer,
+        "init": args.init,
+        "experts": experts,
+        "algorithm": {"parameterization": "Cayley SO16", "steps": args.steps, "batch": args.batch, "lr": args.lr, "search_grid": args.search_grid, "seed": args.seed, "surrogate": "fit Hessian weighted exact-grid RTN reconstruction"},
+        "scores": {"identity": identity_score, "had16": had16_score, "learned": learned_score, "gain_vs_identity": 1.0 - learned_score / identity_score, "gain_vs_init": 1.0 - learned_score / (identity_score if args.init == "identity" else had16_score)},
+        "history": history,
+        "orthogonality_max_abs": orthogonality_error(learned),
+        "source_files": [{"path": name, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
+        "roles_sha256": sha256_file(args.roles),
+        "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
+        "output": {"path": str(args.output), "bytes": args.output.stat().st_size, "sha256": sha256_file(args.output)},
+        "elapsed_seconds": time.time() - started,
+        "peak_cuda_bytes": torch.cuda.max_memory_allocated(device),
+    }
+    args.receipt.parent.mkdir(parents=True, exist_ok=True)
+    args.receipt.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(receipt["scores"], sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

@@ -25,6 +25,19 @@ def hadamard16(*, device=None, dtype=torch.float32) -> torch.Tensor:
     return h / 4.0
 
 
+def cayley_rotation(parameter: torch.Tensor, base: torch.Tensor | None = None) -> torch.Tensor:
+    """Map an unconstrained 16x16 parameter to an orthogonal rotation."""
+    if parameter.shape != (GROUP_SIZE, GROUP_SIZE):
+        raise ValueError(f"expected a 16x16 parameter, got {tuple(parameter.shape)}")
+    skew = 0.5 * (parameter - parameter.T)
+    eye = torch.eye(GROUP_SIZE, dtype=parameter.dtype, device=parameter.device)
+    rotation = torch.linalg.solve((eye + skew).T, (eye - skew).T).T
+    if base is not None:
+        _validate_rotation(base)
+        rotation = base.to(device=rotation.device, dtype=rotation.dtype) @ rotation
+    return rotation
+
+
 def _validate_rotation(rotation: torch.Tensor, blocks: int | None = None) -> None:
     expected = {(GROUP_SIZE, GROUP_SIZE)}
     if blocks is not None:

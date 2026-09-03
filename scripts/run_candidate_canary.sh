@@ -27,7 +27,7 @@ mkdir -p "$SESSION"
 rotation_env=()
 rotation_mount=()
 if [ "$ROTATION" != identity ]; then
-  rotation_env+=( -e PYTHONPATH=/runtime-patch -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$ROTATED_LAYERS" )
+  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$ROTATED_LAYERS" )
   rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
 fi
 if [ "$ROTATION" = learned ]; then
