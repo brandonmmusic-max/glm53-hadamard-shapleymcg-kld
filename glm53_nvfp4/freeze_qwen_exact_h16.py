@@ -150,6 +150,16 @@ def main() -> None:
             _file(root / "runtime_patch/sitecustomize.py"),
             _file(root / "scripts/run_kld_v3.sh"),
         ],
+        "quantization_files": [
+            _file(root / "glm53_nvfp4/quantize_layer.py"),
+            _file(root / "glm53_nvfp4/block_gptq.py"),
+            _file(root / "glm53_nvfp4/block_rotation.py"),
+            _file(root / "glm53_nvfp4/calibrate_input_scale.py"),
+            _file(root / "glm53_nvfp4/candidate.py"),
+            _file(root / "glm53_nvfp4/validate_layer.py"),
+            _file(root / "scripts/run_qwen_exact_had16_full_v9.sh"),
+            _file(root / "scripts/run_qwen_exact_h16_qualification_v10.sh"),
+        ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
