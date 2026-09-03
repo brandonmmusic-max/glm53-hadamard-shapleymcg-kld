@@ -12,3 +12,10 @@ Use the 120-shard BF16 model `zai-org/GLM-5.3-Flash-BF16@a6c167b62691b2bac901344
 
 Use a layer-streamed BF16 loader and a copy-on-write stock NVFP4 carrier. Require a one-layer pack/load/KLD pilot before the 42-layer campaign. This avoids the impossible full-model residency assumption and makes every output layer independently receipted.
 
+## 4. 2026-09-03: capture transport and checkpoint ABI correction
+
+Use the teacher dataset's pinned BF16 hidden-state and router captures as a streamed calibration transport, selecting only the sealed fit-role rows. The resulting claim is capture-calibrated group-16 GPTQ, not causal propagation through a locally resident BF16 model. Store ModelOpt block scales in logical row-major checkpoint order; the 128-by-4 swizzle is performed after load for kernel ingestion. Retain the failed pre-pilot swizzled reconstruction as negative-control evidence.
+
+## 5. 2026-09-03: post-quality benchmark implementation
+
+Pin `local-inference-lab/llm-inference-bench` at commit `d115feee75095081bda2520aa046986a8885f449`. Only after the registered KLD confirmation passes, measure target-only decode, Estonia, and LAVD as three distinct candidate-only regimes. Do not treat their throughput or task scores as part of the primary KLD estimand.
