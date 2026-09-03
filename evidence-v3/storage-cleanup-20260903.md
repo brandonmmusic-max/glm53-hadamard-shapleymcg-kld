@@ -15,3 +15,11 @@
   - `/media/brandonmusic/klcstore`: 468779331584 bytes available (`df -h`: 437G), up from 308027191296 bytes in the pre-cleanup audit.
   - `/home/brandonmusic` root filesystem: 215525388288 bytes available (`df -h`: 201G); unchanged apart from normal live-campaign growth.
 - Forward allocation: all V3 MXFP6 layer payloads are routed to `/media/brandonmusic/klcstore/bmxfp4-glm53/mxfp6-v3`; only the already-running learned-rotation chunks remain on the root filesystem.
+
+## Completed-layer Hugging Face partial cleanup
+
+- Removed scope: only `*.incomplete` files in teacher calibration cache directories `layer-003` through `layer-012`, after both H16 and learned V3 validations for those layers had passed and their materialized calibration captures had been released.
+- Pre-removal payload: 20 files, 14488153471 bytes; 13 files were zero length.
+- Safety check: no active `hf download` process targeted any calibration layer at removal time.
+- Preserved: all completed Hub files and metadata, all layers still pending quantization, and every teacher-logit role file.
+- Recoverability: these were abandoned partial transfers rather than accepted artifacts; Hugging Face can download them again from the pinned teacher revision if needed.
