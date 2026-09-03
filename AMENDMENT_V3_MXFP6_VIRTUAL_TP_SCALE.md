@@ -1,0 +1,5 @@
+# V3 MXFP6 virtual-TP grouped-scale ABI correction
+
+Date: 2026-09-03. The first mixed one-layer runtime canary selected the B12X MXFP6 MoE method for layer 3 on every worker, then failed during checkpoint loading before readiness or inference. The exact error was a 64-versus-128 mismatch in vLLM's `_load_w2` path. Inspection showed that the generic virtual-TP loader treated the down-projection's 64 stored group-32 scales as 64 logical elements and requested 128 scale groups for the padded DCP4/EP4 shard.
+
+The pinned vLLM loader already exposes parameter attributes for this geometry. The mixed-runtime bridge now marks only the B12X MXFP6 `w2_weight_scale` parameter with group size 32 and logical K equal to `stored_groups * 32`. It does not alter any tensor, quantizer, layer assignment, rotation, numerical kernel, role, metric, or decision rule. The failed server log and mixed-candidate receipt remain preserved. The exact one-layer load/generation canary must pass before bulk MXFP6 production or Shapley scoring.
