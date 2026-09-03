@@ -223,9 +223,13 @@ if MODE:
             else:
                 output = torch.einsum("...bg,bgh->...bh", view, rotation)
             if not self._forward_logged:
+                if torch.distributed.is_available() and torch.distributed.is_initialized():
+                    rank = str(torch.distributed.get_rank())
+                else:
+                    rank = os.environ.get("LOCAL_RANK", "unknown")
                 print(
                     "GLM53_BLOCK_ROTATION_FORWARD "
-                    f"layer={self.layer} rank={os.environ.get('LOCAL_RANK', 'unknown')} "
+                    f"layer={self.layer} rank={rank} "
                     f"rotation_sha256={self._rotation_sha256} "
                     f"hidden_width={hidden_states.shape[-1]} dtype={hidden_states.dtype}",
                     flush=True,

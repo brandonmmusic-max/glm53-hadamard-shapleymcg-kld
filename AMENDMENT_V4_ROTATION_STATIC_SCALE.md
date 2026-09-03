@@ -6,4 +6,6 @@ The V4 exploratory correction computes one routed fit-only activation amax per e
 
 Before any new protected rotation claim, the minimum diagnostic is stock versus identity-GPTQ/fresh-scale versus H16-GPTQ/stale-scale versus the identical H16 weights with fresh H16 scales. Initial work uses layer 44 and opened conditional-fit rows. A layer-3 replication follows before a full-model rebuild. Every non-identity KLD run must record and validate first-forward evidence for every intended layer/rank, exact rotation checksum, hidden width 4096, and BF16 input dtype.
 
+The first layer-44 stale-scale run emitted one first-forward marker per worker but exposed that `LOCAL_RANK` is absent in the vLLM worker environment. Rank evidence is therefore taken from the initialized PyTorch distributed process group on subsequent runs; the original `rank=unknown` markers are preserved rather than rewritten.
+
 The actual qualified runtime selects FlashInfer CUTLASS NVFP4. This deviates from the original prompt's MARLIN-then-HUMMING rule and remains explicitly labeled; no W4A16 result will be mixed into the W4A4 claim. Selection wave 1 is already opened, so all V4 development uses fit or conditional-fit data until a new candidate family is frozen under a fresh selection-wave authorization.
