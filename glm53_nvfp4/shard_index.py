@@ -9,9 +9,9 @@ from safetensors import safe_open
 
 
 class IndexedCheckpoint:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, index_path: Path | None = None):
         self.root = root.resolve()
-        index_path = self.root / "model.safetensors.index.json"
+        index_path = index_path or (self.root / "model.safetensors.index.json")
         payload = json.loads(index_path.read_text())
         self.weight_map: dict[str, str] = payload["weight_map"]
         self.metadata = payload.get("metadata", {})
@@ -55,4 +55,3 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             h.update(block)
     return h.hexdigest()
-
