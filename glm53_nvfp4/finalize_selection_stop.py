@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .candidate import routed_expert_payload_names
 from .shard_index import sha256_file
 
 
@@ -20,13 +21,7 @@ def candidate_inventory(candidate: Path, carrier: Path) -> dict:
     candidate_index = json.loads(index_path.read_text())
     overlay_path = candidate / "OVERLAY.json"
     overlay = json.loads(overlay_path.read_text())
-    targets = {
-        name
-        for name in original["weight_map"]
-        if ".mlp.experts." in name
-        and name.endswith((".weight", ".weight_scale", ".weight_scale_2"))
-        and not name.endswith(".input_scale")
-    }
+    targets = routed_expert_payload_names(original["weight_map"])
     expected = 42 * 288 * 3 * 3
     if len(targets) != expected:
         raise RuntimeError(f"unexpected carrier target inventory: {len(targets)}")
@@ -83,6 +78,22 @@ def update_record(record: dict, *, selection: dict, terminal_receipt: Path, sour
                 "decision_impact": (
                     "This is a protocol-timing deviation. It does not rescue the candidate: the candidate was stopped on the "
                     "protected selection role, and confirmation remained unopened."
+                ),
+            }
+        )
+    if not any(item.get("stage") == "terminal-inventory-validation" for item in record["deviations"]):
+        record["deviations"].append(
+            {
+                "stage": "terminal-inventory-validation",
+                "classification": "post-selection validator correction",
+                "description": (
+                    "The first terminal finalization attempt used a generic expert-name filter that also counted 1,728 "
+                    "NextN/MTP layer-45 tensors in the carrier. It therefore failed closed at 110,592 tensors before writing "
+                    "a terminal receipt. The validator and confirmation freeze path were narrowed to routed layers 3 through 44."
+                ),
+                "decision_impact": (
+                    "No candidate bytes, selection records, selection decision, or holdout access changed. The actual candidate "
+                    "already contained exactly 108,864 changed tensors from layers 3 through 44."
                 ),
             }
         )

@@ -34,4 +34,7 @@ def test_selection_stop_completes_record_without_opening_confirmation(tmp_path):
     assert record["authorization"]["compute"] == "completed"
     freeze = next(x for x in record["invariants"] if x["name"] == "candidate_freeze")
     assert freeze["status"] == "pending"
-    assert len(record["deviations"]) == 1
+    assert {item["stage"] for item in record["deviations"]} == {
+        "source-integrity-timing",
+        "terminal-inventory-validation",
+    }
