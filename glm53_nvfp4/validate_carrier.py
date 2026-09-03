@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 
-from .modelopt import PackedNVFP4, dequantize, unpack_codes
+from .modelopt import PackedNVFP4, dequantize, unpack_codes, unswizzle_block_scale
 from .shard_index import IndexedCheckpoint, sha256_file
 
 
@@ -23,10 +23,10 @@ def error_metrics(reference: torch.Tensor, reconstructed: torch.Tensor) -> dict[
     }
 
 
-def naive_scale_dequant(packed: PackedNVFP4) -> torch.Tensor:
+def wrong_swizzled_storage_dequant(packed: PackedNVFP4) -> torch.Tensor:
     codes = unpack_codes(packed.weight, low_first=True)
     blocks = codes.reshape(codes.shape[0], codes.shape[1] // 16, 16)
-    scale = packed.weight_scale[: blocks.shape[0], : blocks.shape[1]].float()
+    scale = unswizzle_block_scale(packed.weight_scale, blocks.shape[0], blocks.shape[1]).float()
     return (blocks * scale[..., None] * packed.weight_scale_2.float()).reshape_as(codes)
 
 
@@ -59,9 +59,9 @@ def main() -> None:
         reference = source.get(source_name)
         results[projection] = {
             "shape": list(reference.shape),
-            "exact_low_nibble_swizzled_scale": error_metrics(reference, dequantize(packed, low_first=True)),
+            "exact_low_nibble_logical_scale": error_metrics(reference, dequantize(packed, low_first=True)),
             "wrong_high_nibble_first": error_metrics(reference, dequantize(packed, low_first=False)),
-            "wrong_unswizzled_physical_scale": error_metrics(reference, naive_scale_dequant(packed)),
+            "wrong_kernel_swizzle_in_checkpoint": error_metrics(reference, wrong_swizzled_storage_dequant(packed)),
             "global_scale": float(packed.weight_scale_2),
         }
 

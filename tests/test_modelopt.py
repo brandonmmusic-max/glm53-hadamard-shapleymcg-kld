@@ -21,7 +21,7 @@ def test_gate_up_share_global_scale_and_shapes():
     qg, qu = quantize_gate_up_pair(gate, up)
     assert torch.equal(qg.weight_scale_2, qu.weight_scale_2)
     assert qg.weight.shape == (32, 32)
-    assert qg.weight_scale.shape == (128, 4)
+    assert qg.weight_scale.shape == (32, 4)
     assert qg.weight.dtype == torch.uint8
     assert qg.weight_scale.dtype == torch.float8_e4m3fn
     assert dequantize(qg).shape == gate.shape
