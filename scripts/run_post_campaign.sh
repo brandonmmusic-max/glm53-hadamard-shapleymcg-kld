@@ -51,7 +51,28 @@ python3 -m glm53_nvfp4.paired_role_analysis --role selection \
   --candidate-run "$CAMPAIGN/kld/records/selection-candidate" --stock-run "$CAMPAIGN/kld/records/selection-stock" \
   --roles "$CAMPAIGN/roles/roles.json" --output "$EVIDENCE/selection-analysis.json"
 analysis_decision=$(python3 -c "import json; print(json.load(open('$EVIDENCE/selection-analysis.json'))['decision'])")
-[ "$analysis_decision" = continue ] || { log "selection stopped candidate: $analysis_decision"; exit 1; }
+if [ "$analysis_decision" != continue ]; then
+  [ "$analysis_decision" = stop ] || { log "invalid selection decision: $analysis_decision"; exit 1; }
+  log "selection stopped candidate; preserving confirmation and skipping benchmarks"
+  python3 -m glm53_nvfp4.preflight --roles "$CAMPAIGN/roles/roles.json" --output "$EVIDENCE/final-state.json"
+  systemctl --user is-active --quiet glm53-r10-tp2-mtp3.service && { log "restoration failure: service active"; exit 1; }
+  systemctl --user is-active --quiet klc-backend.service || { log "restoration failure: backend inactive"; exit 1; }
+  ss -ltn 'sport = :8000' | tail -n +2 | grep -q . && { log "restoration failure: port 8000 open"; exit 1; }
+  python3 -m glm53_nvfp4.finalize_selection_stop "$RECORD" --campaign "$CAMPAIGN" \
+    --carrier /home/brandonmusic/models/GLM-5.3-Flash-NVFP4 --candidate-commit "$(git rev-parse HEAD)" \
+    --source-verify "$EVIDENCE/hf-source-verify.json" --teacher-verify "$EVIDENCE/hf-teacher-subset-verify.json" \
+    --final-state "$EVIDENCE/final-state.json" \
+    --output "$EVIDENCE/selection-terminal.json"
+  python3 -m glm53_nvfp4.write_report --campaign "$CAMPAIGN" --output "$REPO/REPORT_GLM53_FLASH_NVFP4_V2.md"
+  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage campaign-complete-selection-stop \
+    --evidence "$REPO/REPORT_GLM53_FLASH_NVFP4_V2.md" --evidence "$EVIDENCE/selection-terminal.json" \
+    --evidence "$EVIDENCE/final-state.json" \
+    --note 'Candidate failed the preregistered selection gate; confirmation and performance remained unopened.'
+  python3 /home/brandonmusic/.codex/skills/local-inference-lab-running-sealed-experiments/scripts/experiment_record.py validate "$RECORD" --strict
+  python3 /home/brandonmusic/.codex/skills/local-inference-lab-running-sealed-experiments/scripts/experiment_record.py verify-seal "$RECORD"
+  log "post-campaign workflow complete with decision selection-stop"
+  exit 0
+fi
 
 log "freezing complete candidate and analysis identities"
 python3 -m glm53_nvfp4.freeze_candidate --candidate "$CAMPAIGN/candidates/uniform-gptq" \
