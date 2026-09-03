@@ -10,7 +10,7 @@ ROTATIONS=$CAMPAIGN/rotations-v3/learned-full.safetensors
 ROLES=$CAMPAIGN/roles/roles-v3.json
 EVIDENCE=$CAMPAIGN/evidence-v3
 RECORD=$CAMPAIGN/experiment-record-v3.json
-FREEZE=$EVIDENCE/rotation-wave1-freeze-v2.json
+FREEZE=$EVIDENCE/rotation-wave1-freeze-v3.json
 WINNER=$EVIDENCE/rotation-wave1-winner.json
 
 cd "$REPO"
@@ -40,8 +40,8 @@ if [ ! -f "$FREEZE" ]; then
     --learned-rotations "$ROTATIONS" --roles "$ROLES" --campaign "$CAMPAIGN" \
     --output "$FREEZE"
 fi
-if ! stage_recorded rotation-wave1-v2-frozen; then
-  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage rotation-wave1-v2-frozen \
+if ! stage_recorded rotation-wave1-v3-frozen; then
+  python3 -m glm53_nvfp4.stage_receipt "$RECORD" --stage rotation-wave1-v3-frozen \
     --evidence "$FREEZE" --note 'Stock, H16, and learned full-model endpoints frozen before end-to-end scoring.'
 fi
 

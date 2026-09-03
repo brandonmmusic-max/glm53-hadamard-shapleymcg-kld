@@ -21,6 +21,7 @@ PRODUCTION=glm53-flash-exl3-k4-tp4-vision-mtp3
 PORT=8016
 LOCK=/run/lock/klc/model-stack.lock
 CACHE_DIR=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77
+LEARNED_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 mkdir -p "$SESSION"
 
@@ -82,6 +83,7 @@ docker run -d --name "$TEST" --gpus all --network host --shm-size 32g --restart 
   "${rotation_env[@]}" \
   -v "$MODEL_DIR:/model:ro" \
   -v /home/brandonmusic/models/GLM-5.3-Flash-NVFP4:/home/brandonmusic/models/GLM-5.3-Flash-NVFP4:ro \
+  -v "$LEARNED_CHUNK_ROOT:$LEARNED_CHUNK_ROOT:ro" \
   -v "$CAMPAIGN:$CAMPAIGN:ro" -v "$CACHE_DIR:/cache:rw" "${rotation_mount[@]}" \
   "$IMAGE" -lc "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model \
     --served-model-name $MODEL_NAME --host 0.0.0.0 --port $PORT --language-model-only \

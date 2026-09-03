@@ -96,7 +96,12 @@ def main() -> None:
         "roles": _file(args.roles),
         "implementation": implementation,
         "analysis_harness": harness,
-        "analysis_files": [_file(root / "glm53_nvfp4/role_eval.py"), _file(root / "glm53_nvfp4/paired_role_analysis.py"), _file(root / "runtime_patch/sitecustomize.py")],
+        "analysis_files": [
+            _file(root / "glm53_nvfp4/role_eval.py"),
+            _file(root / "glm53_nvfp4/paired_role_analysis.py"),
+            _file(root / "runtime_patch/sitecustomize.py"),
+            _file(root / "scripts/run_kld_v3.sh"),
+        ],
         "validations": validations,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

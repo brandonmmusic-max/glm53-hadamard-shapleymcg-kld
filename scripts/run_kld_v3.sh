@@ -28,6 +28,7 @@ TEST=glm53-nvfp4-v3-kld
 PORT=8016
 LOCK=/run/lock/klc/model-stack.lock
 CACHE_DIR=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77
+LEARNED_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large
 CAPTURES=$CAMPAIGN/kld-v3/captures/$RUN_ID
 SESSION=$CAMPAIGN/kld-v3/sessions/$RUN_ID
 mkdir -p "$CAPTURES" "$SESSION" "$CAMPAIGN/kld-v3/records"
@@ -81,6 +82,7 @@ docker run -d --name "$TEST" --gpus all --network host --shm-size 32g --restart 
   -e CUBLAS_WORKSPACE_CONFIG=:4096:8 -e NVIDIA_TF32_OVERRIDE=0 -e VLLM_KLD_CAPTURE_DIR="$CAPTURES" \
   "${rotation_env[@]}" -v "$MODEL_DIR:/model:ro" \
   -v /home/brandonmusic/models/GLM-5.3-Flash-NVFP4:/home/brandonmusic/models/GLM-5.3-Flash-NVFP4:ro \
+  -v "$LEARNED_CHUNK_ROOT:$LEARNED_CHUNK_ROOT:ro" \
   -v "$CAMPAIGN:$CAMPAIGN:rw" -v "$CACHE_DIR:/cache:rw" -v "$CAPTURES:$CAPTURES:rw" "${rotation_mount[@]}" \
   "$IMAGE" -lc "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model \
     --served-model-name $MODEL_NAME --host 0.0.0.0 --port $PORT --language-model-only \
