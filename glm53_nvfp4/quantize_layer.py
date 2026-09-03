@@ -321,6 +321,12 @@ def main() -> None:
             "roles_sha256": sha256_file(args.roles),
         })
         hessian_receipt = {"path": str(args.hessian_output), "bytes": args.hessian_output.stat().st_size, "sha256": sha256_file(args.hessian_output)}
+    partial_capture_path = (
+        args.capture_root
+        / f"layers/layer-{args.layer:03d}/partial-fit-capture.json"
+        if args.capture_root
+        else None
+    )
     receipt = {
         "schema": "glm53-nvfp4-v2.layer-chunk-receipt.v1",
         "layer": args.layer,
@@ -329,6 +335,14 @@ def main() -> None:
         "algorithm": {"format": "ModelOpt NVFP4 E2M1", "group_size": 16, "search_grid": args.search_grid, "global_scale_refit_iterations": 2 if args.gptq_geometry == "full" else 0, "percdamp": 0.01, "max_samples": args.max_samples, "route_power": 2, "control": "matched MSE-search-grid RTN", "gptq_geometry": args.gptq_geometry, "column_block": 128 if args.gptq_geometry == "full" else 16, "static_in_group_act_order": True, "gate_up_rows_concatenated": args.gptq_geometry == "full", "packed_adaptation": "one representable FP32 global scale per checkpoint tensor family; E4M3 block scales", "rotation": args.rotation, "rotation_scope": args.rotation_scope, "projections": args.projections, "rotation_file": str(args.rotation_file) if args.rotation_file else None, "orthogonality_max_abs": {"in": orthogonality_error(rotation_in) if rotation_in is not None else 0.0, "mid": orthogonality_error(rotation_mid) if rotation_mid is not None else 0.0}},
         "source_files": [{"path": name, "bytes": (args.source / name).stat().st_size, "sha256": sha256_file(args.source / name)} for name in sorted(source_files)],
         "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json") if args.capture_root else None,
+        "partial_capture": (
+            {
+                "path": str(partial_capture_path),
+                "sha256": sha256_file(partial_capture_path),
+            }
+            if partial_capture_path is not None and partial_capture_path.is_file()
+            else None
+        ),
         "hessian_input": {"path": str(args.hessian_file), "sha256": sha256_file(args.hessian_file)} if args.hessian_file else None,
         "hessian_output": hessian_receipt,
         "roles_sha256": sha256_file(args.roles),

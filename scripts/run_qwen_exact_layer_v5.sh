@@ -9,6 +9,7 @@ LAYER=$1
 ROTATION=$2
 ROTATION_FILE=${3:-}
 ROTATION_SCOPE=${GLM53_ROTATION_SCOPE:-all}
+MAX_SAMPLES=${GLM53_MAX_SAMPLES:-256}
 [[ "$LAYER" =~ ^[0-9]+$ ]] && [ "$LAYER" -ge 3 ] && [ "$LAYER" -le 44 ] || { echo "layer must be 3..44" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
@@ -66,7 +67,7 @@ for gpu in 0 1 2 3; do
     --output "$CHUNKS/$ROTATION-layer-$L3-experts-$S3-$E3.safetensors" \
     --receipt "$EVIDENCE/$ROTATION-layer-$L3-experts-$S3-$E3.json" \
     --layer "$LAYER" --expert-start "$start" --expert-end "$end" --device cuda:0 \
-    --max-samples 10000 --search-grid 12 --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
+    --max-samples "$MAX_SAMPLES" --search-grid 12 --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
     --gptq-geometry full --projections all "${extra[@]}" >"$LOGS/quant-gpu-$gpu.log" 2>&1 &
   pids+=("$!")
 done
@@ -91,7 +92,7 @@ scale_extra=()
 CUDA_VISIBLE_DEVICES=0 /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.calibrate_input_scale \
   --capture-root "$CAPTURE" --source "$SOURCE" --source-index "$SOURCE_INDEX" \
   --roles "$ROLES" --layer "$LAYER" --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
-  --device cuda:0 --max-samples 10000 --output "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors" \
+  --device cuda:0 --max-samples "$MAX_SAMPLES" --output "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors" \
   --receipt "$EVIDENCE/input-scales.json" "${scale_extra[@]}" >"$LOGS/input-scales.log" 2>&1
 chunks+=(--chunk "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors")
 
