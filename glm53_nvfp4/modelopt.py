@@ -1,4 +1,8 @@
-"""Exact ModelOpt-style NVFP4 E2M1 packing used by the GLM carrier."""
+"""Exact on-disk ModelOpt NVFP4 E2M1 packing used by the GLM carrier.
+
+Checkpoint block scales are logical row-major tensors. Runtime kernels swizzle
+them after loading; the swizzle helpers remain here for ABI tests only.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -93,7 +97,7 @@ def quantize(
     codes = _nearest_codes(blocks / real_scale[..., None]).reshape_as(x)
     return PackedNVFP4(
         weight=pack_codes(codes, low_first=low_first).contiguous(),
-        weight_scale=swizzle_block_scale(block_scale).contiguous(),
+        weight_scale=block_scale.contiguous(),
         weight_scale_2=gs.reshape(()).contiguous(),
     )
 
@@ -102,7 +106,7 @@ def quantize(
 def dequantize(packed: PackedNVFP4, *, group_size: int = 16, low_first: bool = True) -> torch.Tensor:
     codes = unpack_codes(packed.weight, low_first=low_first)
     blocks = codes.reshape(codes.shape[0], codes.shape[1] // group_size, group_size)
-    logical_scale = unswizzle_block_scale(packed.weight_scale, blocks.shape[0], blocks.shape[1])
+    logical_scale = packed.weight_scale[: blocks.shape[0], : blocks.shape[1]]
     return (blocks * logical_scale.float()[..., None] * packed.weight_scale_2.float()).reshape_as(codes)
 
 
