@@ -74,6 +74,7 @@ def main() -> None:
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--layer", type=int, required=True)
     parser.add_argument("--init", choices=("identity", "had16"), required=True)
+    parser.add_argument("--sharing", choices=("shared", "per-block"), default="shared")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
@@ -111,7 +112,8 @@ def main() -> None:
         hessians[expert] = block_hessian(hidden.to(device), route.to(device))
 
     base = torch.eye(16, device=device) if args.init == "identity" else hadamard16(device=device)
-    parameter = torch.zeros((16, 16), dtype=torch.float32, device=device, requires_grad=True)
+    parameter_shape = (16, 16) if args.sharing == "shared" else (4096 // 16, 16, 16)
+    parameter = torch.zeros(parameter_shape, dtype=torch.float32, device=device, requires_grad=True)
     optimizer = torch.optim.Adam([parameter], lr=args.lr)
     generator = torch.Generator(device="cpu").manual_seed(args.seed + args.layer + (1000 if args.init == "had16" else 0))
 
@@ -139,13 +141,14 @@ def main() -> None:
         "schema": "glm53-nvfp4-v3.learned-block16-layer.v1",
         "layer": str(args.layer),
         "init": args.init,
+        "sharing": args.sharing,
     })
     receipt = {
         "schema": "glm53-nvfp4-v3.learned-block16-layer-receipt.v1",
         "layer": args.layer,
         "init": args.init,
         "experts": experts,
-        "algorithm": {"parameterization": "Cayley SO16", "steps": args.steps, "batch": args.batch, "lr": args.lr, "search_grid": args.search_grid, "seed": args.seed, "surrogate": "fit Hessian weighted exact-grid RTN reconstruction"},
+        "algorithm": {"parameterization": "Cayley SO16", "sharing": args.sharing, "steps": args.steps, "batch": args.batch, "lr": args.lr, "search_grid": args.search_grid, "seed": args.seed, "surrogate": "fit Hessian weighted exact-grid RTN reconstruction"},
         "scores": {"identity": identity_score, "had16": had16_score, "learned": learned_score, "gain_vs_identity": 1.0 - learned_score / identity_score, "gain_vs_init": 1.0 - learned_score / (identity_score if args.init == "identity" else had16_score)},
         "history": history,
         "orthogonality_max_abs": orthogonality_error(learned),

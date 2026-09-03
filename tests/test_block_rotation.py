@@ -53,3 +53,11 @@ def test_cayley_is_orthogonal_and_respects_base():
     based = cayley_rotation(torch.zeros_like(parameter), hadamard16())
     assert orthogonality_error(rotation) < 2e-6
     assert torch.equal(based, hadamard16())
+
+
+def test_batched_cayley_is_orthogonal():
+    generator = torch.Generator().manual_seed(57)
+    parameter = torch.randn(4, 16, 16, generator=generator) * 0.1
+    rotation = cayley_rotation(parameter, hadamard16())
+    assert rotation.shape == (4, 16, 16)
+    assert orthogonality_error(rotation) < 2e-6
