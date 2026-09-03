@@ -16,6 +16,31 @@ class PackedNVFP4:
     weight_scale_2: torch.Tensor
 
 
+def _align_up(value: int, alignment: int) -> int:
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def swizzle_block_scale(scale: torch.Tensor) -> torch.Tensor:
+    """Convert logical [rows,K/16] E4M3 scales to ModelOpt's 128x4 tiled storage."""
+    if scale.ndim != 2:
+        raise ValueError(f"scale must be 2D, got {tuple(scale.shape)}")
+    rows, cols = scale.shape
+    rows_padded = _align_up(rows, 128)
+    cols_padded = _align_up(cols, 4)
+    padded = torch.zeros((rows_padded, cols_padded), dtype=scale.dtype, device=scale.device)
+    padded[:rows, :cols] = scale
+    tiled = padded.reshape(rows_padded // 128, 4, 32, cols_padded // 4, 4)
+    return tiled.permute(0, 3, 2, 1, 4).contiguous().reshape(rows_padded, cols_padded)
+
+
+def unswizzle_block_scale(scale: torch.Tensor, rows: int, cols: int) -> torch.Tensor:
+    rows_padded = _align_up(rows, 128)
+    cols_padded = _align_up(cols, 4)
+    tiled = scale.reshape(rows_padded // 128, cols_padded // 4, 32, 4, 4)
+    logical = tiled.permute(0, 3, 2, 1, 4).contiguous().reshape(rows_padded, cols_padded)
+    return logical[:rows, :cols]
+
+
 def _nearest_codes(x: torch.Tensor) -> torch.Tensor:
     levels = E2M1_LEVELS.to(x.device)
     mids = (levels[1:] + levels[:-1]) / 2
@@ -68,7 +93,7 @@ def quantize(
     codes = _nearest_codes(blocks / real_scale[..., None]).reshape_as(x)
     return PackedNVFP4(
         weight=pack_codes(codes, low_first=low_first).contiguous(),
-        weight_scale=block_scale.contiguous(),
+        weight_scale=swizzle_block_scale(block_scale).contiguous(),
         weight_scale_2=gs.reshape(()).contiguous(),
     )
 
@@ -77,10 +102,10 @@ def quantize(
 def dequantize(packed: PackedNVFP4, *, group_size: int = 16, low_first: bool = True) -> torch.Tensor:
     codes = unpack_codes(packed.weight, low_first=low_first)
     blocks = codes.reshape(codes.shape[0], codes.shape[1] // group_size, group_size)
-    return (blocks * packed.weight_scale.float()[..., None] * packed.weight_scale_2.float()).reshape_as(codes)
+    logical_scale = unswizzle_block_scale(packed.weight_scale, blocks.shape[0], blocks.shape[1])
+    return (blocks * logical_scale.float()[..., None] * packed.weight_scale_2.float()).reshape_as(codes)
 
 
 def quantize_gate_up_pair(gate: torch.Tensor, up: torch.Tensor) -> tuple[PackedNVFP4, PackedNVFP4]:
     shared = choose_global_scale(gate, up)
     return quantize(gate, global_scale=shared), quantize(up, global_scale=shared)
-

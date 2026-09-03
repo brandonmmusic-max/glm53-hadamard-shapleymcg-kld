@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import torch
 
-from .modelopt import E2M1_LEVELS, E4M3_MAX, PackedNVFP4, choose_global_scale, dequantize, pack_codes, quantize
+from .modelopt import E2M1_LEVELS, E4M3_MAX, PackedNVFP4, choose_global_scale, dequantize, pack_codes, quantize, swizzle_block_scale
 
 
 @torch.no_grad()
@@ -96,7 +96,7 @@ def gptq_quantize(
     codes |= ((deq < 0).to(torch.uint8) << 3)
     return PackedNVFP4(
         weight=pack_codes(codes.reshape_as(x)).cpu(),
-        weight_scale=block_scale.cpu(),
+        weight_scale=swizzle_block_scale(block_scale).cpu(),
         weight_scale_2=gs.reshape(()).cpu(),
     )
 
