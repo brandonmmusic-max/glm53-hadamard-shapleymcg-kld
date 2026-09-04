@@ -12,7 +12,7 @@ Audit target: `74471a7cba6a5058088608d71949f36a541045b1`, branch
 [p4-astra-agent-plan-v1.json](../experiments/p4-astra-agent-plan-v1.json).
 Its older `repository.base_commit` is provenance, not the checkout audited.
 Sibling worktrees and later kernel/codec commits are outside this verdict.
-The [receipt](../evidence/opened/codec-v2/p4-astra/receipt.json) pins inspected
+The [critic receipt](../evidence/opened/codec-v2/p4-astra/critic-receipt.json) pins inspected
 sources, this report, and the replayable diagnostic script.
 
 Only source, public ISA documentation, and synthetic CPU diagnostics were
