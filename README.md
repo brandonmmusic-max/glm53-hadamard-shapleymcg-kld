@@ -114,6 +114,10 @@ close enough to continue. It does **not** prove that the codec beats NVFP4.
 The current correctness run uses the materialized dynamic arm even at small M;
 the first E=288 small-M specialization emitted non-finite values and remains a
 preserved diagnostic, so decode speed is not yet qualified.
+Against the already completed decoded-GPTQ NVFP4 control on the identical
+windows, the physical kernel is `+0.00065167` KLD (`1.22%` worse), with BCa
+95% CI `[-0.002540,+0.005982]`. That comparison is a null—not a demonstrated
+loss—but it does not pass the strict quality gate.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.
