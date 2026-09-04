@@ -61,6 +61,7 @@ def main() -> None:
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--conditional-analysis", type=Path, required=True)
     parser.add_argument("--adaptive-analysis", type=Path, action="append", default=[])
+    parser.add_argument("--prior-selection-analysis", type=Path, action="append", default=[])
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--selection-wave", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -134,17 +135,36 @@ def main() -> None:
                 "decision": row["decision"],
             }
         )
-    if adaptive_rows and selected["candidate_mean_kld"] != min(
-        row["candidate_mean_kld"] for row in adaptive_rows
-    ):
-        raise RuntimeError("selected candidate is not the lowest-KLD adaptive candidate")
+    prior_selection_rows = []
+    for path in args.prior_selection_analysis:
+        row = json.loads(path.read_text())
+        if row.get("role") != "selection" or row.get("decision") != "fail":
+            raise RuntimeError(f"prior selection analysis is not a failed selection: {path}")
+        prior_selection_rows.append(
+            {
+                "analysis": _file(path),
+                "candidate_mean_kld": row["candidate_mean_kld"],
+                "stock_mean_kld": row["stock_mean_kld"],
+                "mean_delta_kld": row["mean_delta_kld"],
+                "relative_improvement": row["relative_improvement"],
+                "delta_ci95_bca": row["delta_ci95_bca"],
+                "decision": row["decision"],
+            }
+        )
+    if adaptive_rows:
+        ranked = sorted(row["candidate_mean_kld"] for row in adaptive_rows)
+        expected_rank = len(prior_selection_rows)
+        if expected_rank >= len(ranked) or selected["candidate_mean_kld"] != ranked[expected_rank]:
+            raise RuntimeError(
+                "selected candidate is not the next conditional-fit candidate after prior selection rejections"
+            )
 
     payload = {
         "schema": "glm53-nvfp4-v10.selective-h16-selection-freeze.v1",
         "status": "pass",
         "selection_wave_authorized": args.selection_wave,
         "adaptation_role": "conditional-fit",
-        "selection_rule": "lowest mean KLD among bounded depth-partition candidates, requiring registered conditional-fit pass",
+        "selection_rule": "next-lowest mean KLD among bounded depth-partition candidates after any prior protected-selection rejection, requiring registered conditional-fit pass",
         "selected_layers": layers,
         "recipe": {
             "rotation": "normalized Sylvester H16",
@@ -173,6 +193,7 @@ def main() -> None:
         "selective_build": _file(args.build),
         "selected_conditional_fit_analysis": _file(args.conditional_analysis),
         "adaptive_candidate_analyses": adaptive_rows,
+        "prior_selection_rejections": prior_selection_rows,
         "roles": _file(args.roles),
         "selection_window_ids": roles["selection_waves"][wave],
         "implementation": implementation,
