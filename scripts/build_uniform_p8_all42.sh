@@ -17,6 +17,12 @@ LOG=$ROOT/build.log
 THERMAL=$ROOT/thermal-events.jsonl
 LOCK=/run/lock/klc/model-stack.lock
 REUSE20=${GLM53_P8_LAYER20_SIDECARS:-/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8/layer20-sidecars}
+THERMAL_PAUSE_C=${GLM53_P8_THERMAL_PAUSE_C:-94}
+THERMAL_RESUME_C=${GLM53_P8_THERMAL_RESUME_C:-88}
+
+[[ "$THERMAL_PAUSE_C" =~ ^[0-9]+$ ]] || { echo "invalid GLM53_P8_THERMAL_PAUSE_C=$THERMAL_PAUSE_C" >&2; exit 2; }
+[[ "$THERMAL_RESUME_C" =~ ^[0-9]+$ ]] || { echo "invalid GLM53_P8_THERMAL_RESUME_C=$THERMAL_RESUME_C" >&2; exit 2; }
+[ "$THERMAL_RESUME_C" -lt "$THERMAL_PAUSE_C" ] || { echo "thermal resume must be below pause" >&2; exit 2; }
 
 mkdir -p "$SIDECARS" "$RECEIPTS" "$WORK"
 cd "$REPO"
@@ -107,12 +113,12 @@ encode_layer() {
       alive=1
       gpu=${gpus[$slot]}
       temp=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits -i "$gpu" | tr -d ' ')
-      if [ "${stopped_flags[$slot]}" -eq 0 ] && [ "$temp" -ge 89 ]; then
+      if [ "${stopped_flags[$slot]}" -eq 0 ] && [ "$temp" -ge "$THERMAL_PAUSE_C" ]; then
         kill -STOP "$pid"
         stopped_flags[$slot]=1
         printf '{"at":"%s","event":"pause","layer":%d,"gpu":%d,"pid":%d,"temperature_c":%d}\n' \
           "$(date --iso-8601=seconds)" "$layer" "$gpu" "$pid" "$temp" >>"$THERMAL"
-      elif [ "${stopped_flags[$slot]}" -eq 1 ] && [ "$temp" -le 78 ]; then
+      elif [ "${stopped_flags[$slot]}" -eq 1 ] && [ "$temp" -le "$THERMAL_RESUME_C" ]; then
         kill -CONT "$pid"
         stopped_flags[$slot]=0
         printf '{"at":"%s","event":"resume","layer":%d,"gpu":%d,"pid":%d,"temperature_c":%d}\n' \
@@ -221,7 +227,7 @@ restore() {
 trap restore EXIT
 [ "$timer_was_active" = false ] || sudo -n systemctl stop klc-model-stack.timer
 [ "$backend_was_active" = false ] || systemctl --user stop klc-backend.service
-log "uniform P8 build started root=$ROOT"
+log "uniform P8 build started root=$ROOT thermal_pause_c=$THERMAL_PAUSE_C thermal_resume_c=$THERMAL_RESUME_C"
 
 for layer in $(seq 3 44); do
   if layer_complete "$layer"; then

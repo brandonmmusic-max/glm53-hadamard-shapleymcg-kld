@@ -601,6 +601,20 @@ confirmation, and final roles remained unopened for this redesign branch.
   in the fused prologue and uses `mxf8f6f4`; it has twice the MMA issue count
   of NVFP4. This gate does not claim the unfinished P4/`mxf4nvf4` product.
 
+### Thermal-control amendment during the all-layer build
+
+- The initial runner paused a worker at 89 C and resumed at 78 C. Live layer-3
+  telemetry showed repeated stop/resume cycling, and the operator explicitly
+  directed that 89 C is acceptable.
+- The resumable build runner now defaults to an emergency pause at 94 C and
+  resume at 88 C, while leaving NVIDIA's own thermal throttling active. These
+  values are configurable and are not asserted as hardware specifications.
+- This changes build scheduling only. It does not change source weights,
+  calibration samples, encoder objective, sidecar format, KLD roles, or any
+  performance-benchmark thermal-matching requirement. The exact amendment is
+  preserved in
+  `evidence/opened/codec-v2/native6-v2/all42-thermal-amendment-v1.json`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
