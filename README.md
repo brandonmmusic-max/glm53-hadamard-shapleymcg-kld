@@ -124,6 +124,11 @@ already-opened contextual-control inventory before starting one resumable
 32-window conditional-fit run. It reports absolute and per-domain KLD plus
 paired BCa intervals. P4 construction remains parallel CPU/static work and
 does not consume the GPUs needed by this measurement.
+Pre-result amendment 1 fixes an all-layer serving hazard absent from the
+layer-3 BF16-overlay proof: native P8 now bypasses ModelOpt's delayed
+quant-config builder after releasing carrier scales. The original plan remains
+preserved; the separately sealed amendment changes only the runtime commit and
+patch manifest, before the checkpoint or target KLD result existed.
 
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 

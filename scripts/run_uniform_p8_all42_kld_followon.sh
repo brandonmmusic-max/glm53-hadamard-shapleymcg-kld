@@ -8,9 +8,11 @@ ROOT=${GLM53_UNIFORM_P8_ROOT:-/media/brandonmusic/nvme1n1p3/glm53-trellismx-nati
 BUILDER=${GLM53_UNIFORM_P8_SERVICE:-glm53-uniform-p8-all42-v1-r2.service}
 PLAN=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.json
 PLAN_SEAL=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.sha256
+AMENDMENT=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1-amendment-1.json
+AMENDMENT_SEAL=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1-amendment-1.sha256
 DESIGN=$RUNTIME_REPO/experiments/p8-kld-shapley-native6-v2.json
 RUNTIME_PATCH=$RUNTIME_REPO/runtime_patch
-RUNTIME_MANIFEST=$ROOT/runtime-patch-manifest-bb45c5b.json
+RUNTIME_MANIFEST=$ROOT/runtime-patch-manifest-efd250b.json
 ROLES=$CAMPAIGN/roles/roles-codec-conditional-fit32-v1.json
 MODEL=$CAMPAIGN/codec-v2/p8-h128/identity-mcg-layer3-v1/candidate-bf16-pseudoquant
 RUN_ID=p8-uniform-all42-native-cf32-v1
@@ -33,14 +35,15 @@ done
   exit 1
 }
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
+(cd "$(dirname "$AMENDMENT")" && sha256sum --check --strict "$(basename "$AMENDMENT_SEAL")") | tee -a "$LOG"
 
-PYTHONPATH="$REPO" python3 - "$PLAN" "$DESIGN" "$RUNTIME_MANIFEST" "$ROLES" "$ROOT/manifest.json" "$EXECUTION" "$REPO/glm53_nvfp4/analyze_uniform_p8_fullmodel.py" "$RUNTIME_REPO" "$MODEL/BF16_LAYER_RECEIPT.json" "$CONTROL" <<'PY'
+PYTHONPATH="$REPO" python3 - "$PLAN" "$AMENDMENT" "$DESIGN" "$RUNTIME_MANIFEST" "$ROLES" "$ROOT/manifest.json" "$EXECUTION" "$REPO/glm53_nvfp4/analyze_uniform_p8_fullmodel.py" "$RUNTIME_REPO" "$MODEL/BF16_LAYER_RECEIPT.json" "$CONTROL" <<'PY'
 import hashlib, json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 (
-    plan_path, design, runtime_manifest, roles, checkpoint, execution, analyzer,
+    plan_path, amendment_path, design, runtime_manifest, roles, checkpoint, execution, analyzer,
     runtime_repo, carrier_receipt, control,
 ) = map(Path, sys.argv[1:])
 def sha(path):
@@ -51,10 +54,14 @@ def sha(path):
     return h.hexdigest()
 
 plan = json.loads(plan_path.read_text())
+amendment = json.loads(amendment_path.read_text())
+if amendment.get("prior_plan", {}).get("sha256") != sha(plan_path):
+    raise SystemExit("runtime amendment does not bind the sealed prior plan")
+runtime = amendment["runtime_after"]
 for path, expected, label in (
     (roles, plan["role"]["sha256"], "role"),
     (design, plan["runtime"]["design_sha256"], "design"),
-    (runtime_manifest, plan["runtime"]["patch_manifest_sha256"], "runtime manifest"),
+    (runtime_manifest, runtime["patch_manifest_sha256"], "runtime manifest"),
     (analyzer, plan["analysis"]["code_sha256"], "analysis code"),
     (carrier_receipt, plan["carrier"]["receipt_sha256"], "carrier receipt"),
 ):
@@ -63,7 +70,7 @@ for path, expected, label in (
 runtime_commit = subprocess.check_output(
     ["git", "-C", str(runtime_repo), "rev-parse", "HEAD"], text=True
 ).strip()
-if runtime_commit != plan["runtime"]["commit"]:
+if runtime_commit != runtime["commit"]:
     raise SystemExit("runtime worktree commit mismatch")
 role_payload = json.loads(roles.read_text())
 expected_windows = [row["id"] for row in role_payload["roles"]["conditional-fit"]]
@@ -110,6 +117,7 @@ for layer in manifest["layers"]:
 static = {
     "schema": "glm53-p8-uniform-all42-kld-execution.v1",
     "plan_sha256": sha(plan_path),
+    "amendment_sha256": sha(amendment_path),
     "checkpoint_manifest_sha256": sha(checkpoint),
     "runtime_manifest_sha256": sha(runtime_manifest),
     "runtime_commit": runtime_commit,

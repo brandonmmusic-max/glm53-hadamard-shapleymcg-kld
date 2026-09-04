@@ -1,0 +1,31 @@
+{
+  "schema": "glm53-p8-uniform-all42-fullmodel-kld-plan-amendment.v1",
+  "written_at": "2026-09-04T19:55:00-04:00",
+  "status": "amended-before-checkpoint-completion-and-before-target-kld",
+  "prior_plan": {
+    "path": "experiments/p8-uniform-all42-fullmodel-kld-v1.json",
+    "sha256": "86b415ad76b80adc8dd983edcf17d2c0b371b32ccc921643ed8a0e112aeb98d2"
+  },
+  "observation": "The layer-3 device/KLD closure used a BF16 overlay method, while the uniform all-layer carrier assigns layers 4-44 to ModelOpt NVFP4 methods. The exact RoutedExperts pre-forward hook calls get_fused_moe_quant_config when the field is None; the prior P8 attach released ModelOpt carrier scales without overriding that later builder.",
+  "risk": "The all-layer server could dereference released empty ModelOpt scale parameters before its first native P8 forward, wasting the completed build without measuring KLD.",
+  "change": "For native P8 ModelOpt methods only, return None from get_fused_moe_quant_config. Preserve the original method for every non-P8 ModelOpt layer. Codec, sidecars, calibration, role, metric, analyzer, topology, stopping rule, and protected boundary are unchanged.",
+  "evidence": {
+    "vllm_commit": "3264e4220c6102542ae5fbf3247efea018309aa6",
+    "routed_experts_sha256": "ae954d53302c5cf235940696cb11c9cbcb479e07811a665383b8c36cf4aa5fe2",
+    "modelopt_sha256": "b4cdb7c790f1eec836ce1625db40bf82df5d796b34fe6d0784b033439f7b0b06",
+    "test": "tests/test_p8_native_modelopt_hook.py plus tests/test_build_p8_tp4_sidecars.py",
+    "test_result": "3 passed",
+    "test_sha256": "dc25466953916d8eb175bbd008aa7abc29fcd3283fbe781f369c40f8411d8bab"
+  },
+  "runtime_after": {
+    "commit": "efd250b002e8da5a0e603253e0cd07ba6249c7b4",
+    "worktree": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-all42-runtime",
+    "sitecustomize_sha256": "7700dc49fbbb912f4b5975e2be4fd0dbc975a03efd4dcdc7b75e5c1beb8c0aeb",
+    "patch_manifest": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/runtime-patch-manifest-efd250b.json",
+    "patch_manifest_sha256": "e1cf316e8e969625eac6749866a12c298b5ae7fef3dde6ebba37b53ed74dc873",
+    "patch_tree_sha256": "09f7ef1f26bc582633bc86f0509c65825af606d791766468e870db62fae47118"
+  },
+  "claim_effect": "This is a pre-result implementation correction, not evidence of KLD quality, device closure for layers 4-44, or speed.",
+  "protected_roles_opened": [],
+  "ldlq_used": false
+}
