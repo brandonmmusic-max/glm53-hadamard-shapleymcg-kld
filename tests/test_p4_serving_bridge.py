@@ -328,3 +328,41 @@ def test_resume_rejects_modified_rank_and_changed_source_plan(tmp_path, experts)
     source.write_text(source.read_text() + "\n")
     with pytest.raises(FileExistsError, match="identical"):
         export_tp4(source, target, expected_design_sha256=DESIGN_SHA, resume=True)
+
+
+def _capture_pins(tmp_path):
+    from glm53_nvfp4.p4_serving_codec import file_sha256
+    paths, pins = {}, {}
+    for name in ("hidden_bf16", "topk_ids_u16le", "topk_weights_f32le"):
+        path = tmp_path / (name + ".bin")
+        path.write_bytes((name.encode() + b"\0") * 4)
+        paths[name] = path
+        pins[name] = {"path": str(path.resolve()), "bytes": path.stat().st_size,
+                      "sha256": file_sha256(path)}
+    return paths, pins
+
+
+def test_materialized_capture_exact_paths_bytes_and_hashes(tmp_path):
+    from glm53_nvfp4.quantize_p4_layer import verify_capture_files
+    paths, pins = _capture_pins(tmp_path)
+    assert verify_capture_files(paths, pins) == pins
+    # Same-size corruption defeats size-only checks, but not the local hash.
+    target = paths["hidden_bf16"]
+    raw = target.read_bytes()
+    target.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        verify_capture_files(paths, pins)
+
+
+def test_materialized_capture_path_substitution_incomplete_pins_and_truncation(tmp_path):
+    from glm53_nvfp4.quantize_p4_layer import verify_capture_files
+    paths, pins = _capture_pins(tmp_path)
+    alternate = tmp_path / "same-bytes-different-input.bin"
+    alternate.write_bytes(paths["hidden_bf16"].read_bytes())
+    with pytest.raises(ValueError, match="exact capture path"):
+        verify_capture_files({**paths, "hidden_bf16": alternate}, pins)
+    with pytest.raises(ValueError, match="all three"):
+        verify_capture_files(paths, {k: v for k, v in pins.items() if k != "topk_ids_u16le"})
+    paths["topk_weights_f32le"].write_bytes(b"short")
+    with pytest.raises(ValueError, match="byte count mismatch"):
+        verify_capture_files(paths, pins)

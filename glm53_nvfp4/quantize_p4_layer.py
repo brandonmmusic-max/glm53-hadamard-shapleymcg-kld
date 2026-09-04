@@ -23,6 +23,34 @@ from .p4_serving_codec import LAW, MATRIX_MANIFEST_SCHEMA, PROJECTIONS, file_sha
 from .shard_index import IndexedCheckpoint
 
 
+def verify_capture_files(paths: dict[str, Path], expected: dict) -> dict:
+    """Verify the exact materialized fit files, not just their manifest/length.
+
+    Sparse local captures may contain only the fit windows; their hashes must
+    therefore be pinned independently of any remote/full capture manifest.
+    Each file is hashed once before CUDA transfer or encoder selection.
+    """
+    names = {"hidden_bf16", "topk_ids_u16le", "topk_weights_f32le"}
+    if set(paths) != names or not isinstance(expected, dict) or set(expected) != names:
+        raise ValueError("P4 requires exact pins for all three materialized capture files")
+    actual = {}
+    for name in sorted(names):
+        path = Path(paths[name]).resolve()
+        pin = expected[name]
+        if (not isinstance(pin, dict) or set(pin) != {"path", "bytes", "sha256"}
+                or pin["path"] != str(path) or type(pin["bytes"]) is not int
+                or not isinstance(pin["sha256"], str) or len(pin["sha256"]) != 64
+                or any(c not in "0123456789abcdef" for c in pin["sha256"])):
+            raise ValueError(f"invalid exact capture path/byte/hash pin: {name}")
+        if not path.is_file() or path.stat().st_size != pin["bytes"]:
+            raise ValueError(f"materialized capture byte count mismatch: {name}")
+        digest = file_sha256(path)
+        if digest != pin["sha256"]:
+            raise ValueError(f"materialized capture SHA-256 mismatch: {name}")
+        actual[name] = {"path": str(path), "bytes": path.stat().st_size, "sha256": digest}
+    return actual
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -69,6 +97,9 @@ def main():
     capture = LayerCapture(args.capture_root, args.layer, args.roles,
                            max_samples=design["samples"], sample_offset=0,
                            data_role="fit", sampling_strategy="domain-balanced")
+    capture_files = verify_capture_files({"hidden_bf16": capture.hidden_path,
+        "topk_ids_u16le": capture.ids_path, "topk_weights_f32le": capture.weights_path},
+        design.get("capture_files", {}))
     started = time.perf_counter()
     for expert in range(args.expert_start, args.expert_end):
         base = source.expert_prefix(args.layer, expert)
@@ -94,7 +125,8 @@ def main():
                     raise FileExistsError("existing matrix requires complete resume receipt")
                 receipt = json.loads(receipt_path.read_text())
                 if (receipt.get("source_design_sha256") != design_sha or receipt.get("source_tensor") != name
-                        or receipt.get("source_shard_sha256") != design["source_file_sha256"][shard]):
+                        or receipt.get("source_shard_sha256") != design["source_file_sha256"][shard]
+                        or receipt.get("capture_files") != capture_files):
                     raise ValueError("P4 matrix resume source mismatch")
                 entry = receipt["entry"]
                 restored = read_p4(target, expected_sha256=entry["sha256"], expected_shape=shape)
@@ -131,6 +163,7 @@ def main():
                      "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
             receipt = {"schema": "glm53-p4-encoded-matrix-receipt.v1", "source_design_sha256": design_sha,
                        "source_tensor": name, "source_shard_sha256": design["source_file_sha256"][shard],
+                       "capture_files": capture_files,
                        "entry": entry, "storage": storage_accounting(encoded.payload), "encoder": encoded.report,
                        "timing": {"source_read_verify_seconds": source_read_seconds, "encode_seconds": encode_seconds,
                                   "total_seconds": time.perf_counter() - stage_start}}
