@@ -34,6 +34,12 @@ copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/sealed-cf32-v1" laye
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-full/receipts" layer22-codec-build-receipts
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/gptq-control-layer22/receipts" layer22-gptq-build-receipts
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/dense-gptq-control-layer22/receipts" layer22-gptq-decode-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer3-full/receipts" layer3-codec-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer19-full/receipts" layer19-codec-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer20-full/receipts" layer20-codec-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/gptq-control-layer19/receipts" layer19-gptq-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/gptq-control-layer20/receipts" layer20-gptq-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/output-aware/dense-gptq-control-3-19-20/receipts" layer3-19-20-gptq-decode-receipts
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/p8-bf16-candidate" layer22-candidate-overlay
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/gptq-bf16-control" layer22-control-overlay
 copy_json_tree "$CAMPAIGN/codec-v2/w6a8-diagnosis/sealed" w6a8-diagnosis
