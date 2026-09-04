@@ -11,6 +11,10 @@ PY
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 MODEL_DIR=$CAMPAIGN/candidates/uniform-gptq
 MODEL_NAME=GLM-5.3-Flash-NVFP4-V2
+[ ! -f "$MODEL_DIR/OVERLAY.json" ] || {
+  echo "sparse overlays are forbidden in the legacy safetensors benchmark launcher; use the InstantTensor path" >&2
+  exit 2
+}
 BENCH=$CAMPAIGN/tooling/llm-inference-bench
 BENCH_COMMIT=d115feee75095081bda2520aa046986a8885f449
 IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate

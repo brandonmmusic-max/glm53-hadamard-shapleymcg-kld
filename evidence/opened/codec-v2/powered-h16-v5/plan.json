@@ -1,0 +1,74 @@
+{
+  "arms": {
+    "candidate": {
+      "layers": "3",
+      "rotation": "had16",
+      "scope": "mid-only"
+    },
+    "stock": {
+      "layers": "3",
+      "rotation": "identity",
+      "scope": "gate-up"
+    }
+  },
+  "bootstrap": {
+    "method": "BCa",
+    "replicates": 50000,
+    "seed": 2026090423,
+    "unit": "window"
+  },
+  "confirmation_boundary": "do not open the 28 confirmation logits; they are reserved for the eventual 6-bpw allocation and four-domain confirmation",
+  "created_at": "2026-09-04T10:30:22.053934+00:00",
+  "decision_rule": "provisionally qualify down-only H16 as beating stock NVFP4 on the represented domains only if relative geometric-mean KLD improvement is at least 3 percent, the paired BCa upper bound for candidate-minus-stock mean KLD is below zero, and all three represented domain mean deltas are negative; four-domain confirmation remains required",
+  "estimand": "paired per-window candidate minus stock teacher KLD and relative geometric-mean improvement",
+  "inputs": {
+    "candidate_index": {
+      "bytes": 16365711,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/exact-v16/layer-003/had16-mid-only/candidate/model.safetensors.index.json",
+      "sha256": "96feb10d86928d8d6e06bbca2c0d34a9e3402fb41ef40b951d7bc04312007f51"
+    },
+    "roles": {
+      "bytes": 99836,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v5.json",
+      "sha256": "85cb6f8d29151863457830e41a141743feabcd69706a231d89cd01a3e02175c9"
+    },
+    "runner": {
+      "bytes": 12093,
+      "path": "scripts/run_kld_v3.sh",
+      "sha256": "ca976f070177c1bec70acf534cd529e7253d88f2ee69615c0b9cb93c5d32db06"
+    },
+    "runtime_manifest": {
+      "bytes": 1267,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v4/sealed/runtime-patch-manifest.json",
+      "sha256": "47afc582ec2df784101b00e7fa0703ae884785d7d813cedc837467645c5320a0"
+    },
+    "stock_index": {
+      "bytes": 16304367,
+      "path": "/home/brandonmusic/models/GLM-5.3-Flash-NVFP4/model.safetensors.index.json",
+      "sha256": "0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb"
+    },
+    "validation": {
+      "bytes": 2440,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-validation/experts32/sealed/analysis.json",
+      "sha256": "a7140485763d2fae0c22ed2f2ba6539c561abc1d5315d26eb5eaf64ff2c4ca66"
+    }
+  },
+  "represented_domains": [
+    "axis1_general",
+    "axis2_legal",
+    "axis3_code_agentic"
+  ],
+  "role": "selection",
+  "runtime": {
+    "activation_dtype": "bf16",
+    "dcp": 4,
+    "ep": 4,
+    "load_format": "instanttensor",
+    "moe_backend": "humming",
+    "mtp": 0,
+    "tp": 4
+  },
+  "schema": "glm53-down-h16-v5-powered-kld-freeze.v1",
+  "selection_wave": 1,
+  "windows": 63
+}

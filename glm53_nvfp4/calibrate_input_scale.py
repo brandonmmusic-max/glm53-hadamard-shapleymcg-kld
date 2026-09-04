@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import save_file
 
-from .block_rotation import apply_activation_rotation, hadamard16, load_layer_rotation
+from .block_rotation import apply_activation_rotation, hadamard, load_layer_rotation
 from .capture import LayerCapture
 from .shard_index import IndexedCheckpoint, sha256_file
 
@@ -119,7 +119,11 @@ def main() -> None:
     parser.add_argument("--source-index", type=Path)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--layer", type=int, required=True)
-    parser.add_argument("--rotation", choices=("identity", "had16", "learned"), required=True)
+    parser.add_argument(
+        "--rotation",
+        choices=("identity", "had16", "had32", "had64", "learned"),
+        required=True,
+    )
     parser.add_argument("--rotation-file", type=Path)
     parser.add_argument(
         "--rotation-scope", choices=("gate-up", "mid-only", "all"), default="gate-up"
@@ -146,8 +150,8 @@ def main() -> None:
     )
     if args.rotation == "identity":
         rotation_in = rotation_mid = None
-    elif args.rotation == "had16":
-        fixed = hadamard16(device=device)
+    elif args.rotation in {"had16", "had32", "had64"}:
+        fixed = hadamard(int(args.rotation[3:]), device=device)
         rotation_in = fixed if args.rotation_scope in {"gate-up", "all"} else None
         rotation_mid = fixed if args.rotation_scope in {"mid-only", "all"} else None
     else:

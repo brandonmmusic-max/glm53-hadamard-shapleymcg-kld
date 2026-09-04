@@ -29,9 +29,12 @@ def main() -> None:
         [
             ROOT / "results/current-kld-summary.json",
             ROOT / "results/selective-h16-summary.json",
+            ROOT / "results/codec-v2-redesign-summary.json",
             ROOT / "results/GLM_DECISIONS.md",
             ROOT / "figures/current-layer3-kld.png",
+            ROOT / "figures/current-kld.png",
             ROOT / "figures/selective-h16-generalization.png",
+            ROOT / "figures/codec-v2-matched-kld.png",
         ]
     )
     lines = [f"{sha256(path)}  {path.relative_to(ROOT)}" for path in paths]

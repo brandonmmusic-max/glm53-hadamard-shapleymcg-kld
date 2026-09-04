@@ -96,6 +96,42 @@ def _best_scales(blocks: torch.Tensor, global_scale: torch.Tensor, search_grid: 
     return best_scale
 
 
+def _fpquant_mse_scales(
+    blocks: torch.Tensor,
+    global_scale: torch.Tensor,
+    *,
+    scale_search_iters: int = 100,
+    max_scale_shrink_factor: float = 0.80,
+    error_norm: float = 2.4,
+) -> torch.Tensor:
+    """Reproduce FP-Quant's MSE observer before its final E4M3 cast.
+
+    Despite the observer's historical ``MSE`` name, the reference defaults to
+    an L2.4 reconstruction objective and searches 100 linearly shrinking
+    versions of the absmax/6 scale, down to 20.8% of that scale.
+    """
+    if scale_search_iters <= 0:
+        raise ValueError("scale_search_iters must be positive")
+    maximum = blocks.abs().amax(-1).clamp_min(1e-12)
+    initial = maximum / 6.0
+    levels = E2M1_LEVELS.to(blocks.device)
+    mids = (levels[1:] + levels[:-1]) / 2
+    best_error = torch.full_like(maximum, float("inf"), dtype=torch.float32)
+    best_real_scale = initial.clone()
+    for index in range(scale_search_iters):
+        shrink = 1.0 - index * max_scale_shrink_factor / scale_search_iters
+        candidate = initial * shrink
+        code = torch.bucketize((blocks / candidate[..., None]).abs(), mids)
+        dequantized = levels[code] * torch.sign(blocks) * candidate[..., None]
+        error = (blocks - dequantized).abs().pow(error_norm).sum(-1)
+        better = error < best_error
+        best_error = torch.where(better, error, best_error)
+        best_real_scale = torch.where(better, candidate, best_real_scale)
+    return (best_real_scale / global_scale).clamp(max=E4M3_MAX).to(
+        torch.float8_e4m3fn
+    )
+
+
 @torch.no_grad()
 def refine_global_scale(
     *weights: torch.Tensor,
@@ -264,6 +300,114 @@ def full_gptq_quantize(
 
 
 @torch.no_grad()
+def mr_gptq_quantize(
+    weight: torch.Tensor,
+    hessian: torch.Tensor,
+    *,
+    global_scale: torch.Tensor | float | None = None,
+    group_size: int = 16,
+    column_block: int = 128,
+    search_grid: int = 8,
+    percdamp: float = 0.01,
+    scale_observer: str = "modelopt-mse46",
+) -> PackedNVFP4:
+    """Reference-faithful FP-Quant static-ActOrder GPTQ for NVFP4.
+
+    FP-Quant computes each fixed group's scale before GPTQ, globally orders
+    columns by the Hessian diagonal, and keeps the original group scale bound
+    to each column while error feedback is applied in the permuted order.  The
+    columns and codes are returned to their original order for native NVFP4
+    storage.  This is deliberately separate from :func:`full_gptq_quantize`,
+    whose earlier Qwen-style adaptation only orders within each fixed group and
+    searches scales after preceding GPTQ updates.
+    """
+    if weight.ndim != 2 or weight.shape[1] % group_size:
+        raise ValueError(f"invalid weight shape {tuple(weight.shape)}")
+    rows, width = weight.shape
+    if hessian.shape != (width, width):
+        raise ValueError(
+            f"Hessian shape {tuple(hessian.shape)} does not match width {width}"
+        )
+    if column_block % group_size:
+        raise ValueError("column block must be a multiple of the NVFP4 group")
+
+    device = weight.device
+    x = weight.float()
+    gs = (
+        choose_global_scale(x).to(device)
+        if global_scale is None
+        else torch.as_tensor(global_scale, dtype=torch.float32, device=device)
+    )
+
+    # Ingredient 1: one fixed MSE-optimized grid per native group, computed
+    # before any GPTQ feedback changes the working weights.
+    original_blocks = x.reshape(rows, width // group_size, group_size)
+    if scale_observer == "modelopt-mse46":
+        block_scales = _best_scales(original_blocks, gs, search_grid)
+    elif scale_observer == "fpquant-mse-l2.4":
+        block_scales = _fpquant_mse_scales(original_blocks, gs)
+    else:
+        raise ValueError(f"unsupported MR-GPTQ scale observer {scale_observer!r}")
+
+    # Ingredient 2: global static activation ordering.  A permuted column keeps
+    # the scale of the native group to which it belongs in the stored tensor.
+    h = hessian.float().clone()
+    diagonal = torch.diagonal(h)
+    dead = diagonal <= 0
+    idx = torch.arange(width, device=device)
+    h[idx, idx] = torch.where(dead, torch.ones_like(diagonal), diagonal)
+    h[idx, idx] += percdamp * torch.diagonal(h).mean()
+    permutation = torch.argsort(torch.diagonal(h), descending=True)
+    inverse = torch.argsort(permutation)
+    original_group = torch.arange(width, device=device) // group_size
+    permuted_group = original_group[permutation]
+    h = h[permutation][:, permutation]
+    chol = torch.linalg.cholesky(h)
+    h_inverse_chol = torch.linalg.cholesky(
+        torch.cholesky_inverse(chol), upper=True
+    )
+
+    work = x[:, permutation].clone()
+    permuted_codes = torch.empty((rows, width), dtype=torch.uint8, device=device)
+    levels = E2M1_LEVELS.to(device)
+    mids = (levels[1:] + levels[:-1]) / 2
+    for block_start in range(0, width, column_block):
+        block_end = min(block_start + column_block, width)
+        slab = work[:, block_start:block_end]
+        errors = torch.zeros_like(slab)
+        inverse_slab = h_inverse_chol[block_start:block_end, block_start:block_end]
+        for column in range(block_end - block_start):
+            absolute_column = block_start + column
+            group_index = permuted_group[absolute_column]
+            real_scale = block_scales[:, group_index].float() * gs
+            current = slab[:, column]
+            magnitude_code = torch.bucketize(
+                (current / real_scale).abs(), mids
+            ).to(torch.uint8)
+            quantized = levels[magnitude_code.long()] * torch.sign(current) * real_scale
+            code = magnitude_code | ((current < 0).to(torch.uint8) << 3)
+            diagonal_inverse = inverse_slab[column, column]
+            error = (current - quantized) / diagonal_inverse
+            slab[:, column:] -= (
+                error[:, None] * inverse_slab[column, column:][None, :]
+            )
+            slab[:, column] = quantized
+            errors[:, column] = error
+            permuted_codes[:, absolute_column] = code
+        if block_end < width:
+            work[:, block_end:] -= (
+                errors @ h_inverse_chol[block_start:block_end, block_end:]
+            )
+
+    codes = permuted_codes[:, inverse].contiguous()
+    return PackedNVFP4(
+        weight=pack_codes(codes).cpu(),
+        weight_scale=block_scales.cpu(),
+        weight_scale_2=gs.reshape(()).cpu(),
+    )
+
+
+@torch.no_grad()
 def mse_rtn_quantize(
     weight: torch.Tensor,
     *,
@@ -282,6 +426,38 @@ def mse_rtn_quantize(
     levels = E2M1_LEVELS.to(x.device)
     mids = (levels[1:] + levels[:-1]) / 2
     codes = torch.bucketize((blocks / real_scale[..., None]).abs(), mids).to(torch.uint8)
+    codes |= ((blocks < 0).to(torch.uint8) << 3)
+    return PackedNVFP4(
+        weight=pack_codes(codes.reshape_as(x)).cpu(),
+        weight_scale=block_scale.cpu(),
+        weight_scale_2=gs.reshape(()).cpu(),
+    )
+
+
+@torch.no_grad()
+def fpquant_rtn_quantize(
+    weight: torch.Tensor,
+    *,
+    global_scale: torch.Tensor | float | None = None,
+    group_size: int = 16,
+) -> PackedNVFP4:
+    """RTN using the exact FP-Quant default L2.4 scale observer."""
+    x = weight.float()
+    if x.ndim != 2 or x.shape[1] % group_size:
+        raise ValueError(f"invalid weight shape {tuple(x.shape)}")
+    blocks = x.reshape(x.shape[0], x.shape[1] // group_size, group_size)
+    gs = (
+        choose_global_scale(x).to(x.device)
+        if global_scale is None
+        else torch.as_tensor(global_scale, dtype=torch.float32, device=x.device)
+    )
+    block_scale = _fpquant_mse_scales(blocks, gs)
+    real_scale = block_scale.float() * gs
+    levels = E2M1_LEVELS.to(x.device)
+    mids = (levels[1:] + levels[:-1]) / 2
+    codes = torch.bucketize((blocks / real_scale[..., None]).abs(), mids).to(
+        torch.uint8
+    )
     codes |= ((blocks < 0).to(torch.uint8) << 3)
     return PackedNVFP4(
         weight=pack_codes(codes.reshape_as(x)).cpu(),
@@ -312,16 +488,30 @@ def compare_full_packed_to_rtn(
     candidate: PackedNVFP4,
     global_scale: torch.Tensor | float,
     search_grid: int = 8,
+    candidate_method: str = "gptq",
+    rtn_scale_observer: str = "modelopt-mse46",
 ) -> dict:
     gs = torch.as_tensor(global_scale, dtype=torch.float32)
-    baseline = mse_rtn_quantize(weight, global_scale=gs, search_grid=search_grid)
+    if rtn_scale_observer == "modelopt-mse46":
+        baseline = mse_rtn_quantize(
+            weight, global_scale=gs, search_grid=search_grid
+        )
+    elif rtn_scale_observer == "fpquant-mse-l2.4":
+        baseline = fpquant_rtn_quantize(weight, global_scale=gs)
+    else:
+        raise ValueError(f"unsupported RTN scale observer {rtn_scale_observer!r}")
     candidate_error = full_weighted_error(weight, candidate, hessian)
     baseline_error = full_weighted_error(weight, baseline, hessian)
-    return {
-        "gptq": candidate_error,
+    result = {
+        "candidate": candidate_error,
+        "candidate_method": candidate_method,
         "rtn": baseline_error,
+        "rtn_scale_observer": rtn_scale_observer,
         "ratio": candidate_error / baseline_error,
     }
+    if candidate_method == "gptq":
+        result["gptq"] = candidate_error
+    return result
 
 
 @torch.no_grad()
@@ -338,9 +528,18 @@ def compare_packed_to_rtn(
     candidate: PackedNVFP4,
     global_scale: torch.Tensor | float,
     search_grid: int = 8,
+    candidate_method: str = "gptq",
 ) -> dict:
     gs = torch.as_tensor(global_scale, dtype=torch.float32)
     baseline = mse_rtn_quantize(weight, global_scale=gs, search_grid=search_grid)
     candidate_error = weighted_error(weight, candidate, hessian)
     baseline_error = weighted_error(weight, baseline, hessian)
-    return {"gptq": candidate_error, "rtn": baseline_error, "ratio": candidate_error / baseline_error}
+    result = {
+        "candidate": candidate_error,
+        "candidate_method": candidate_method,
+        "rtn": baseline_error,
+        "ratio": candidate_error / baseline_error,
+    }
+    if candidate_method == "gptq":
+        result["gptq"] = candidate_error
+    return result

@@ -1,0 +1,82 @@
+{
+  "algorithm_exclusion": "no LDLQ code path, objective, or result is used",
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260904,
+    "unit": "expert"
+  },
+  "candidate": {
+    "alphabet": "E4M3",
+    "bits": 4,
+    "block_size": 32,
+    "causal_down_input": "candidate gate/up on E4M3 hidden carrier, SwiGLU clamp 10, then E4M3 K32 carrier",
+    "charged_bpw_for_gate": 4.5,
+    "encoder": "native-tile Viterbi plus GPTQ-style full-Hessian inter-group error feedback and static within-group activation order",
+    "isa_cost": "mxf8f6f4 issues twice the MMA instructions of NVFP4",
+    "law": "procedural MCG alpha=2.0",
+    "physical_bpw": 4.25,
+    "product": "P8",
+    "rate_note": "the acceptance comparison charges a reserved 0.25 padding plane so the candidate does not claim a rate advantage",
+    "scale": "UE8M0"
+  },
+  "control": {
+    "bpw": 4.5,
+    "carrier_for_this_encoder_test": "same E4M3 P8 activation carrier; this isolates weight encoder quality and is not a runtime-speed comparison",
+    "name": "full-Hessian GPTQ NVFP4"
+  },
+  "created_at": "2026-09-04T13:44:57.407458+00:00",
+  "decision_rule": "pass only if geometric-mean full-expert NMSE improves at least 10 percent, paired expert BCa upper mean-log-ratio bound is below zero, and at least 12 of 16 experts improve",
+  "estimand": "per-expert route-weighted full MoE output NMSE after causal gate/up/down pseudoquant; paired log candidate/control ratio",
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "layer": 11,
+  "projection_analysis": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/hessian-16expert-v1/analysis.json",
+    "sha256": "c166ebd2439dd3b86f6da90e680e4244a162a4989fa53a3f6435931d01f17b3c"
+  },
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "fit engineering causal pseudoquant screen before layer KLD",
+  "sampling": {
+    "evaluation": {
+      "count": 128,
+      "offset": 256
+    },
+    "hessian_fit": {
+      "count": 256,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert"
+  },
+  "schema": "glm53-hessian-trellis-full-16expert-plan.v1"
+}

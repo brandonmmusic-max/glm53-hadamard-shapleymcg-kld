@@ -1,0 +1,68 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "baseline": {
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control",
+    "receipt": {
+      "bytes": 4018,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control/BF16_LAYER_RECEIPT.json",
+      "sha256": "d5423500db33349863c2a75910853d4b877337f3eca1e5d95a958ed1b8598c78"
+    }
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090425,
+    "unit": "window"
+  },
+  "candidates": {
+    "19": {
+      "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer19",
+      "receipt": {
+        "bytes": 2205,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer19/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+        "sha256": "a29f348f2267a8f7f669a3310361868a234c09bf89cefef951993cd2a50574f7"
+      }
+    },
+    "20": {
+      "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer20",
+      "receipt": {
+        "bytes": 2205,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer20/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+        "sha256": "8454b82c626a2db52168a2adb710a81fd7092c0f76198f765260aee7de80f9a9"
+      }
+    },
+    "3": {
+      "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer3",
+      "receipt": {
+        "bytes": 2196,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer3/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+        "sha256": "7d8f6509380bcc69066dcb671428d9764131721ec7cc22181968d7ea474cbd00"
+      }
+    }
+  },
+  "created_at": "2026-09-04T12:26:53.717461+00:00",
+  "decision_rule": "a layer is supported only if mean delta is at most -0.0004 nats and its Bonferroni-adjusted 98.333 percent BCa interval upper bound is below zero",
+  "estimand": "per-layer candidate minus matched decoded-GPTQ BF16-overlay KLD",
+  "inputs": {
+    "corrected_composite_analysis": {
+      "bytes": 1042,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/sealed-bf16-matched-cf32-v2/analysis.json",
+      "sha256": "ac0a142145cf98ebbc2984950e512c3b8b39e313c242695515221983c4a6adaa"
+    },
+    "roles": {
+      "bytes": 23117,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    }
+  },
+  "multiplicity": "three comparisons; family alpha 0.05, individual two-sided alpha 1/60",
+  "protected_boundary": "no selection, confirmation, or final data are read",
+  "role": "conditional-fit adaptive attribution",
+  "run_order": [
+    "3",
+    "19",
+    "20"
+  ],
+  "schema": "glm53-p8-bf16-matched-layer-attribution-plan.v1",
+  "windows": 32
+}

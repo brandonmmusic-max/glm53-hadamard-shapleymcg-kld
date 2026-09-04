@@ -1,0 +1,65 @@
+{
+  "arms_in_fixed_order": [
+    {
+      "activation": "BF16 framework path",
+      "epilogue": "framework routed reduction",
+      "id": "R0",
+      "model": "exact decoded MXFP6 weights as BF16 overlay"
+    },
+    {
+      "activation": "E4M3 K32, unit input scales, fast math",
+      "epilogue": "BF16 atomic routed accumulation",
+      "id": "W0",
+      "model": "same MXFP6 weights"
+    },
+    {
+      "activation": "E4M3 K32, unit input scales, fast math",
+      "epilogue": "deterministic route outputs plus top-k reduction",
+      "id": "W1",
+      "model": "same MXFP6 weights"
+    },
+    {
+      "activation": "E4M3 K32, unit input scales, non-fast SiLU",
+      "epilogue": "deterministic route outputs plus top-k reduction",
+      "id": "W2",
+      "model": "same MXFP6 weights"
+    },
+    {
+      "activation": "E4M3 K32, unit FC1 scale, dynamic FC2 scale, non-fast SiLU",
+      "epilogue": "deterministic route outputs plus top-k reduction",
+      "id": "W3",
+      "model": "same MXFP6 weights"
+    }
+  ],
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260902,
+    "unit": "window"
+  },
+  "causal_contrasts": {
+    "dynamic_fc2_scale": "W3 - W2",
+    "fast_math": "W2 - W1",
+    "scatter": "W1 - W0",
+    "total_best_fixed_path": "W3 - R0"
+  },
+  "created_at": "2026-09-04T05:50:20.118351+00:00",
+  "decision_rule": {
+    "carrier_repaired": "BCa upper bound for W3-R0 is <= +0.0014 nats",
+    "ladder_blocked": "mean W3-R0 is >= +0.01 nats",
+    "otherwise": "continue diagnosis with calibrated input-scale and staged-epilogue arms; do not start P8"
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4; P8 is quality-oriented and P4 is speed-oriented",
+  "ldlq": false,
+  "primary_estimand": "equal-window mean KLD(W3) minus KLD(R0)",
+  "protected_boundary": "selection and the 28 confirmation logits are not opened",
+  "role": "conditional-fit",
+  "schema": "glm53-w6a8-gate3-analysis-plan.v1",
+  "stopping_rule": "run each arm once over the exact 32 windows; no role substitution, arm deletion, or reroll",
+  "supersedes": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/w6a8-diagnosis/sealed/gate3-v1/experiment-record.json",
+    "reason": "the pinned v80 image contains an H16-only MXFP6 plugin and rejected identity before W0 scoring",
+    "sha256": "771e778350744dfb9636aa55532ee949d549a3d4f9e6761fcc6fc6b7c06fef01"
+  },
+  "windows": 32
+}

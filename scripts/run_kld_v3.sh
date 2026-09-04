@@ -20,7 +20,7 @@ ROTATION_PLACEMENT=${GLM53_ROTATION_PLACEMENT:-runner}
 LOAD_FORMAT=${GLM53_LOAD_FORMAT:-safetensors}
 HUMMING_ACT=${GLM53_HUMMING_ACT:-bf16}
 [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
-[ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
+[ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
 [ "$ROLE" != selection ] || [ -n "$SELECTION_WAVE" ] || { echo "selection requires wave" >&2; exit 2; }
 [ "$ROLE" != confirmation ] || [ -n "$FREEZE_RECEIPT" ] || { echo "confirmation requires freeze receipt" >&2; exit 2; }
@@ -39,6 +39,7 @@ fi
 
 REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
+ROLES=${GLM53_ROLES:-$CAMPAIGN/roles/roles-v3.json}
 IMAGE=${GLM53_RUNTIME_IMAGE:-klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate}
 IMAGE_ID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
 if [ -n "${GLM53_RUNTIME_IMAGE_ID:-}" ] && [ "$IMAGE_ID" != "$GLM53_RUNTIME_IMAGE_ID" ]; then
@@ -55,19 +56,31 @@ CAPTURES=$CAMPAIGN/kld-v3/captures/$RUN_ID
 SESSION=$CAMPAIGN/kld-v3/sessions/$RUN_ID
 mkdir -p "$CAPTURES" "$SESSION" "$CAMPAIGN/kld-v3/records" "$CACHE_DIR"
 cd "$REPO"
+RUNTIME_PATCH_MANIFEST=${GLM53_RUNTIME_PATCH_MANIFEST:-$CAMPAIGN/codec-v2/e0-corrections/runtime-patch-manifest.json}
+PYTHONPATH=. python3 -m glm53_nvfp4.hash_tree \
+  --root runtime_patch \
+  --output "$RUNTIME_PATCH_MANIFEST" \
+  --verify
 
 rotation_env=()
 rotation_mount=()
+MXFP6_MODEL=false
+ENDPOINT_TAG=nvfp4
 if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
-  [ "$ROTATION" = had16 ] && [ "$ROTATION_SCOPE" = all ] || {
-    echo "the corrected MXFP6 endpoint requires fixed H16 with all-projection scope" >&2
+  MXFP6_MODEL=true
+  ENDPOINT_TAG=mxfp6-bridge
+  if [ "$ROTATION" != identity ] && { [ "$ROTATION" != had16 ] || [ "$ROTATION_SCOPE" != all ]; }; then
+    echo "MXFP6 supports either identity or fixed H16 with all-projection scope" >&2
     exit 2
-  }
-  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e GLM53_MXFP6_H16_ALL=1 -e B12X_ENABLE_FP6=1 -e B12X_ENABLE_FP6_MICRO=0 -e B12X_FP6_MODEL_DIR=/model )
+  fi
+  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_MIXED_MXFP6=1 -e B12X_ENABLE_FP6=1 -e B12X_ENABLE_FP6_MICRO=0 -e B12X_FP6_MODEL_DIR=/model )
+  if [ "$ROTATION" = had16 ]; then
+    rotation_env+=( -e GLM53_MXFP6_H16_ALL=1 )
+  fi
   rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
 fi
 if [ "$ROTATION" != identity ]; then
-  rotation_env+=( -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$LAYERS" -e GLM53_ROTATION_SCOPE="$ROTATION_SCOPE" -e GLM53_ROTATION_PLACEMENT="$ROTATION_PLACEMENT" )
+  rotation_env+=( -e PYTHONPATH=/runtime-patch/b12x_h16:/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$LAYERS" -e GLM53_ROTATION_SCOPE="$ROTATION_SCOPE" -e GLM53_ROTATION_PLACEMENT="$ROTATION_PLACEMENT" )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
     rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
   fi
@@ -77,7 +90,7 @@ if [ "${GLM53_RUNTIME_NEGATE_W13:-0}" = 1 ]; then
 fi
 if [ "$HUMMING_ACT" = nvfp4 ]; then
   rotation_env+=(
-    -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
+    -e PYTHONPATH=/runtime-patch/b12x_h16:/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
     -e GLM53_HUMMING_FP4_BUFFER_PATCH=1
     -e VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous
     -e 'VLLM_HUMMING_INPUT_QUANT_CONFIG={"dtype":"float4e2m1","group_size":16}'
@@ -86,6 +99,10 @@ if [ "$HUMMING_ACT" = nvfp4 ]; then
     rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
   fi
 fi
+[ -z "${GLM53_B12X_FAST_MATH:-}" ] || rotation_env+=( -e B12X_FAST_MATH="$GLM53_B12X_FAST_MATH" )
+[ -z "${GLM53_B12X_DYNAMIC_DOWN_SCALE:-}" ] || rotation_env+=( -e B12X_ENABLE_DYNAMIC_DOWN_SCALE="$GLM53_B12X_DYNAMIC_DOWN_SCALE" )
+[ -z "${GLM53_B12X_DETERMINISTIC_OUTPUT:-}" ] || rotation_env+=( -e B12X_DYNAMIC_DETERMINISTIC_OUTPUT="$GLM53_B12X_DETERMINISTIC_OUTPUT" )
+[ -z "${GLM53_W6A8_SWIGLU_LIMIT:-}" ] || rotation_env+=( -e GLM53_W6A8_SWIGLU_LIMIT="$GLM53_W6A8_SWIGLU_LIMIT" )
 moe_backend_arg=""
 [ "$MOE_BACKEND" = auto ] || moe_backend_arg="--moe-backend $MOE_BACKEND"
 if [ "$ROTATION" = learned ]; then
@@ -151,18 +168,22 @@ docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 if [ "$HUMMING_ACT" = nvfp4 ]; then
   grep -q 'GLM53_HUMMING_FP4_BUFFER_PATCH_ACTIVE' "$SESSION/server-ready.log"
 fi
-if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
+if [ "$MXFP6_MODEL" = true ]; then
   grep -q 'GLM53_MIXED_MXFP6_PATCH_ACTIVE' "$SESSION/server-ready.log"
   grep -q 'source_format=mxfp6_w6a8 act_fmt=e4m3' "$SESSION/server-ready.log"
-  grep -q 'GLM53_MXFP6_H16_ALL_PROJECTION_PATCH_ACTIVE' "$SESSION/server-ready.log"
+  if [ "$ROTATION" = had16 ]; then
+    grep -q 'GLM53_MXFP6_H16_ALL_PROJECTION_PATCH_ACTIVE' "$SESSION/server-ready.log"
+  else
+    ! grep -q 'GLM53_MXFP6_H16_' "$SESSION/server-ready.log"
+  fi
 fi
 
 extra=()
 [ -z "$SELECTION_WAVE" ] || extra+=(--selection-wave "$SELECTION_WAVE")
 [ -z "$FREEZE_RECEIPT" ] || extra+=(--freeze-receipt "$(readlink -f "$FREEZE_RECEIPT")")
-python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$CAMPAIGN/roles/roles-v3.json" \
+python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$ROLES" \
   --teacher-root "$CAMPAIGN/teacher" --run-root "$CAMPAIGN/kld-v3" --run-id "$RUN_ID" \
-  --config-id "nvfp4-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-ep4-dcp4-eager-nomtp-kvfp8" \
+  --config-id "$ENDPOINT_TAG-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-ep4-dcp4-eager-nomtp-kvfp8" \
   --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
   --capture-root "$CAPTURES" --container "$TEST" --resume "${extra[@]}" 2>&1 | tee "$SESSION/role-eval.log"
 if [ "$ROTATION" != identity ]; then

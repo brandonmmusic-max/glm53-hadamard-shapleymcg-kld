@@ -1,0 +1,46 @@
+{
+  "arms": {
+    "A1": "E4M3 K32 FC1 input only, decoded BF16 weights",
+    "A12": "both E4M3 activation hops, decoded BF16 weights",
+    "A2": "E4M3 K32 post-SwiGLU input only, decoded BF16 weights",
+    "F": "fused W6A8 kernel with the same effective MXFP6 weights and both activation hops",
+    "R0": "decoded BF16 weights and BF16 activations"
+  },
+  "created_at": "2026-09-04T07:02:48.243736+00:00",
+  "decision_rule": {
+    "activation_dominant": "A12-R0 NMSE >= F-A12 NMSE",
+    "closure": "F-A12 NMSE <= 1e-4",
+    "fused_carrier_dominant": "F-A12 NMSE > A12-R0 NMSE"
+  },
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "layer": 3,
+  "ldlq": false,
+  "metric": "geometric mean routed expert-output NMSE across fixed experts",
+  "model_semantics": "swiglu_limit 10; precise sigmoid; deterministic route reduction; static FC2 scale for exact stage matching",
+  "prior_scale_result": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/w6a8-diagnosis/sealed/reap-scale-v1/result.json",
+    "sha256": "371741bb6c693b2456343c417d73462555749f4b53bfc7a70471d4b51dfe96ca"
+  },
+  "protected_boundary": "selection, confirmation, final, and 28 confirmation logits remain unopened",
+  "role": "fit",
+  "samples": "offset 32, n32 domain-balanced REAP routes per expert",
+  "scale": "unit a1 and unit a2 retained after disjoint validation rejected sqrt(2)",
+  "schema": "glm53-w6a8-stage-ablation-plan.v1"
+}

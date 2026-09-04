@@ -1,0 +1,49 @@
+{
+  "a1_gscale": 1.0,
+  "created_at": "2026-09-04T07:05:19.972770+00:00",
+  "decision_rule": {
+    "expand": "only a material result permits fitting all 288 layer-3 experts and an end-to-end KLD arm",
+    "fail": "otherwise retain unit a2 and treat native E4M3 activation quantization as the unresolved P8 blocker",
+    "material": "validation geometric-mean output NMSE improves at least 5 percent and at least 12 of 16 experts improve"
+  },
+  "dynamic_fc2_scale": false,
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "layer": 3,
+  "ldlq": false,
+  "phase_grid": [
+    1.0,
+    1.0905077326652577,
+    1.189207115002721,
+    1.2968395546510096,
+    1.4142135623730951,
+    1.5422108254079407,
+    1.681792830507429,
+    1.8340080864093424
+  ],
+  "prior_stage_result": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/w6a8-diagnosis/sealed/stage-ablation-v1/result.json",
+    "sha256": "ce126d0dcecb94f93dae9457a994e5635ac8af82bf4e642d704fb2f9ff1b9d52"
+  },
+  "protected_boundary": "selection, confirmation, final, and 28 confirmation logits remain unopened",
+  "role": "fit",
+  "schema": "glm53-w6a8-fc2-scale-plan.v1",
+  "tuning": "offset 0 n32 domain-balanced REAP routes; choose a2 independently per expert by minimum routed-output NMSE",
+  "validation": "freeze the 16 per-expert phases, compare against unit a2 on offset 32 n32 without reselection"
+}

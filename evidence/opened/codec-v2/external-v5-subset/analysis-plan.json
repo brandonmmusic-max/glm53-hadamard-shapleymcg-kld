@@ -1,0 +1,76 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "baseline": {
+    "bpw": 4.5,
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control",
+    "receipt": {
+      "bytes": 4018,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control/BF16_LAYER_RECEIPT.json",
+      "sha256": "d5423500db33349863c2a75910853d4b877337f3eca1e5d95a958ed1b8598c78"
+    },
+    "source_format": "decoded full-Hessian GPTQ NVFP4"
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090426,
+    "unit": "window"
+  },
+  "candidate": {
+    "charged_bpw": 4.5,
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/supported-subset-3-20/p8-bf16-pseudoquant",
+    "physical_codec_bpw_for_replaced_weights": 4.25,
+    "receipt": {
+      "bytes": 3889,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/supported-subset-3-20/p8-bf16-pseudoquant/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+      "sha256": "d47dc6abe1892fb9f18cdfaa840eaa78182defeffe2ae9b2a9897f07e52f46de"
+    }
+  },
+  "created_at": "2026-09-04T12:48:01.959327+00:00",
+  "decision_rule": "provisionally validate the P8 subset only if relative arithmetic-mean KLD improvement is at least 3 percent, the paired BCa upper bound is below zero, and every represented-domain mean delta is negative",
+  "estimand": "paired candidate minus matched-control mean teacher KLD and relative arithmetic-mean improvement",
+  "execution_match": "both arms are BF16 weight overlays through the identical InstantTensor/framework path; only layer-3/20 weight values differ",
+  "inputs": {
+    "attribution_analysis": {
+      "bytes": 1657,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16-layer-attribution-cf32-v1/analysis.json",
+      "sha256": "56811eb6c35cfc94c81d1aefe685e7ba0eaab951aa5aad2c84485de242ea2055"
+    },
+    "roles": {
+      "bytes": 99836,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v5.json",
+      "sha256": "85cb6f8d29151863457830e41a141743feabcd69706a231d89cd01a3e02175c9"
+    },
+    "runtime_manifest": {
+      "bytes": 1267,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v4/sealed/runtime-patch-manifest.json",
+      "sha256": "47afc582ec2df784101b00e7fa0703ae884785d7d813cedc837467645c5320a0"
+    },
+    "teacher_verification": {
+      "bytes": 21080,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v5-powered/sealed/teacher-selection-verification.json",
+      "sha256": "71e80dc52df8ddce75f006fae39c7bd2290a06df55de359e56b59bc4da664945"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is a quality product",
+  "layers": [
+    3,
+    20
+  ],
+  "protected_boundary": "the 28 reserved confirmation logits are not read",
+  "represented_domains": [
+    "axis1_general",
+    "axis2_legal",
+    "axis3_code_agentic"
+  ],
+  "role": "selection wave 1 reused as external validation",
+  "role_limitation": "the role was previously scored for H16, but this codec subset was selected only from REAP fit and the disjoint conditional-fit panel before its candidate-control contrast was observed here; this is not pristine confirmation",
+  "run_order": [
+    "matched-gptq-bf16-control",
+    "p8-layer3-20-bf16-candidate"
+  ],
+  "runtime_boundary": "pseudoquant encoder evidence only; native P8 kernel remains blocked by activation-path closure",
+  "schema": "glm53-p8-supported-subset-v5-plan.v1",
+  "selection_wave": 1,
+  "windows": 63
+}

@@ -13,6 +13,49 @@ pre-frozen runner-up (layers 19 and 20) improved its untouched wave by only
 0.407%, with a confidence interval crossing zero. Therefore **no selective or
 uniform H16 candidate has a qualified protected-selection win on GLM**.
 
+### Codec redesign status (2026-09-04)
+
+The no-LDLQ P8 redesign now has a matched-path numerical gate. Its encoder
+keeps the native 16x16 trellis layout, uses full-Hessian GPTQ-style error
+feedback between groups with static within-group activation order, and refits
+K32 UE8M0 scales with the Viterbi codes. On 16 held-out experts it improved
+routed gate/up projection NMSE by **14.95%** versus GPTQ NVFP4 (16/16 wins),
+and the causal gate/up/SwiGLU/down screen improved full-expert NMSE by
+**11.87%** (15/16 wins). Layers 19 and 20 independently reproduced the local
+causal NMSE effect at **16.52%** and **16.74%**, each with 16/16 expert wins.
+Layer 22 produced the strongest local result: **17.07%** lower causal
+full-expert NMSE with 16/16 wins after an exact full-activation recapture.
+
+An earlier KLD comparison was invalid for encoder attribution because it put
+the BF16 candidate against a packed-NVFP4/Humming control. After decoding the
+GPTQ control to BF16 and putting both arms through the identical
+InstantTensor/framework path, per-layer conditional-fit attribution found a
+**4.157% KLD reduction at layer 3** and **3.086% at layer 20**; both
+Bonferroni-adjusted intervals excluded zero. Layer 19 was a null. The combined
+layer-3/20 subset then reduced mean KLD by only **1.383%** on all 63 balanced
+V5 windows, with BCa 95% CI `[-0.002496,+0.000661]`; legal and code/agentic
+domain means slightly regressed. It therefore failed the preregistered 3%
+external gate. These are useful developmental KLD effects, not a generalized
+or protected codec win.
+
+The preregistered matched-path end-to-end test of the strong layer-22
+candidate also failed. On the domain-balanced conditional-fit n=32 panel,
+candidate mean KLD was `0.0391435578` versus `0.0387275135` for decoded GPTQ:
+delta `+0.0004160443`, or a **1.074% regression**, with paired BCa 95% CI
+`[-0.000249,+0.001168]`. This directly shows that the large local causal-NMSE
+gain is not a reliable end-to-end selection surrogate for this codec.
+
+![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
+
+The P4/P8 kernel closure gates remain blocked. P8 first failed E4M3 activation
+carrier closure—even near-lossless MXFP6 weights do not serve within CI of
+the BF16 path—and the redesigned encoder now also fails its matched-path
+end-to-end KLD gate. Consequently no native prologue, speed, or determinism
+claim is made.
+A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
+(0/16 wins versus MCG), so it was stopped before another full-layer build. No
+LDLQ or BlockLDLQ path is implemented or used.
+
 | Endpoint | Mean KLD | Change vs same-loader stock | Paired BCa 95% CI for candidate minus stock | Status |
 |---|---:|---:|---:|---|
 | Stock NVFP4, InstantTensor/Humming | 0.0385846920 | reference | — | valid control |
@@ -77,10 +120,11 @@ REAP calibration, GPTQ, fixed H16, and every routed layer. H16 was not
 responsible for that entire gap: against the already calibrated GPTQ control,
 fixed H16 contributed about -9% on final, -15% on selection, and -6% on
 WikiText. GPTQ alone improved Qwen selection KLD by about 20% versus the stock
-expert-only control. In contrast, GLM's completed uniform identity-GPTQ V2
-candidate was 5.05% worse than stock on its protected selection panel. This is
-the strongest measured explanation for the missing 10-30% GLM gain: H16 is
-not being added to a large GPTQ improvement on GLM.
+expert-only control. On GLM, however, the corrected fixed-loader identity-GPTQ
+comparison was statistically indistinguishable from stock (`t = 0.24`; point
+estimate `+1.09%` KLD, where lower is better). It rules out a Qwen-sized GPTQ
+gain at the measured interval bound, but it is a null result and does not
+establish a causal "GPTQ regression."
 
 The calibration data itself is not the mismatch. The Hub corpus receipt's
 source hash exactly matches the local REAP JSONL, and the Hub tokenizer receipt
@@ -95,7 +139,7 @@ The next scientifically valid tests are:
 
 1. create a new sealed campaign for a materially different hypothesis rather
    than continuing to tune layer subsets on exhausted V3 selection data; and
-2. isolate GLM's GPTQ regression and test a router-stability-aware or
+2. test a router-stability-aware or
    layer-specific transform objective before spending the 6-bpw confirmation
    holdout.
 
@@ -104,9 +148,11 @@ Its 5.9583409627-bpw budget is exact routed-weight storage. The Shapley and
 uniform-depth controls have identical 35/7 format counts, so their comparison
 isolates allocation value despite the different native activation formats.
 
-No 10-30% GLM improvement has been measured. The completed uniform and
-selective protected tests did not reproduce that range, so it is unsupported
-for the candidates tested here.
+No 10-30% end-to-end GLM KLD improvement has been measured. A 10-30% effect
+has been measured for routed projection and causal full-expert NMSE. The best
+matched-path per-layer KLD effect is 4.157% on adaptive conditional-fit data;
+its layer-3/20 subset generalized to only 1.383% on V5 with an interval that
+crossed zero, so a larger KLD claim remains unsupported.
 
 ## Repository map
 

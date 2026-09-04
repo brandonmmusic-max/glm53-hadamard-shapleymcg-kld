@@ -35,6 +35,7 @@ The module imports without vLLM installed (all vLLM imports are deferred); the
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import Any, Optional
@@ -52,6 +53,12 @@ from b12x.integration.vllm.fp6_serving import (
 
 MODEL_DIR_ENV = "B12X_FP6_MODEL_DIR"
 QUANT_NAME = "b12x_fp6"
+
+
+def _float32_tensor_sha256(tensor: torch.Tensor) -> str:
+    """Hash effective rotation values rather than a copied constant."""
+    payload = tensor.detach().float().cpu().contiguous().numpy().tobytes()
+    return hashlib.sha256(payload).hexdigest()
 
 # Unquantized bf16 linears with N <= MAX_OUT and K >= MIN_IN route through the
 # b12x small-N GEMV.  See b12x.gemm.bf16_gemv for the thresholds.
@@ -551,7 +558,7 @@ def register_b12x_fp6() -> None:
                 "GLM53_MXFP6_H16_ALL_PROJECTION_PATCH_ACTIVE "
                 f"prefix={getattr(self, '_glm53_prefix', 'unknown')} "
                 f"rank={torch.distributed.get_rank() if torch.distributed.is_initialized() else 'unknown'} "
-                "rotation_sha256=c0cce70ab9288f764401571e81431a5af51cd595f2beb6f864ee517e8bdf89be "
+                f"rotation_sha256={_float32_tensor_sha256(self._glm53_h16)} "
                 "input=python-block16 mid=fused-w6a8-block16",
                 flush=True,
             )
@@ -611,7 +618,7 @@ def register_b12x_fp6() -> None:
                     "GLM53_MXFP6_H16_INPUT_FORWARD "
                     f"prefix={getattr(self, '_glm53_prefix', 'unknown')} "
                     f"rank={torch.distributed.get_rank() if torch.distributed.is_initialized() else 'unknown'} "
-                    "rotation_sha256=c0cce70ab9288f764401571e81431a5af51cd595f2beb6f864ee517e8bdf89be "
+                    f"rotation_sha256={_float32_tensor_sha256(self._glm53_h16)} "
                     f"hidden_width={x.shape[-1]} dtype={x.dtype}",
                     flush=True,
                 )

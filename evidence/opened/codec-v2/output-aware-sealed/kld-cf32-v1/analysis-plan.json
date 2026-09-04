@@ -1,0 +1,56 @@
+{
+  "algorithm_exclusion": "no LDLQ code path, objective, or result is used",
+  "baseline": {
+    "bpw": 4.5,
+    "format": "full-Hessian calibrated ModelOpt NVFP4",
+    "index_sha256": "7a59df020e308e020ec8587692014e878fcfb65e0664c41712b3253489702a66",
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/candidates/uniform-gptq"
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260902,
+    "unit": "window"
+  },
+  "candidate": {
+    "charged_bpw": 4.5,
+    "execution": "dense BF16 pseudoquant overlay; numerical encoder gate only",
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer3-full/candidate-bf16-pseudoquant",
+    "physical_codec_bpw": 4.25,
+    "receipt_sha256": "9e7faadbf05dcd68b3f8752f06a7b08f341f1e9b98bd20c3d2b8cc073c116d55"
+  },
+  "created_at": "2026-09-04T07:40:37.714811+00:00",
+  "decision_rule": "pass only if mean delta is at most -0.0014 nats and the paired BCa 95 percent upper bound is below zero",
+  "domain_counts": {
+    "axis1_general": 8,
+    "axis2_legal": 8,
+    "axis3_code_agentic": 8,
+    "axis4_reasoning_termination": 8
+  },
+  "inputs": {
+    "full_screen_analysis": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/full-16expert-v1/analysis.json",
+      "sha256": "26489a089e1f179d766c17df1035a42eaa51b1fb096f10013af4790f72f68b78"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    },
+    "runtime_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/e0-corrections/runtime-patch-w6a8-clamp-v1-manifest.json",
+      "sha256": "47afc582ec2df784101b00e7fa0703ae884785d7d813cedc837467645c5320a0"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is the quality product; P4 is the NVFP4-speed product",
+  "primary_estimand": "equal-window mean KLD(candidate) minus KLD(uniform GPTQ NVFP4 baseline)",
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "conditional-fit",
+  "run_order": [
+    "uniform-gptq-baseline",
+    "hessian-trellis-p8-bf16-pseudoquant"
+  ],
+  "runtime_boundary": "a pass qualifies pseudoquant encoder quality only; P8 kernel closure and speed remain blocked on the prologue",
+  "schema": "glm53-hessian-trellis-p8-kld-plan.v1",
+  "stopping_rule": "run each arm once on the exact 32 windows; preserve launch failures; no exclusions, substitutions, or rerolls",
+  "windows": 32
+}

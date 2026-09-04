@@ -1,0 +1,104 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "baseline": {
+    "bpw": 4.5,
+    "execution": "dense BF16 overlay through the identical framework path as the candidate",
+    "format": "exact decoded BF16 reconstruction of full-Hessian calibrated ModelOpt NVFP4 at the same three layers",
+    "index": {
+      "bytes": 15483081,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control/model.safetensors.index.json",
+      "sha256": "d159d9c5d6928eefc2bdb8c6ed159cad1cff80c60a06aa9952237e6b9b9ab282"
+    },
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control",
+    "receipt": {
+      "bytes": 4018,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control/BF16_LAYER_RECEIPT.json",
+      "sha256": "d5423500db33349863c2a75910853d4b877337f3eca1e5d95a958ed1b8598c78"
+    }
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260902,
+    "unit": "window"
+  },
+  "candidate": {
+    "charged_bpw_for_gate": 4.5,
+    "execution": "dense BF16 pseudoquant overlay; numerical encoder gate only",
+    "index": {
+      "bytes": 15496041,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/p8-bf16-pseudoquant/model.safetensors.index.json",
+      "sha256": "5749bc9f024e8e5e51c9a796879cdfcd1a9b2f463e9a4e33240b967a16c27fff"
+    },
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/p8-bf16-pseudoquant",
+    "physical_codec_bpw_for_replaced_weights": 4.25,
+    "receipt": {
+      "bytes": 3894,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/p8-bf16-pseudoquant/BF16_LAYER_RECEIPT.json",
+      "sha256": "eaad805f2b9cc63296a1df2b8fff6dcb68dd7db9f9b22e3ed846616a92dd8adc"
+    }
+  },
+  "created_at": "2026-09-04T12:11:20.573403+00:00",
+  "decision_rule": "advance the composite only if mean delta is at most -0.0014 nats and the paired BCa 95 percent upper bound is below zero",
+  "deviation": {
+    "description": "the prior composite comparison used packed NVFP4/Humming for the control and a BF16 framework overlay for the candidate; it is retained but invalid for encoder attribution",
+    "invalidated_analysis": {
+      "bytes": 1037,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/sealed-cf32-v1/analysis.json",
+      "sha256": "3d9c9ded5abe4be819e3a5c89c88fc119daa7c2c2b808b42e5d7a3249e47673a"
+    }
+  },
+  "domain_counts": {
+    "axis1_general": 8,
+    "axis2_legal": 8,
+    "axis3_code_agentic": 8,
+    "axis4_reasoning_termination": 8
+  },
+  "inputs": {
+    "layer_analyses": [
+      {
+        "bytes": 4254,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/full-16expert-v1/analysis.json",
+        "sha256": "26489a089e1f179d766c17df1035a42eaa51b1fb096f10013af4790f72f68b78"
+      },
+      {
+        "bytes": 4237,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/cross-layer/layer-019-16expert-v1/analysis.json",
+        "sha256": "22613d93bbe6bd98010a72867d5cd63449ac007a5ab68eb34625c9cfbcc06f6e"
+      },
+      {
+        "bytes": 4234,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/cross-layer/layer-020-16expert-v1/analysis.json",
+        "sha256": "e734cbb698783a7208bd4a989b6ced66c30b3461e88d929de783088223f8c744"
+      }
+    ],
+    "roles": {
+      "bytes": 23117,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    },
+    "runtime_manifest": {
+      "bytes": 1267,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v4/sealed/runtime-patch-manifest.json",
+      "sha256": "47afc582ec2df784101b00e7fa0703ae884785d7d813cedc837467645c5320a0"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is the quality product; P4 is the NVFP4-speed product",
+  "layers": [
+    3,
+    19,
+    20
+  ],
+  "primary_estimand": "equal-window mean KLD(candidate BF16 overlay) minus KLD(matched decoded-GPTQ BF16 overlay)",
+  "protected_boundary": "selection, confirmation, and final are not read by this screen; the 28 reserved confirmation logits remain unopened",
+  "role": "conditional-fit",
+  "role_status": "adaptive development role previously used by the one-layer screen",
+  "run_order": [
+    "matched-gptq-nvfp4-bf16-control",
+    "p8-bf16-pseudoquant-composite"
+  ],
+  "runtime_boundary": "a pass is developmental pseudoquant evidence only; P8 kernel closure remains blocked by W6A8 activation-path failure",
+  "schema": "glm53-hessian-trellis-p8-composite-kld-plan.v1",
+  "stopping_rule": "run each arm once on the exact 32 windows; no exclusions, substitutions, or rerolls",
+  "windows": 32
+}

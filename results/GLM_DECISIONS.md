@@ -1,8 +1,333 @@
 # GLM-5.3-Flash decision log
 
-Times and numerical values in this file are backed by the JSON under
-`evidence/`. Lower KLD is better. Conditional-fit was an adaptive development
-role; selection waves were untouched until their candidates were frozen.
+Times and numerical values in this file are backed by JSON under `evidence/`
+or by the hash-addressed campaign receipts on `klcstore`. Lower KLD is better.
+Conditional-fit was an adaptive development role; protected selection,
+confirmation, and final roles remained unopened for this redesign branch.
+
+## 2026-09-04: Decision 20 — matched-path layer-22 P8 end-to-end KLD gate
+
+- **Decision before result:** after layer 22 passed the exact full-Hessian
+  causal screen, build all 288 experts and compare its no-LDLQ P8
+  reconstruction against decoded full-Hessian GPTQ NVFP4. Both arms replace
+  exactly layer 22 as BF16 through the identical InstantTensor/framework
+  path. On the fixed, four-domain conditional-fit panel of 32 windows, pass
+  required mean paired delta at most `-0.0014` nats and a paired BCa 95%
+  upper bound below zero.
+- **Outcome:** failed. Candidate mean KLD was `0.0391435578` versus
+  `0.0387275135` for the matched GPTQ control: delta `+0.0004160443`, a
+  `1.07429%` regression, BCa 95% CI
+  `[-0.0002491743,+0.0011677178]`, with 14/32 window wins. Legal improved,
+  while general, code/agentic, and reasoning/termination regressed. Thus the
+  layer's `17.0735%` causal full-expert NMSE gain did not predict end-to-end
+  KLD direction. P8 device closure, speed, and determinism remain blocked;
+  no protected confirmation logits were opened. Plan SHA-256
+  `4499f08c8b653a0ac5ac47e036ec2f1033cf3bf8fcc4fe8325c295a7b708ea97`;
+  analysis SHA-256
+  `a8b7ab00b56c38e2bd63710f3c569bf77ca6f04ef82a9823501f486632f28f23`.
+
+## 2026-09-04: Decision 19 — full-Hessian causal qualification of layer 22
+
+- **Decision before result:** after layer 22 ranked least-bad in the broad
+  block-Hessian screen, acquire its pinned full REAP activation capture and
+  apply the same causal gate/up/SwiGLU/down rule used for layers 3, 19, and 20.
+  A build required at least 10% lower geometric-mean full-expert NMSE, BCa
+  upper log-ratio below zero, and 12/16 expert wins.
+- **Outcome:** passed decisively. Full-expert NMSE improved `17.0735%`, all
+  16 experts won, and the BCa mean-log-ratio interval was
+  `[-0.1910927,-0.1828700]`. This reversal from the block-Hessian result is
+  evidence that full cross-group/casual calibration geometry is material.
+  Capture verification SHA-256
+  `8ebfa6a1ce54e26c62ae49e9f83459807656e84d465e02772e8646d0f9e11feb`;
+  analysis SHA-256 `d59c064522bf003198bb88d70bc59d0d74a3ad5bb875d913d7bea19c533e37ab`.
+
+## 2026-09-04: Decision 18 — broad block-Hessian P8 layer ranking
+
+- **Decision before result:** because only three full activation captures were
+  materialized, screen all 38 layers covered by the immutable 16x16 Hessian
+  set using P8 versus block-Hessian GPTQ at charged-equal bpw. Treat the result
+  only as a gate/up projection design prior; require at least 10% improvement,
+  a paired expert BCa upper bound below zero, and 12/16 expert wins.
+- **Outcome:** no layer passed. The least-bad layer was 22, where P8 was still
+  `2.7454%` worse with 10/16 expert wins and CI crossing zero. Layers 23 and
+  26 were `3.0469%` and `5.8484%` worse; early layers were much worse. This
+  rules out the old block Hessians as a shortcut to the full-Hessian gain.
+  Plan SHA-256 `ac7ba58542bdbee269e5de87e6d9d220a72195a48a5f443e15634a1eecbaae81`;
+  result SHA-256 `359386462bf62c6630586156a157bf43cf932fd52e6d5c781695fdb135cbed38`.
+
+## 2026-09-04: Decision 17 — invalidate the infeasible causal all-layer sweep
+
+- A 42-layer full-Hessian causal sweep was frozen before execution, but exact
+  byte validation found complete 10 GB activation files only for layers 3,
+  19, and 20. Layer 4 failed before scoring. All workers were stopped, no
+  partial `raw.json` was accepted, and production serving was restored. The
+  frozen plan is preserved rather than rewritten. Invalidation SHA-256
+  `71fcd5ce80790d0d6590311ff13cd104eeae6693f464886b6ecf7bc3b64583bb`.
+
+## 2026-09-04: Decision 16 — external V5 per-layer decomposition
+
+- **Decision before result:** after the combined layer-3/20 subset failed,
+  decompose its two layers on the same opened V5 role with a two-comparison
+  Bonferroni correction. This is exploratory attribution, never a protected
+  claim.
+- **Outcome:** neither layer survived. Layer 3 was effectively flat
+  (`-0.0656%` improvement); layer 20 improved `0.6996%`, but its 97.5% BCa
+  interval crossed zero and legal/code means were not both favorable. Result
+  SHA-256 `20b688c8765b758904cb4a0b90d7b3e3dcaf62d38b11804f66051cbb2d26ec06`.
+
+## 2026-09-04: Decision 15 — external V5 gate for the P8 layer-3/20 subset
+
+- **Decision before result:** after BF16-matched conditional-fit attribution
+  supported layers 3 and 20, freeze that two-layer subset and compare it with
+  the decoded-GPTQ control on all 63 domain-balanced V5 selection-wave
+  windows. Both arms use BF16 overlays through the identical
+  InstantTensor/framework path. Provisional validation required at least 3%
+  lower arithmetic-mean KLD, a paired BCa 95% upper bound below zero, and a
+  negative mean delta in each of general, legal, and code/agentic domains.
+- **Outcome:** failed. Mean KLD improved from `0.0447961714` to
+  `0.0441764187`, a `1.38349%` reduction, but mean delta was only
+  `-0.0006197527` with BCa 95% CI
+  `[-0.0024961352,+0.0006606803]`. General improved by `-0.0026108913`
+  nats while legal and code/agentic regressed by `+0.0004313914` and
+  `+0.0003202418`. The result is not a generalized codec win. The V5 role had
+  previously been used for H16, so this is external reused-role evidence, not
+  pristine confirmation; the 28 confirmation logits remain unopened. Plan
+  SHA-256 `7392a69e8a69099bebd651513cf14040acb9f020dd0f9f1a5348285e48acc6c8`;
+  result SHA-256 `13d8dc8824acca8f9f1e4d6768e937741d81da58fba233892032246c96cbf89e`.
+
+## 2026-09-04: Decision 14 — matched-path P8 layer attribution
+
+- **Decision before result:** compare layer 3, 19, and 20 separately against
+  one shared decoded-GPTQ BF16-overlay control on conditional-fit n=32. A
+  layer required mean delta at most `-0.0004` nats and a
+  Bonferroni-adjusted 98.333% paired BCa upper bound below zero.
+- **Outcome:** layers 3 and 20 passed. Layer 3 reduced mean KLD by `4.15725%`
+  (delta `-0.0016171098`, adjusted CI
+  `[-0.0040551835,-0.0002973811]`); layer 20 reduced it by `3.08581%`
+  (delta `-0.0012003354`, adjusted CI
+  `[-0.0034453658,-0.0003380131]`). Layer 19 improved only `0.74949%` and
+  failed its interval gate. These are adaptive conditional-fit results, not
+  protected claims. Result SHA-256
+  `56811eb6c35cfc94c81d1aefe685e7ba0eaab951aa5aad2c84485de242ea2055`.
+
+## 2026-09-04: Decision 13 — repair the mixed execution-path P8 comparison
+
+- **Evidence before decision:** Decision 10 compared a BF16 pseudoquant
+  candidate with a packed NVFP4/Humming control. That changes both weight
+  values and the execution pipeline, so it cannot attribute KLD to the
+  encoder and is invalid for the stated gate.
+- **Decision before result:** decode the exact GPTQ NVFP4 control weights to
+  BF16 and run both arms as InstantTensor BF16 overlays on the same n=32 role.
+  Retain the predeclared `-0.0014`-nat and BCa-upper-below-zero gate.
+- **Outcome:** directionally favorable but still a gate failure. The P8
+  layers-3/19/20 candidate reduced mean KLD by `1.63810%`; paired delta was
+  `-0.0006371990`, BCa 95% CI `[-0.002456,+0.000675]`. Result SHA-256
+  `ac0a142145f720916f407b51d3125117b462491295aa86abe29bb32a83f62839`.
+  Decision 10's numerical row is retained as a diagnostic receipt but is
+  retracted as encoder evidence.
+
+## 2026-09-04: Decision 12 — powered V5 check of down-only H16
+
+- **Decision before result:** rerun the layer-3 down-only H16 candidate on all
+  63 balanced V5 selection-wave windows against its same-path stock control.
+- **Outcome:** failed and reversed the smaller V4 indication. Candidate mean
+  KLD was `0.0404740175` versus stock `0.0399280357`, a `1.3674%` regression;
+  paired mean delta was `+0.00101680`, BCa 95% CI
+  `[+0.0000962,+0.0028456]`, and every domain worsened. Result SHA-256
+  `adcfa636e26c8c17ffc3cd190cfd496cdf030f119d29f5c18423a1a7d92f612a`.
+
+## 2026-09-04: Decision 11 — stop the learned 4 KiB T12 law
+
+- **Decision before result:** fit one checkpoint-family 4096-byte monotone E4M3
+  law on 16 experts, freeze it, then validate causal full-expert NMSE on 16
+  disjoint experts against both procedural MCG and GPTQ NVFP4. A new layer/KLD
+  build required at least 15% improvement versus MCG, 20% versus GPTQ, BCa
+  upper bounds below zero for both, and at least 12/16 MCG wins.
+- **Outcome:** failed decisively. The learned law was 56.40% worse than MCG,
+  32.01% worse than GPTQ, and won 0/16 experts. Both paired expert BCa
+  intervals were entirely unfavorable. No second full-layer artifact was
+  built. Plan SHA-256 `0eef41f7c484e4502b7f7eaa1f1f21e323bb6dd742ea5f727f843b611e867064`;
+  result SHA-256 `4f2e75ef7cb673b5c08ff7286b69d41df505fec8e21f036a594632a6874cfcab`.
+
+## 2026-09-04: Decision 10 — conditional-fit KLD gate for Hessian P8
+
+- **Decision before result:** compare the dense BF16 pseudoquant layer-3 P8
+  reconstruction with a freshly regenerated, domain-balanced full-Hessian
+  GPTQ NVFP4 layer-3 control on the exact n=32 conditional-fit role. The P8
+  codec is physically 4.25 bpw but was charged 4.5 bpw for this gate. Pass
+  required mean paired delta at most `-0.0014` nats and paired BCa upper below
+  zero. P8 kernel work remained blocked until a pass.
+- **Outcome (subsequently invalidated for encoder attribution by Decision
+  13):** the arms used different execution pipelines. Candidate mean KLD was
+  `0.0548696998`; GPTQ was `0.0546027319`; delta was `+0.0002669679`, BCa 95%
+  CI `[-0.0029615132,+0.0069333575]`, with 15/32 window wins. Result SHA-256
+  `dbb5501165e94ba8c3b1e365d5f596e7c482273ff4e3e04de65af4fd01a5caf6`.
+  P4/P8 prologues, device closure, speed, and determinism gates were not run.
+  Preserve this row only as a mixed-pipeline diagnostic, not as evidence that
+  the P8 encoder itself is null.
+
+## 2026-09-04: Decision 9 — build the full Hessian P8 layer only after causal NMSE
+
+- **Decision before result:** a 288-expert layer build required the 16-expert
+  causal screen to improve full-expert NMSE by at least 10% versus GPTQ, with
+  paired expert BCa upper below zero and at least 12 wins.
+- **Outcome:** passed. Causal full-expert geometric-mean NMSE improved 11.87%,
+  15/16 experts won, and the mean-log-ratio BCa interval was
+  `[-0.1586380,-0.0603206]`. Four-GPU build then produced 864 bit-exact dense
+  reconstructions plus four compressed codec shards. Screen result SHA-256
+  `26489a089e1f179d766c17df1035a42eaa51b1fb096f10013af4790f72f68b78`.
+
+## 2026-09-04: Decision 8 — qualify Hessian feedback across experts
+
+- **Decision before result:** advance beyond the one-expert screen only at 10%
+  or greater held-out projection-NMSE improvement versus GPTQ NVFP4, paired
+  expert BCa upper below zero, and at least 12/16 expert wins.
+- **Outcome:** passed: 14.95% geometric-mean improvement, 16/16 wins, BCa
+  mean-log-ratio interval `[-0.1720710,-0.1520428]`. Hessian feedback reduced
+  plain-MCG output NMSE from `0.00402248` to `0.00218785`; GPTQ NVFP4 was
+  `0.00257230`. Result SHA-256
+  `c166ebd2439dd3b86f6da90e680e4244a162a4989fa53a3f6435931d01f17b3c`.
+
+## 2026-09-04: Decision 7 — output-aware GPTQ-style Viterbi, without LDLQ
+
+- The new encoder preserves physical 16x16 trellis order, applies static
+  within-group activation ordering, and carries full-Hessian GPTQ-style error
+  between native groups while iteratively refitting UE8M0 scales.
+- A route-weighted ridge correction for E4M3 carrier mismatch overfit in v1
+  and became null under nested regularization in v2. It was not promoted.
+- The Hessian-only encoder unexpectedly beat GPTQ NVFP4 on both held-out
+  expert-0 projections, motivating Decision 8. V1 and v2 result SHA-256 values:
+  `1f823d62784fdc3bd72ade1675667684c920c2042eb66f33e39e42213e2a8735`,
+  `3280d92a0e8d5606c3c8a74924bb4c2571510cec664bac82bdc279f993876208`.
+  No LDLQ path was implemented or used.
+
+## 2026-09-04: Decision 1 — diagnose the W6A8 carrier before P8
+
+- **Decision before result:** run the fixed arms `R0,W0,W1,W2,W3`, once and in
+  that order, on the exact domain-balanced conditional-fit panel of 32 windows.
+  `R0` serves the decoded MXFP6 weights through the BF16 framework path; the
+  W arms use the identical weights and sequentially isolate routed reduction,
+  fast activation math, and dynamic FC2 activation scaling.
+- The primary estimand is paired mean `KLD(W3) - KLD(R0)`. The carrier is
+  repaired only if the paired BCa 95% upper bound is at most `+0.0014` nats. A
+  mean delta of at least `+0.01` blocks P8; an intermediate result requires
+  calibrated-input-scale and staged-epilogue diagnosis before P8.
+- Attempt v1 seal `64e55a179041bf0e24d68fc2fc582463bf1078e77ac12d522c50b4af2098f7c5`
+  was invalidated after R0 because its v80 image has an H16-only MXFP6
+  plugin; W0 failed before scoring any window. Corrected attempt v2 pins the
+  identity-capable v79 image for every arm. V2 record seal:
+  `8758559f4b196b8779e52e517ec9cc7368b26e8fda8fc812eed8194402d37ccf`.
+  V2 analysis plan: `5cfb8fbecc68fe1a47f4baefcf144239f970743b086ac0c382a74659a3746a86`.
+  Role manifest: `b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14`.
+- **Outcome:** failed and P8 remained blocked. `R0 = 0.0515559935`, while the
+  best fixed kernel arm was `W3 = 0.1132481179`; `W3-R0 = +0.0616921245`
+  nats with paired BCa 95% CI `[+0.0504003196,+0.0744450147]`. All 32 windows
+  worsened. Result SHA-256:
+  `274b4bda537b2256f98307d2a149368c281b0d02b032edb0d901d8518548844b`.
+  Selection, confirmation, and final roles remain closed. The 28 confirmation
+  logits were not opened.
+- P8 uses `mxf8f6f4` at twice the MMA issue count of NVFP4 and is the quality
+  product. P4 is the `mxf4nvf4` speed product. No LDLQ is used in this program.
+
+## 2026-09-04: Decision 2 — restore GLM's clipped SwiGLU in W6A8
+
+- **Evidence before decision:** gate 3 failed with `W3-R0 = +0.0616921245`
+  nats, paired BCa 95% CI `[+0.0504003196,+0.0744450147]`; all 32 windows
+  worsened. Its three fixed switches were individually null-sized.
+- Code inspection then found a specific architecture mismatch: the checkpoint
+  declares `text_config.swiglu_limit = 10`, the GLM BF16 path uses
+  `SiluAndMulWithClamp`, and B12X's kernel accepts this limit, but the v79
+  MXFP6 bridge omitted it when constructing `fused_moe.Caps`.
+- **Decision before result:** run one `C0` arm with W3's settings plus the
+  model-locked limit 10. Carrier closure still requires paired BCa upper
+  `C0-R0 <= +0.0014` nats; mean delta `>= +0.01` keeps P8 blocked.
+- Seal: `56d94af04816aa04a0a9aa89d89b77d973c1aa5b45e7bb8148e5f411a4c19246`.
+  Analysis plan: `6bf4769a1b21df6e28ea9f945d997af3b27cc7f6bc8393d1c04efe69b933227d`.
+- **Outcome:** failed and P8 remains blocked. Restoring the clamp reduced mean
+  KLD by `0.0015020556` nats relative to W3, but `C0 = 0.1117460623` versus
+  `R0 = 0.0515559935`; `C0-R0 = +0.0601900688`, paired BCa 95% CI
+  `[+0.0492044300,+0.0730315321]`. Result SHA-256:
+  `7196e9a4ebe91476e16a78bb5d5b530d357e6dc590c5589eae38eaa0bc0a46aa`.
+  Protected roles remain closed. No LDLQ is used.
+
+## 2026-09-04: Decision 3 — calibrate FC1 E4M3 input-scale phase on REAP
+
+- **Evidence before decision:** clamp restoration left `C0-R0 = +0.0601900688`
+  nats, while a random-input phase sweep improved routed-output NMSE by only
+  about 1.85%. Random inputs are not a valid calibration substitute.
+- **Decision before result:** on 16 fixed layer-3 experts, use 32
+  domain-balanced routed REAP fit samples per expert to select one shared FC1
+  phase from the eight values `2^(j/8), j=0..7`, then evaluate that frozen
+  phase on the next 32 fit samples per expert. FC2 remains unit-scaled.
+- The scale is material only if validation geometric-mean expert-output NMSE
+  improves by at least 5% and at least 12 of 16 experts improve. Otherwise the
+  unit phase is retained and diagnosis moves to FC2 activation/epilogue
+  isolation. Plan SHA-256:
+  `776ed2d93dbb285b6cd323f3c46e340f1a7ceadd84769335802f5d370dbc4284`.
+- **Outcome:** FC1 phase was not material. The selected √2 phase improved
+  selection geometric-mean NMSE by 10.99%, but validation worsened by 1.23%
+  and only 8/16 experts improved. Unit a1 is retained. Result SHA-256:
+  `371741bb6c693b2456343c417d73462555749f4b53bfc7a70471d4b51dfe96ca`.
+  Protected roles remain closed. No LDLQ is used.
+
+## 2026-09-04: Decision 4 — decompose the two E4M3 activation hops from fusion
+
+- **Evidence before decision:** √2 improved the FC1 scale-selection split by
+  10.99%, then worsened the disjoint validation split by 1.23%, with only 8/16
+  expert wins. Unit input scale is retained.
+- **Decision before result:** on the fixed validation routes, compare decoded
+  BF16 weights under BF16 activations, FC1-only E4M3, FC2-only E4M3, both E4M3
+  hops, and the fused W6A8 kernel. Static FC2 scaling is used so the Torch and
+  fused stage boundaries match exactly.
+- If fused-versus-both-activation NMSE exceeds both-activation-versus-BF16
+  NMSE, the fused carrier/staging is dominant. The reverse identifies native
+  activation quantization as dominant; fused-versus-both `<= 1e-4` is closure.
+  Plan SHA-256:
+  `a817a68828ca1dbb64b2fae95b9d058488134f85d25c3343a914365c1782cdba`.
+- **Outcome:** activation quantization dominates. Geometric-mean NMSE was
+  `0.00018513` for FC1-only E4M3, `0.00054948` for FC2-only, `0.00076482`
+  for both, and `0.00010181` for fused-versus-both. Thus the native activation
+  loss is 7.51x the residual fused discrepancy and FC2 is 2.97x FC1. The fused
+  residual narrowly missed the `1e-4` closure line. Result SHA-256:
+  `ce126d0dcecb94f93dae9457a994e5635ac8af82bf4e642d704fb2f9ff1b9d52`.
+  Protected roles remain closed. No LDLQ is used.
+
+## 2026-09-04: Decision 5 — calibrate per-expert FC2 E4M3 scale phase
+
+- **Evidence before decision:** the stage decomposition identifies FC2 E4M3
+  activation quantization as the largest carrier component; a shared FC1 phase
+  did not validate, but the checkpoint/runtime ABI supports per-expert scales.
+- **Decision before result:** tune a2 independently for the same 16 experts on
+  offset-0 REAP routes over `2^(j/8), j=0..7`, freeze those phases, and compare
+  them with unit a2 on offset-32 routes. A result is material only at at least
+  5% validation geometric-mean NMSE improvement and 12/16 expert wins. Only a
+  material result permits expansion to all 288 experts and end-to-end KLD.
+  Plan SHA-256:
+  `9d13011bb6f8e1eb6612aa19c4ca26fd76074dbda8dfec8bebb0b4ca77e45881`.
+- **Outcome:** failed. The per-expert phases worsened validation geometric-mean
+  NMSE by 8.21% and improved only 6/16 experts. Unit a2 is retained. Result
+  SHA-256:
+  `557cfaa52feb2cd22d54283c451bed6ee85263542a84183c02f986495a7c6953`.
+  Protected roles remain closed. No LDLQ is used.
+
+## 2026-09-04: Decision 6 — search the native E4M3 scale per K32 block
+
+- **Evidence before decision:** both shared and per-expert global-scale phases
+  failed validation, while E4M3 activation quantization accounts for 7.51x the
+  remaining fused discrepancy and FC2 is the largest stage.
+- **Decision before result:** in pseudoquant, choose for each activation K32
+  block among the ordinary containment exponent and offsets `-1,-2` by minimum
+  local E4M3 reconstruction SSE. The payload remains ordinary E4M3 and the
+  selected scale remains one UE8M0 byte, so no MMA format changes.
+- Implement this search in the fused prologue only if geometric-mean routed
+  output NMSE improves at least 15% and at least 12/16 fixed experts improve.
+  Plan SHA-256:
+  `6a2c1de721b3dfe77c8d33f9bb97dd320b53711d81f6104985d31b3d42df53f2`.
+- **Outcome:** null; no kernel implementation. Candidate geometric-mean NMSE
+  was `0.0007648181` versus baseline `0.0007648172` (relative change
+  `-0.000112%`) with only 5/16 expert wins. Result SHA-256:
+  `9a45010679c68e3b9f02ea601b2a8ca1d05fe58582cb0d35f8a7707e958344f4`.
+  Protected roles remain closed. No LDLQ is used.
 
 ## 2026-09-03: uniform rotation
 
@@ -39,10 +364,10 @@ role; selection waves were untouched until their candidates were frozen.
 - Qwen's 29-36% headline combined GPTQ, REAP calibration, and H16 against a
   shipped RTN expert-only control. Its same-calibration H16-only increment was
   about 6-15%, depending on panel.
-- GLM's uniform identity-GPTQ V2 candidate was 5.05% worse than stock on its
-  protected selection role. This measured control difference, plus the strong
-  layer-sign heterogeneity, is the current evidence-based explanation for why
-  the Qwen-sized gain did not transfer.
+- On the corrected fixed-loader comparison, GLM identity GPTQ was a null versus
+  stock (`t = 0.24`; point estimate `+1.09%` KLD, lower is better). It rules out
+  the Qwen-sized GPTQ gain within the measured interval, but the earlier causal
+  "GPTQ regression" account is retracted.
 - Architecture is a plausible mechanism, not yet a proven cause: GLM has 288
   routed experts per layer and sigmoid/noaux top-8 routing with scaling 2.5,
   versus Qwen's smaller routed-expert system. Quantization errors can therefore

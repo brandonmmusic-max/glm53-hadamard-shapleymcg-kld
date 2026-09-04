@@ -1,0 +1,127 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260904,
+    "unit": "expert"
+  },
+  "candidate": {
+    "alphabet": "E4M3",
+    "bits": 4,
+    "block_size": 32,
+    "charged_bpw": 4.5,
+    "encoder": "native-tile Viterbi plus full-Hessian GPTQ-style inter-group error feedback and static within-group activation order",
+    "law": "procedural MCG alpha=2.0",
+    "physical_bpw": 4.25,
+    "product": "P8",
+    "scale": "UE8M0"
+  },
+  "control": {
+    "bpw": 4.5,
+    "name": "full-Hessian GPTQ NVFP4"
+  },
+  "created_at": "2026-09-04T13:35:48.290482+00:00",
+  "experts_per_layer": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "bytes": 310332,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "encoder_analysis": {
+      "bytes": 4482,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/hessian-16expert-v1/analysis.json",
+      "sha256": "c166ebd2439dd3b86f6da90e680e4244a162a4989fa53a3f6435931d01f17b3c"
+    },
+    "roles": {
+      "bytes": 86518,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "bytes": 4083163,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is a quality product",
+  "layers": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44
+  ],
+  "per_layer_decision_rule": "eligible for later KLD subset design only if geometric-mean full-expert NMSE improves at least 10 percent, paired expert BCa upper mean-log-ratio bound is below zero, and at least 12 of 16 experts improve",
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits are not read",
+  "ranking_rule": "report every layer and rank eligible layers by geometric-mean causal full-expert NMSE improvement; do not treat this local ranking as Shapley attribution",
+  "role": "fit engineering exhaustive causal pseudoquant screen before any new subset KLD",
+  "sampling": {
+    "evaluation": {
+      "count": 128,
+      "offset": 256
+    },
+    "hessian_fit": {
+      "count": 256,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert"
+  },
+  "schema": "glm53-p8-causal-all-layer-sweep-plan.v1",
+  "shared_carrier": "candidate and control both use E4M3 K32 activation pseudoquant in the causal MoE calculation"
+}

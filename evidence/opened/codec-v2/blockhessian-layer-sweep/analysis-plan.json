@@ -1,0 +1,117 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 2026090428,
+    "unit": "expert"
+  },
+  "candidate": {
+    "alphabet": "E4M3",
+    "bits": 4,
+    "block_size": 32,
+    "charged_bpw": 4.5,
+    "encoder": "native-tile Viterbi with block-diagonal Hessian feedback and static within-group activation order",
+    "law": "procedural MCG alpha=2.0",
+    "physical_bpw": 4.25,
+    "product": "P8",
+    "scale": "UE8M0"
+  },
+  "control": {
+    "bpw": 4.5,
+    "name": "block-Hessian GPTQ NVFP4"
+  },
+  "created_at": "2026-09-04T13:49:19.969998+00:00",
+  "estimand": "per-expert geometric mean of gate/up block-Hessian-weighted reconstruction error; paired log candidate/control ratio",
+  "experts_per_layer": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "hessian_manifest": {
+      "bytes": 27018,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/blockhessian-layer-sweep-v1/hessian-manifest.json",
+      "sha256": "21d8471919590633047db7a373bab192aae2b223f3ad669a90d4af4e97df479c"
+    },
+    "invalidated_causal_plan": {
+      "bytes": 807,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/causal-layer-sweep-v1/INVALIDATED.json",
+      "sha256": "71fcd5ce80790d0d6590311ff13cd104eeae6693f464886b6ecf7bc3b64583bb"
+    },
+    "roles": {
+      "bytes": 86518,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "bytes": 4083163,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "interpretation_boundary": "these stored Hessians contain independent 16x16 input groups and no held-out activations or down-projection carrier; the result is a projection-level design prior, not causal MoE NMSE, end-to-end KLD, or Shapley attribution",
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is a quality product",
+  "layers": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44
+  ],
+  "per_layer_decision_rule": "screen-positive only if geometric-mean error improves at least 10 percent, paired expert BCa upper mean-log-ratio bound is below zero, and at least 12 of 16 experts improve",
+  "projections": [
+    "gate_proj",
+    "up_proj"
+  ],
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits are not read",
+  "ranking_rule": "report every layer and rank screen-positive layers by geometric-mean weighted-error improvement",
+  "role": "fit-only broad projection screen using already materialized block Hessians",
+  "schema": "glm53-p8-blockhessian-layer-sweep-plan.v1"
+}

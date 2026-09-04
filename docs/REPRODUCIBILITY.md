@@ -23,10 +23,19 @@ disable the unmodified FP6 micro-kernel path.
 ## Statistical estimand
 
 KLD is `KL(teacher || student)` evaluated per token and summarized as an
-equal-window mean. Candidate-versus-control uncertainty uses a paired
-window-level bootstrap with 20,000 replicates and seed `20260902`. A rotation
-passes the conditional-fit gate only if both the mean delta and the upper bound
-of the BCa 95% interval are below zero.
+equal-window mean. Candidate-versus-control uncertainty uses paired
+window-level BCa bootstrap intervals. Legacy H16 plans use 20,000 replicates;
+the codec-v2 plans use 50,000 and record their seed, multiplicity correction,
+minimum-effect rule, and role boundary in the immutable analysis plan written
+before each run. Numerical gates compare BF16 pseudoquant candidate and BF16
+decoded-GPTQ control overlays through the identical InstantTensor/framework
+execution path.
+
+For the layer-22 gate, both arms redirect the same 864 routed-expert tensors
+in exactly one layer. The control is a BF16 decode of full-Hessian GPTQ
+NVFP4; the candidate is the BF16 reference decode of the 4.25-bpw P8 stream.
+The analysis plan was written before either n=32 run and is identified by
+SHA-256 `4499f08c8b653a0ac5ac47e036ec2f1033cf3bf8fcc4fe8325c295a7b708ea97`.
 
 ## Current replay
 
@@ -49,12 +58,28 @@ python3 scripts/verify_public_evidence.py
 
 # After the H16 winner receipt exists, run the 6-bpw Shapley campaign.
 ./scripts/run_shapley_6bpw_campaign_v10.sh
+
+# Recheck bit-exact P4/P8 reference codec and endpoint export behavior.
+python3 -m pytest -q \
+  tests/test_trellis_mxf.py \
+  tests/test_trellis_nvfp4.py \
+  tests/test_output_aware.py \
+  tests/test_export_native_endpoint.py \
+  tests/test_endpoint_codec.py
 ```
 
 The quantizer uses 16-column blocks, shared `R_in` for gate/up, separate
 `R_mid` for down, full `R^T H R`, static activation order within groups,
 sequential GPTQ across 128-column slabs, and a cap of 256 routed samples per
 expert for the exact-Qwen scale-up.
+
+The codec-v2 P8 encoder instead preserves physical 16x16 trellis order,
+decodes a K4 stream to fully scaled E4M3 with K32 UE8M0 scales, applies static
+within-group activation order, and carries full-Hessian GPTQ-style error
+feedback between groups while jointly refitting scales. It is 4.25 physical
+bpw and charged 4.5 bpw in the KLD gates. No LDLQ or BlockLDLQ implementation
+or result is used. P8 targets `mxf8f6f4`, which has twice the MMA issue count
+of NVFP4; it is a quality product, not an NVFP4-speed claim.
 
 ## Published evidence boundary
 
@@ -65,6 +90,12 @@ Included now:
   completed full-model conditional-fit KLD and runtime proof;
 - source, runtime patch, Dockerfile, launchers, tests, and analysis code;
 - a checksum manifest and reproducibly generated figure.
+
+The live klcstore campaign additionally contains the codec-v2 compressed
+streams, dense BF16 reconstructions, matched decoded-GPTQ overlays, per-window
+Parquet records, preregistered plans, and SHA-256 receipts. Weight-bearing
+artifacts remain excluded from Git; the next evidence snapshot should include
+only plans, analyses, manifests, and hashes.
 
 Excluded from Git:
 
@@ -94,3 +125,16 @@ history.
   cannot be multiplied by 42.
 - Learned rotations optimized a calibration objective and did not generalize
   better than fixed H16 on the opened KLD panel.
+- The first P8 KLD comparison mixed a BF16 candidate path with a packed-NVFP4
+  Humming control and is invalid for encoder attribution. The corrected
+  matched-BF16 layer attribution found conditional-fit improvements at layers
+  3 and 20, but their frozen combination improved the reused V5 wave by only
+  1.383% with a BCa interval crossing zero and opposite signs across domains.
+- The native P8 closure remains blocked by E4M3 activation serving: with
+  near-lossless weights, activation quantization dominates the layer-3 error.
+  Independently, the strongest new layer-22 candidate improved causal
+  full-expert NMSE by 17.07% but regressed matched-path end-to-end KLD by
+  1.074%, with its paired interval crossing zero. Local routed-output NMSE is
+  therefore not sufficient promotion evidence for the current encoder.
+  P4 remains blocked by its exact-E2M1 encoder screen. No native-kernel quality
+  or speed claim is made.
