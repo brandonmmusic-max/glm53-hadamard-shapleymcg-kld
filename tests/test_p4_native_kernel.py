@@ -15,8 +15,9 @@ from glm53_nvfp4.p4_reference import (
     decode_projection, mcg_code, moe_reference, synthetic_payload, tensor_sha256, tile_states,
 )
 from glm53_nvfp4.trellis_nvfp4 import (
-    e2m1_state_lut, pack_trellis_edges, reconstruct_trellis_states,
+    pack_trellis_edges, reconstruct_trellis_states,
 )
+from glm53_nvfp4.p4_codec import e2m1_codes, mcg_half_values
 from runtime_patch.p4_native_kernel import MMA, SOURCE, compile_library, validate_payload
 
 
@@ -51,13 +52,10 @@ def test_exhaustive_mcg_law_matches_independent_half_oracle_and_frozen_codec(hos
     host.host_codes(got.ctypes.data)
     expected = np.array([mcg_code(state) for state in range(65536)], dtype=np.uint8)
     np.testing.assert_array_equal(got, expected)
-    levels = torch.tensor([0, .5, 1, 1.5, 2, 3, 4, 6])
-    codes = torch.from_numpy(got).long()
-    values = levels[codes & 7] * torch.where(codes < 8, 1, -1)
-    assert torch.equal(values.to(torch.float8_e4m3fn).view(torch.uint8), e2m1_state_lut(4, law="mcg"))
-    assert 8 not in got  # canonical positive zero
+    np.testing.assert_array_equal(got, e2m1_codes(mcg_half_values(np.arange(65536, dtype="<u2"))))
+    assert (got == 8).sum() == 5432  # native signed-zero ABI, not legacy canonicalization
     digest = hashlib.sha256(got.tobytes()).hexdigest()
-    assert digest == "5800155d0332487e8a0f7d1d2a8e4a8fc32e719136877e07048049ea641d59fe"
+    assert digest == "195d9e9aac6dca94828fa8f693e9bcbba6804f8e160566ce02cad7ba742b7ba1"
     print("state_census_sha256=" + digest)
 
 
@@ -88,9 +86,9 @@ def test_every_k4_state_is_reachable_through_a_sliding_window(host):
 def test_projection_packing_matches_independent_reference(host):
     tensors, _ = synthetic_payload()
     digests = {
-        "gate": "9b1d9cb442e8f87daa0845e0c6cc34059233edd1c3a5245c93475e5429f87eb4",
-        "up": "839f23e0053911ee1e2107df73322f11af171105e355b53f65af83899f4b200d",
-        "down": "fa0a6edb6052600f8220756bccd516f3288fee342ea98cb7c00b4862654d89f1",
+        "gate": "f89f698018331a433c47634d8445d9e0db2e2f5db44235d7c0607d1128bbf106",
+        "up": "0e973abda7afbea5bf95de14bba201929fd5d45585074592cdb6d5a794b4b8df",
+        "down": "5032821148e89ef5b325ec1eb9b61b5d2f522905521f2f3c4835530c5d8b2298",
     }
     for name, streams in (("gate", tensors["w13_trellis"][0]),
                           ("up", tensors["w13_trellis"][1]),
@@ -158,7 +156,9 @@ def test_payload_geometry_and_exact_rate():
 
 @pytest.mark.parametrize("key,value", [("bits", "3"), ("alphabet", "e4m3"), ("scale", "ue8m0-k32"),
     ("compander", "2"), ("w13_order", "up,gate"), ("boundary", "h16"),
-    ("weight_rounding", "nearest-even"), ("ldlq", "true"), ("source_design_sha256", "0" * 64)])
+    ("weight_rounding", "nearest-ties-low-magnitude"), ("signed_zero", "canonical-positive"),
+    ("scale_layout", "modelopt-128x4"), ("schema", "glm53-p4-mcg-tp-rank.v1"),
+    ("ldlq", "true"), ("source_design_sha256", "0" * 64)])
 def test_rejects_incompatible_metadata(key, value):
     tensors, metadata = synthetic_payload()
     design = metadata["source_design_sha256"]
@@ -167,13 +167,15 @@ def test_rejects_incompatible_metadata(key, value):
         validate_payload(tensors, metadata, layer=3, tp_rank=0, expected_design_sha256=design)
 
 
-@pytest.mark.parametrize("mutation", ["k32", "nan", "negative", "global", "extra", "dtype"])
+@pytest.mark.parametrize("mutation", ["k32", "nan", "negative", "zero", "global", "extra", "dtype"])
 def test_rejects_invalid_physical_planes(mutation):
     tensors, metadata = synthetic_payload()
     if mutation == "k32":
         tensors["w13_scale_e4m3"] = tensors["w13_scale_e4m3"][..., ::2].contiguous()
     elif mutation in ("nan", "negative"):
         tensors["w2_scale_e4m3"].flatten()[0] = 127 if mutation == "nan" else 128
+    elif mutation == "zero":
+        tensors["w2_scale_e4m3"].flatten()[0] = 0
     elif mutation == "global":
         tensors["w2_global_scale"][0] = float("nan")
     elif mutation == "extra":
@@ -198,7 +200,7 @@ def test_reference_output_hashes_are_deterministic():
     finally:
         torch.set_num_threads(previous)
     assert len(set(hashes)) == 1
-    assert hashes[0] == "331299fe762e2bcfda78eeb06c5a83aeb02c756f346766b5e4e259d3930fea87"
+    assert hashes[0] == "da59d0a934094f58453c1963d7ad67fda391d87b8171e5726a392b660c306ca9"
     print("cpu_moe_output_sha256_runs=" + repr(hashes))
 
 
@@ -216,6 +218,12 @@ def offline_cuda(tmp_path_factory):
         print("offline_command=" + repr(command))
         print(result.stdout + result.stderr)
         assert result.returncode == 0
+        if mode == "--cubin":
+            spills = re.findall(r"(\d+) bytes spill stores, (\d+) bytes spill loads", result.stderr)
+            assert spills and all(pair == ("0", "0") for pair in spills)
+            registers = [int(value) for value in re.findall(r"Used (\d+) registers", result.stderr)]
+            assert registers and max(registers) <= 64
+            assert "1728 bytes smem" in result.stderr
     dump = subprocess.check_output([str(Path(nvcc).with_name("cuobjdump")), "--dump-sass", str(cubin)], text=True)
     return ptx.read_text(), dump, path
 
@@ -238,7 +246,7 @@ def test_offline_full_launch_library_links_without_loading_or_gpu(offline_cuda):
     path = compile_library(directory / "library")
     assert path.is_file()
     symbols = subprocess.check_output(["nm", "-D", str(path)], text=True)
-    for symbol in ("p4_project", "p4_swiglu", "p4_sum", "p4_decode_probe"):
+    for symbol in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare"):
         assert re.search(r" T " + symbol + r"$", symbols, re.M)
     nvcc = shutil.which("nvcc") or "/usr/local/cuda-13.2/bin/nvcc"
     sass = subprocess.check_output([str(Path(nvcc).with_name("cuobjdump")), "--dump-sass", str(path)], text=True)

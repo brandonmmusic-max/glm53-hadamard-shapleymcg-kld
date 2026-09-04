@@ -8,6 +8,7 @@ integer fixed-point law and two-word sliding window.
 from __future__ import annotations
 
 import hashlib
+import math
 import struct
 
 import torch
@@ -21,8 +22,8 @@ def mcg_code(state: int) -> int:
     word = (product & 0x8FFF8FFF) ^ 0x3B603B60
     lo, hi = struct.unpack("<ee", struct.pack("<I", word))
     value = struct.unpack("<e", struct.pack("<e", lo + hi))[0]
-    magnitude = min(range(8), key=lambda i: abs(abs(value) - LEVELS[i]))
-    return magnitude | (8 if value < 0 and magnitude else 0)
+    magnitude = min(range(8), key=lambda i: (abs(abs(value) - LEVELS[i]), i & 1))
+    return magnitude | (8 if math.copysign(1.0, value) < 0 else 0)
 
 
 def tile_states(raw: bytes) -> list[int]:
@@ -89,7 +90,7 @@ def qdq_activations(x: torch.Tensor) -> torch.Tensor:
     values = blocks * inv[..., None]
     levels = torch.tensor(LEVELS)
     distances = (values.abs()[..., None] - levels).abs()
-    # Native activation cvt uses nearest/even; weights use nearest/lower.
+    # Native activation and v2 weight projections both use nearest/even.
     # Check the even indices first to disambiguate exact midpoint ties.
     preference = torch.tensor((0, 2, 4, 6, 1, 3, 5, 7))
     codes = preference[distances[..., preference].argmin(-1)]
@@ -123,10 +124,18 @@ def synthetic_payload() -> tuple[dict[str, torch.Tensor], dict[str, str]]:
         "w2_global_scale": torch.tensor([0.125, 0.25, 0.0625]),
     }
     metadata = {
-        "schema": "glm53-p4-mcg-tp-rank.v1", "role": "physical-codec",
+        "schema": "glm53-p4-mcg-tp-rank.v2", "role": "physical-codec",
         "layer": "3", "rank": "0", "world_size": "4", "bits": "4",
-        "alphabet": "e2m1", "scale": "e4m3-k16", "law": "procedural-mcg",
-        "compander": "1", "weight_rounding": "nearest-ties-low-magnitude",
+        "alphabet": "e2m1", "scale": "e4m3-k16", "law": "procedural-mcg-alpha1-rne-e2m1",
+        "compander": "1", "weight_rounding": "nearest-even-satfinite",
+        "signed_zero": "preserve", "scale_layout": "row-major-n-k16",
+        "state_bits": "16", "tile_values": "256", "state_boundary": "cyclic-per-tile",
+        "mcg_arithmetic": "u32-wrap-mask-xor-add-rn-f16", "byte_order": "little",
+        "trellis_layout": "k16-n16-exl3-lane-pair-swapped-i16",
+        "global_scale": "positive-f32-per-projection-expert",
+        "expert_order": "global-contiguous-zero-based", "tp_sharding": "gate-up-rows-down-columns",
+        "state_lut_bytes": "0", "experts": str(experts), "hidden": str(hidden),
+        "intermediate": str(intermediate * 4), "intermediate_per_rank": str(intermediate),
         "boundary": "identity", "w13_order": "gate,up", "ldlq": "false",
         "source_design_sha256": hashlib.sha256(b"p4-astra-synthetic-fixture-v1").hexdigest(),
     }

@@ -24,6 +24,20 @@ ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
 ).strip().lower()
 P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
 P8_NATIVE = os.environ.get("GLM53_P8_NATIVE", "").strip().lower()
+P4_NATIVE = os.environ.get("GLM53_P4_NATIVE", "").strip().lower()
+
+
+if P4_NATIVE:
+    try:
+        from p4_glm_serving import install as _install_p4_glm_serving
+        _install_p4_glm_serving()
+    except Exception:
+        # Python normally reports and SWALLOWS sitecustomize exceptions. That
+        # would quietly serve the carrier after a bad P4 identity or import.
+        # P4 activation is explicit, so installation failure terminates startup.
+        import traceback
+        traceback.print_exc()
+        os._exit(78)
 
 
 if P8_NATIVE and P8_PSEUDOQUANT:

@@ -1,0 +1,26 @@
+{
+  "schema": "glm53-p4-glm-serving-integration-plan.v1",
+  "base_commit": "d456831b77c5b418e348a53a0bdb4d75b86d0b91",
+  "authorization": "User requires real GLM serving integration; parent assigns isolated serving agent, CPU/static only while P8 owns GPUs.",
+  "question": "Does the actual GLM routed-expert dispatch select both native P4 projections under the exact v2 codec contract?",
+  "evidence_level": "structural",
+  "codec_schema": "glm53-p4-mcg-tp-rank.v2",
+  "law": "procedural-mcg-alpha1-rne-e2m1",
+  "weight_rounding": "nearest-even-satfinite",
+  "signed_zero": "preserve",
+  "pretest_amendment": "User also requires current kernel optimization. Quantize A once per stage and reuse across N8 tiles, tighten sparse grid bound, cache module handles and shape/stream activation scratch. No GPU results inspected.",
+  "required_checks": [
+    "Exhaustive 65536-state CPU comparison against committed matrix codec and independent IEEE-half oracle",
+    "Exact positive E4M3/16 physical scales, layer/rank/design/file-hash rejection",
+    "GLM FusedMoEFactory selected-layer installation with stock routing/shared-expert/TP-reduction ownership",
+    "Both gate/up and down use the P4 CUDA entry with SwiGLU between them",
+    "Cold compilation/module loading cannot happen inside a CUDA graph",
+    "All external CUDA launches use the current device and current stream; no default-stream or device-wide synchronization",
+    "Offline cubin/SASS contains only requested native E2M1 K64 MMA at every matrix instruction site"
+  ],
+  "failure_policy": "Preserve test-attempt logs. Amend implementation and rerun affected host/static checks; no device or empirical quality result exists in this stage.",
+  "no_gpu_launch": true,
+  "protected_roles_opened": [],
+  "ldlq": false,
+  "claim_limit": "No device closure, CUDA-graph execution parity, coherent generation, KLD, decode hiding, throughput, or TP4 qualification until actual serving runs."
+}

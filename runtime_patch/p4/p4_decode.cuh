@@ -36,11 +36,13 @@ P4_HD uint8_t mcg_code(uint32_t state) {
         int midpoint = 1 << (shift - 1);
         a = (q + (remainder > midpoint || (remainder == midpoint && (q & 1)))) << shift;
     }
-    // e2m1_state_lut(..., law="mcg", compander_scale=1) uses argmin:
-    // ties go to the SMALLER MAGNITUDE, unlike native cvt.rn's even rule.
+    // v2 ABI: native nearest/even E2M1. At ties whose lower code is odd,
+    // advance to the even code. Preserve the sign of tiny negative values
+    // even when they round to -0. Exact half cancellation is +0 under RNE.
     uint8_t code = (a > 2048) + (a > 6144) + (a > 10240) + (a > 14336)
                  + (a > 20480) + (a > 28672) + (a > 40960);
-    return code == 0 ? 0 : uint8_t(code | (sum < 0 ? 8 : 0));
+    code += (a == 6144 || a == 14336 || a == 28672);
+    return uint8_t(code | (sum < 0 ? 8 : 0));
 }
 
 // Native adjacent int16 halves are swapped by pack_trellis_edges. On the
