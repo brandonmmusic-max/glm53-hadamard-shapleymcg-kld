@@ -1,0 +1,225 @@
+{
+  "artifacts": {
+    "docs/P4_RUNTIME_AUDIT.md": "586ba7b834f2d269767a36e18b99d97ea75e3a898533be92dc588f5207b61656",
+    "evidence/opened/codec-v2/p4-astra/audit_static_checks.py": "585299ceffcdd8e5e935cf9d46dc888c83917922452983c64429dd60a217aff0"
+  },
+  "audit_base_commit": "74471a7cba6a5058088608d71949f36a541045b1",
+  "blockers": [
+    {
+      "finding": "Source tie-to-smaller-magnitude projection differs from nearest-even in 45 states at alpha=1 and 53 at alpha=2; zero canonicalized on both sides.",
+      "id": "rounding",
+      "status": "analytical counterexample; actual conversion Not tested"
+    },
+    {
+      "finding": "P8 emits E4M3/K32 with UE8M0, while P4 needs E2M1 A/B and physical UE4M3/K16. FP4-typed descriptor carriers do not prove P4 execution.",
+      "id": "operand_and_activation_abi",
+      "status": "source inspection"
+    },
+    {
+      "finding": "Expanded state-label byte LUT is 65536 bytes versus runtime table budget of 4096.",
+      "id": "table_budget",
+      "status": "derived count; deployed P4 table Not tested"
+    },
+    {
+      "finding": "P4 lane transport, FC1/FC2, graph/TP4 reduction, resources, overlap, KLD and speed remain unverified.",
+      "id": "missing_closure",
+      "status": "Not tested"
+    },
+    {
+      "finding": "KQuant/QSRT copied-material licensing and complete installed B12X lineage remain unresolved.",
+      "id": "lineage",
+      "status": "UNKNOWN - needs verification"
+    }
+  ],
+  "branch": "astra-p4-critic",
+  "checks": {
+    "command": "python3 -I -B evidence/opened/codec-v2/p4-astra/audit_static_checks.py",
+    "diagnostics": {
+      "diagnostic_tests_passed": 3,
+      "gpu_initialized": false,
+      "limits": "Analytical CPU diagnostics and syntax only; no product bit closure or SASS cost measurement.",
+      "p8_template_ptx_ops_per_eight_states": {
+        "add": 8,
+        "and": 8,
+        "cvt": 4,
+        "lop3": 8,
+        "mov": 3,
+        "mul": 8,
+        "prmt": 8,
+        "shr": 6
+      },
+      "p8_template_ptx_ops_total": 53,
+      "python_files_syntax_checked": 15,
+      "repository_modules_executed": false,
+      "rounding_census": {
+        "1": {
+          "canonical_nibble_sha256": "5800155d0332487e8a0f7d1d2a8e4a8fc32e719136877e07048049ea641d59fe",
+          "examples": [
+            {
+              "rne_nibble": 12,
+              "source_nibble": 11,
+              "state": 110,
+              "value": -1.75
+            },
+            {
+              "rne_nibble": 4,
+              "source_nibble": 3,
+              "state": 861,
+              "value": 1.75
+            }
+          ],
+          "magnitude_counts": {
+            "0.75": 17,
+            "1.75": 28
+          },
+          "mismatches": 45,
+          "rne_nibble_sha256": "feed3c81af63e54cd838286c1d522091fd9aac00911269f2b7cac55fd8eeb650",
+          "states": 65536
+        },
+        "2": {
+          "canonical_nibble_sha256": "bb6930378429d99e5e25156f8ca309906f54935e6c913b77edb0028b6d687913",
+          "examples": [
+            {
+              "rne_nibble": 14,
+              "source_nibble": 13,
+              "state": 110,
+              "value": -3.5
+            },
+            {
+              "rne_nibble": 12,
+              "source_nibble": 11,
+              "state": 202,
+              "value": -1.75
+            }
+          ],
+          "magnitude_counts": {
+            "0.75": 11,
+            "1.75": 14,
+            "3.5": 28
+          },
+          "mismatches": 53,
+          "rne_nibble_sha256": "804e22a097772559cf40818f007d09a0252783c1c1f98d20415197441f51eb15",
+          "states": 65536
+        }
+      },
+      "schema": "glm53-p4-audit-static-diagnostics.v1",
+      "source_sha256": {
+        "LICENSE": "9a354667162e40201fa556e29ae7a327cdb112eacaa8ef100106e6063635e28a",
+        "LICENSE.exllamav3": "93ccc2f4c97c03bc767c611c75f3bb16b97e49606f5cd3ca05d7f6201ff8f8de",
+        "THIRD_PARTY_NOTICES.md": "6db83bfa50eff0b355186667fb0f40192adec85ab0f0a39890ba67f6940883ca",
+        "experiments/p4-astra-agent-plan-v1.json": "259d1daeb1329111efc9e1f6efddb6181854ac179dad4f6329586e68c5312789",
+        "glm53_nvfp4/endpoint_codec.py": "4ec04775b8b6fc0e29c67d281c87f0898fa9658e9cdaff3b111c62bca27c07b6",
+        "glm53_nvfp4/export_native_endpoint.py": "367a138e21a80daf9aadc0c2134fbe70b221e9d1e7bcee87cd2ab9dff382e780",
+        "glm53_nvfp4/modelopt.py": "ac96af58da9f53811cb98425e995dc1a4e48d587e5595ede68909743239e0157",
+        "glm53_nvfp4/trellis_mxf.py": "bb4309ef2be5f008c8091c8be44e4596f367c50fffcdeac9d7ebe1f1a0bef07c",
+        "glm53_nvfp4/trellis_nvfp4.py": "4b4b59cdab24c4e5b51c2cb78687126dce474b4dcce0953b6e0e39f66b2c5fa0",
+        "runtime_patch/b12x_h16/LICENSE.b12x": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py": "2428e8a6abaec75348181e6afee37deb2edf7697c820dd762029a453c8b071e4",
+        "runtime_patch/p8_mcg/Dockerfile": "bfcc0ce47d0655feaa6c8932c4b87b886406d30f6ee6bf5f2dfedcd2f68b0256",
+        "runtime_patch/p8_mcg/patch_split_phases.py": "08f28c642f62d5a90a40df689bdc0de2470513405299c6850004cb8ea536080d",
+        "runtime_patch/p8_mcg/w4a8_mcg_decode.py": "8b1e90d3189231ff77b4e3a44aa8d51d4383d565d5e43a7e73faa40cec65b17f",
+        "runtime_patch/p8_native_kernel.py": "a1f04de129e9e088137b869182fc03ea5e2268f5123ba8a5abbceeb0534b43b4",
+        "runtime_patch/sitecustomize.py": "a48f7ababfee84c8e039e63a08ae2229b06ef4c0fbf6f8c0448e69f40845e3e2",
+        "tests/test_endpoint_codec.py": "444d5ffca9070c6fe91be03d62267e85e2a5b6caf5ff3c771b4ad9d634b13d7f",
+        "tests/test_export_native_endpoint.py": "074940764b3693820ef329b06d88f9f9966eebcf979edec1bc2d32735e51fb92",
+        "tests/test_modelopt.py": "5512c6c410034625bc411aacd93d405d3506b6b978d0a712a9b0c9a54814887d",
+        "tests/test_trellis_mxf.py": "9c5735412858b71488d330e2a76d3cc0626062501a51e2a44e22dca961135ed3",
+        "tests/test_trellis_nvfp4.py": "07f06b041fef24c7caa9996b2189e3e381434661ee9e9dc0e2a58a99bd7f867c"
+      }
+    },
+    "exit_code": 0,
+    "python_version": "3.12.3",
+    "repository_unit_suite": {
+      "interpreters_probed": [
+        "/usr/bin/python3",
+        "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/.venv/bin/python"
+      ],
+      "reason": "Isolated importlib.find_spec probes found no torch, pytest, numpy or safetensors; no dependency installation or GPU-gated tests attempted.",
+      "status": "Not tested"
+    }
+  },
+  "constraints": {
+    "gpu_compilation_run": false,
+    "gpu_initialized": false,
+    "gpu_jobs_run": false,
+    "holdout_protection": "Not verified",
+    "kernel_implemented": false,
+    "ldlq_or_blockldlq_used": false,
+    "models_downloaded": false,
+    "packages_installed": false,
+    "reserved_confirmation_logits_opened": false,
+    "role_disjointness_verified": false,
+    "role_manifests_opened": false,
+    "selection_confirmation_final_payloads_opened": false,
+    "services_modified": false
+  },
+  "created_at": "2026-09-04T23:21:26+00:00",
+  "evidence_level": "structural",
+  "evidence_matrix": {
+    "cpu_bit_closure": "partial analytical diagnostics; full product closure Not tested",
+    "decode_speed": "Not tested",
+    "five_run_determinism": "Not tested",
+    "gpu_arithmetic_closure": "Not tested",
+    "integrated_serving": "Not tested",
+    "kld": "Not tested",
+    "prefill_speed": "Not tested",
+    "source_inspection": "demonstrated"
+  },
+  "initial_worktree_clean": true,
+  "limits": [
+    "Public documentation is not installed-toolchain or device evidence.",
+    "Analytical reference models do not execute the Torch source or establish complete packed-stream closure.",
+    "Source and report hashes provide integrity, not holdout secrecy.",
+    "Enclosing Git commit records delivery; no push is part of this audit."
+  ],
+  "predeclared_gates": {
+    "bit_mismatch_budget": 0,
+    "definition": "docs/P4_RUNTIME_AUDIT.md",
+    "definition_sha256": "586ba7b834f2d269767a36e18b99d97ea75e3a898533be92dc588f5207b61656",
+    "determinism_independent_process_runs": 5,
+    "gate_ids": [
+      "G0",
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5",
+      "G6",
+      "G7",
+      "G8"
+    ],
+    "hidden_prologue_added_fraction_of_isolated_decode_max": 0.1,
+    "hidden_prologue_time_ratio_max": 1.05,
+    "kld_mean_delta_absolute_max": 1e-05,
+    "kld_per_window_delta_absolute_max": 0.0001,
+    "runtime_table_budget_bytes": 4096,
+    "speed_class_each_run_each_cell_throughput_ratio_min": 0.9,
+    "speed_class_latency_ratio_max": 1.1111111111111112,
+    "status": "predeclared; no device or role-data execution authorized by this receipt",
+    "synthetic_seeds": [
+      20260904,
+      20260905,
+      20260906
+    ],
+    "threshold_origin": "Audit proposal; freeze full report before device results; not an inherited measured acceptance result."
+  },
+  "public_references": [
+    {
+      "scope": "format, dense warp fragments, block scale operands and instruction targets",
+      "url": "https://docs.nvidia.com/cuda/parallel-thread-execution/",
+      "version_observed": "PTX ISA 9.3"
+    },
+    {
+      "scope": "MmaMXF4NVF4Op operand and target contract",
+      "url": "https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_api/cute_nvgpu_warp.html",
+      "version_observed": "current API; page last updated 2026-08-31"
+    },
+    {
+      "scope": "NVFP4 two-level decode scaling",
+      "url": "https://nvidia.github.io/TransformerEngine/features/low_precision_training/nvfp4/nvfp4.html",
+      "version_observed": "2.20.0.dev0"
+    }
+  ],
+  "schema": "glm53-p4-runtime-audit.v1",
+  "verdict": "Native procedural Tensor Core P4 and NVFP4 speed class are not established at the audited commit."
+}
