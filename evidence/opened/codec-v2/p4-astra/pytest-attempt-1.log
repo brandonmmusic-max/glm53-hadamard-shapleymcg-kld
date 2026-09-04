@@ -1,0 +1,24 @@
+.........F...................................                            [100%]
+=================================== FAILURES ===================================
+____ test_all_65536_mcg_states_against_scalar_ieee_oracle_in_small_batches _____
+
+    def test_all_65536_mcg_states_against_scalar_ieee_oracle_in_small_batches():
+        seen = set()
+        for start in range(0, 65536, 256):
+            states = np.arange(start, start + 256, dtype="<u2")
+            actual = e2m1_codes(mcg_half_values(states))
+            expected = np.array([scalar_mcg_code(int(state)) for state in states], dtype=np.uint8)
+            np.testing.assert_array_equal(actual, expected)
+            seen.update(actual.tolist())
+>       assert seen == set(range(16))
+E       assert {0, 1, 2, 3, 4, 5, ...} == {0, 1, 2, 3, 4, 5, ...}
+E         
+E         Extra items in the right set:
+E         15
+E         7
+E         Use -v to get more diff
+
+tests/test_p4_codec.py:97: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_p4_codec.py::test_all_65536_mcg_states_against_scalar_ieee_oracle_in_small_batches
+1 failed, 44 passed in 0.89s

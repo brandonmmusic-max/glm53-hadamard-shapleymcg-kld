@@ -11,6 +11,10 @@ snapshot.  That snapshot did not contain a license file; provenance and the
 unverified license status are recorded in THIRD_PARTY_NOTICES.md.  KQuant's
 CUDA Viterbi encoder is loaded lazily so the format,
 packer, and reference decoder remain testable without that optional encoder.
+
+These legacy encoder LUTs use lower-magnitude midpoint ties and canonical
+positive zero. The independently versioned, table-free native RNE P4 matrix
+interchange is in p4_codec.py; do not relabel legacy payloads as that law.
 """
 from __future__ import annotations
 
