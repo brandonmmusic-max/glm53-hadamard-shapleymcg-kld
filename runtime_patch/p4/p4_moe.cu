@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp4.h>
 #include <cuda_fp8.h>
+#include <cuda_bf16.h>
 #include <math.h>
 
 namespace {
@@ -41,36 +42,24 @@ __device__ __forceinline__ void mma(float (&d)[4], const Stage& s, int lane) {
 }
 
 __device__ __forceinline__ void produce(
-    Stage& s, const float* x, const uint32_t* stream, const uint8_t* scales,
+    Stage& s, const uint32_t* x, const uint8_t* x_scale,
+    const uint32_t* stream, const uint8_t* scales,
     const int64_t* order, int64_t first, int64_t stop, int expert,
     int n0, int k0, int n, int k, int row_divisor, int lane) {
-    // Each lane owns one full activation group, then the corresponding row
-    // in the upper M8. The A boundary is NVFP4 E2M1 + dynamic E4M3/16.
+    // Reuse activations quantized once per FC stage. Previously every N8
+    // output tile repeated this quantization; only weight decoding belongs
+    // in this prologue. A and B are both packed native E2M1 operands.
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
         int row = lane / 4 + half * 8, block = lane & 3;
         int64_t position = first + row;
         int64_t route = position < stop ? order[position] : 0;
-        float v[16], maximum = 0.0f;
+        int64_t x_row = route / row_divisor;
+        s.sfa[row][block] = position < stop ? x_scale[x_row * (k / 16) + k0 / 16 + block] : 0;
 #pragma unroll
-        for (int j = 0; j < 16; ++j) {
-            v[j] = position < stop ? x[(route / row_divisor) * k + k0 + block * 16 + j] : 0.0f;
-            maximum = fmaxf(maximum, fabsf(v[j]));
-        }
-        // Keep a nonzero minimum subnormal scale for tiny nonzero groups.
-        // Large groups saturate to 448: this activation policy is explicit
-        // and reproduced by the CPU probe, not a quality/performance claim.
-        __nv_fp8_e4m3 sf(maximum == 0.0f ? 0.0f : fmaxf(maximum / 6.0f, 0x1p-9f));
-        s.sfa[row][block] = sf.__x;
-        float inv = maximum == 0.0f ? 0.0f : 1.0f / float(sf);
-#pragma unroll
-        for (int word = 0; word < 2; ++word) {
-            uint32_t packed = 0;
-#pragma unroll
-            for (int j = 0; j < 8; ++j)
-                packed |= uint32_t(__nv_cvt_float_to_fp4(v[word * 8 + j] * inv, __NV_E2M1, cudaRoundNearest)) << (j * 4);
-            s.a[row][block * 2 + word] = packed;
-        }
+        for (int word = 0; word < 2; ++word)
+            s.a[row][block * 2 + word] = position < stop ?
+                x[x_row * (k / 8) + k0 / 8 + block * 2 + word] : 0;
     }
     int row = lane / 4, block = lane & 3;
 #pragma unroll
@@ -84,7 +73,7 @@ __device__ __forceinline__ void produce(
 // One producer warp and one MMA warp, two stages. FC1 emits gate/up
 // activations; FC2 consumes SwiGLU activations. No weight expansion in gmem.
 __global__ __launch_bounds__(64) void p4_project_kernel(
-    const float* x, const uint32_t* stream, const uint8_t* scales,
+    const uint32_t* x, const uint8_t* x_scale, const uint32_t* stream, const uint8_t* scales,
     const float* global_scale, const int64_t* order, const int64_t* offsets,
     const int64_t* tile_offsets, float* out,
     int experts, int n, int k, int projections, int row_divisor) {
@@ -104,7 +93,7 @@ __global__ __launch_bounds__(64) void p4_project_kernel(
     int lane = threadIdx.x & 31;
     if (threadIdx.x < 32) {
         for (int tile = 0; tile < k / 64; ++tile) {
-            produce(stages[tile & 1], x, stream, scales, order, first, stop,
+            produce(stages[tile & 1], x, x_scale, stream, scales, order, first, stop,
                     expert, n0, tile * 64, n, k, row_divisor, lane);
             rendezvous();
         }
@@ -123,6 +112,34 @@ __global__ __launch_bounds__(64) void p4_project_kernel(
                 out[(route * projections + projection) * n + col] = d[i] * gs;
             }
         }
+    }
+}
+
+template<bool BF16>
+__global__ void p4_quantize_kernel(const void* input, uint32_t* packed, uint8_t* scales,
+                                  int64_t groups) {
+    int64_t group = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (group >= groups) return;
+    float values[16], maximum = 0.0f;
+#pragma unroll
+    for (int j = 0; j < 16; ++j) {
+        if constexpr (BF16)
+            values[j] = __bfloat162float(static_cast<const __nv_bfloat16*>(input)[group * 16 + j]);
+        else
+            values[j] = static_cast<const float*>(input)[group * 16 + j];
+        maximum = fmaxf(maximum, fabsf(values[j]));
+    }
+    __nv_fp8_e4m3 sf(maximum == 0.0f ? 0.0f : fmaxf(maximum / 6.0f, 0x1p-9f));
+    scales[group] = sf.__x;
+    float inv = maximum == 0.0f ? 0.0f : 1.0f / float(sf);
+#pragma unroll
+    for (int word = 0; word < 2; ++word) {
+        uint32_t bits = 0;
+#pragma unroll
+        for (int j = 0; j < 8; ++j)
+            bits |= uint32_t(__nv_cvt_float_to_fp4(values[word * 8 + j] * inv,
+                        __NV_E2M1, cudaRoundNearest)) << (j * 4);
+        packed[group * 2 + word] = bits;
     }
 }
 
@@ -164,16 +181,49 @@ __global__ void p4_decode_probe_kernel(const uint32_t* stream, uint32_t* packed,
 }  // namespace
 
 // C ABI keeps offline compilation independent of Torch/CuTe and its driver.
+extern "C" int p4_prepare() {
+    // Force module/function loading during GLM weight initialization. Lazy
+    // loading from the first ctypes launch inside capture is not permitted.
+    // cudaFuncGetAttributes does not launch, synchronize or warm a kernel.
+    cudaFuncAttributes attributes;
+    cudaError_t status = cudaFuncGetAttributes(&attributes, p4_project_kernel);
+    if (status != cudaSuccess) return int(status);
+    status = cudaFuncGetAttributes(&attributes, p4_swiglu_kernel);
+    if (status != cudaSuccess) return int(status);
+    status = cudaFuncGetAttributes(&attributes, p4_sum_kernel);
+    if (status != cudaSuccess) return int(status);
+    status = cudaFuncGetAttributes(&attributes, p4_quantize_kernel<true>);
+    if (status != cudaSuccess) return int(status);
+    status = cudaFuncGetAttributes(&attributes, p4_quantize_kernel<false>);
+    if (status != cudaSuccess) return int(status);
+    return int(cudaFuncGetAttributes(&attributes, p4_decode_probe_kernel));
+}
+
 extern "C" int p4_project(
-    const float* x, const uint32_t* stream, const uint8_t* scales, const float* gs,
+    const uint32_t* x, const uint8_t* x_scale,
+    const uint32_t* stream, const uint8_t* scales, const float* gs,
     const int64_t* order, const int64_t* offsets, const int64_t* tiles, float* out,
     int experts, int routes, int n, int k, int projections, int row_divisor, cudaStream_t cuda_stream) {
     if (experts <= 0 || routes <= 0 || n <= 0 || n % 16 || k <= 0 || k % 64 ||
         projections < 1 || projections > 2 || row_divisor <= 0) return int(cudaErrorInvalidValue);
-    unsigned max_tiles = (routes + 15) / 16 + experts;
+    // sum_e ceil(count[e]/16) <= min(R, floor((R + 15*E)/16)).
+    // In C1/topk8 this shrinks Y from 289 to 8 for E288.
+    unsigned max_tiles = unsigned((int64_t(routes) + 15ll * experts) / 16);
+    if (max_tiles > unsigned(routes)) max_tiles = routes;
     if (max_tiles > 65535) return int(cudaErrorInvalidConfiguration);
     p4_project_kernel<<<dim3(projections * n / 8, max_tiles), 64, 0, cuda_stream>>>(
-        x, stream, scales, gs, order, offsets, tiles, out, experts, n, k, projections, row_divisor);
+        x, x_scale, stream, scales, gs, order, offsets, tiles, out, experts, n, k, projections, row_divisor);
+    return int(cudaGetLastError());
+}
+extern "C" int p4_quantize(const void* input, uint32_t* packed, uint8_t* scales,
+                            int rows, int k, int bf16, cudaStream_t stream) {
+    if (rows <= 0 || k <= 0 || k % 16 || (bf16 != 0 && bf16 != 1))
+        return int(cudaErrorInvalidValue);
+    int64_t groups = int64_t(rows) * k / 16;
+    if (bf16)
+        p4_quantize_kernel<true><<<(groups + 255) / 256, 256, 0, stream>>>(input, packed, scales, groups);
+    else
+        p4_quantize_kernel<false><<<(groups + 255) / 256, 256, 0, stream>>>(input, packed, scales, groups);
     return int(cudaGetLastError());
 }
 extern "C" int p4_swiglu(const float* gu, float* mid, int routes, int n, float limit, cudaStream_t stream) {

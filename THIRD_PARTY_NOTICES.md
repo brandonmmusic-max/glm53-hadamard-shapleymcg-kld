@@ -31,6 +31,12 @@ and software. Those components are not relicensed by the ShapleyMCG License.
   ABI, and E2M1/E4M3/16 staging are new; no T12 table or P8 K32 operand
   permutation is used. `glm53_nvfp4/p4_reference.py` independently implements
   the same frozen law/layout for CPU verification. Retain all notices above.
+- The GLM P4 serving adapter in `runtime_patch/p4_glm_serving.py` and the
+  `b12x_h16/.../p4_native.py` backend entry are new integration work against
+  vLLM's existing factory/modular-method contracts. The v2 P4 decoder adopts
+  the matrix codec's native RNE and signed-zero semantics. Native activation
+  prepass reuse and shape/stream workspace caching are new implementation;
+  the underlying ExLlamaV3/KQuant/QSRT/B12X port attribution still applies.
 
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be

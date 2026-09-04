@@ -1,0 +1,108 @@
+{
+  "schema": "glm53-p4-serving-structural-receipt.v1",
+  "created_utc": "2026-09-04T23:46:03Z",
+  "base_commit": "d456831b77c5b418e348a53a0bdb4d75b86d0b91",
+  "plan": "experiments/p4-glm-serving-integration-v1.json",
+  "plan_sha256": "5fa3f9ad31d1694762384f38caf0a295ac109e1869ac4bc9c3a794b6221523b9",
+  "evidence_level": "structural",
+  "gpu_executed": false,
+  "protected_roles_opened": [],
+  "ldlq": false,
+  "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0 python3 -m pytest -q -s tests/test_p4_glm_serving.py tests/test_p4_native_kernel.py tests/test_p4_codec.py",
+  "attempts": [
+    {
+      "log": "host-static-attempt-1.log",
+      "sha256": "0e24a077c7f5963dce5ef0cba39c210fcef4f8eeb403f0c63f17b6b02ca3aa43",
+      "exit_status": 0,
+      "tests_passed": 118,
+      "seconds": 5.83,
+      "scope": "Initial implementation host/static iteration. Later full-layout metadata, runtime-call spy and pre-forward quant-config hook were added. Final source identities below belong to attempt 2."
+    },
+    {
+      "log": "host-static-attempt-2.log",
+      "sha256": "d37836b5c5965e99134d57be2bd5042f83e60ecceee00b17ca10a1f87650c710",
+      "exit_status": 0,
+      "tests_passed": 119,
+      "seconds": 6.02,
+      "scope": "Final host/static source below, including both exact local vLLM carrier signatures, real forward_modular and _ensure_moe_quant_config_init execution, C ABI call-order/current-stream spy, native state census and offline compiler/resource checks."
+    }
+  ],
+  "environment": {
+    "python": "3.12.3 GCC 13.3.0",
+    "torch": "2.12.0.dev20260410+cu132",
+    "nvcc": "/usr/local/cuda-13.2/bin/nvcc",
+    "nvcc_version": "13.2.51",
+    "host_compiler": "Ubuntu GCC 13.3.0-6ubuntu2~24.04.1",
+    "cuda_visible_devices": "",
+    "vllm_source": "/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/vllm",
+    "vllm_commit": "df684ff47dcbf088b41311494fd20347a702e56a",
+    "vllm_import_and_server_execution": "Not tested. Exact method source was compiled and executed with host stand-ins; signatures/ownership hooks were inspected and hashed."
+  },
+  "source_sha256": {
+    "runtime_patch/sitecustomize.py": "0344f87a90e09e6f2310c34566c5837edbe39dd523e182fb5e9a64bcbdad5fe1",
+    "runtime_patch/p4_glm_serving.py": "27d11d814fd0d09ee31e7f9e3aea9ac5ce40085a0962423a820a4379635759af",
+    "runtime_patch/p4_native_kernel.py": "e1eca529c76a70bea40df079089f85cb260a3b519ddd180bf38cd7c122b7a6d0",
+    "runtime_patch/p4/p4_decode.cuh": "39e2f92dd35035b63dc2a37ce5d4c11af54e9e0fe928eb5ef35bb3ede90b6fda",
+    "runtime_patch/p4/p4_moe.cu": "ad963a84ce535a45352ea58b057b4aaa9c36cad5522e41d82af3689849ca8259",
+    "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p4_native.py": "a4849cafe05a2a44715508a2ae0e77849870aa4db8ac6b00e67d5c1115059aa5",
+    "glm53_nvfp4/p4_codec.py": "a20f54486c9b7d2097c1f6012b6a49fd1ad2c7c725f4f048829ea5ee090dab0f",
+    "glm53_nvfp4/p4_reference.py": "9b2468aad29af19bdcf597be0c97ef760ce506b3828af5febfe3831e759aa272",
+    "tests/test_p4_glm_serving.py": "b8cb8f26e8101a7ad53c4c602efe0786064fcc9f468d30ba8be7277b866806fa",
+    "tests/test_p4_native_kernel.py": "30e9678ed3d1186e1b0c1a0c5dc0c76c32e2782c7da09d30e88df81561b0889a"
+  },
+  "bridge_interop": {
+    "bridge_commit": "a872909",
+    "command": "CUDA_VISIBLE_DEVICES='' PYTHONPATH=runtime_patch python3 evidence/opened/codec-v2/p4-serving/check_bridge_import.py /home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-astra-p4-bridge/evidence/opened/codec-v2/p4-bridge-v2/fixture/ranks",
+    "reproducer_sha256": "bb06fe729c5b8db956a92c270dc67547465e9b2cda7401620685ea83fb77b25b",
+    "log": "module-and-bridge-replay.log",
+    "log_sha256": "9a3fbb9444db6ca013930a181233b489685d976433d919da7ed5162ba625bb48",
+    "result": "Actual mounted-backend import succeeds with CUDA discovery/initialization forbidden; all four real bridge safetensors pass independent runtime physical ABI and file-hash validation at E3/H128/I64-per-rank.",
+    "exit_status": 0,
+    "gpu_executed": false
+  },
+  "vllm_source_sha256": {
+    "models/glm5next/nvidia/model.py": "3da748cf1a431679dd580d898853729963af405e68dfc5b5569ee25f4131e9ad",
+    "model_executor/layers/fused_moe/layer.py": "d752ba7d226903ce6ee83766fea9853caff9b6cfe0053e3186a6e8cfd0585317",
+    "model_executor/layers/fused_moe/runner/moe_runner.py": "35c809cdc644749ed9a07ee45f9c4be8e4edbc752a12f9b59bb89f82463eedae",
+    "model_executor/model_loader/utils.py": "e53afb80b17a7db8d2198566a67f54d09c50ae965ef4d1c2992e97ab2d078986",
+    "model_executor/layers/fused_moe/config.py": "0d1e20da0bbbecf9af26dc21c6b4a67e71f19df8f04cd05d1795f41d50430461"
+  },
+  "codec": {
+    "schema": "glm53-p4-mcg-tp-rank.v2",
+    "law": "procedural-mcg-alpha1-rne-e2m1",
+    "weight_rounding": "nearest-even-satfinite",
+    "signed_zero": "preserve",
+    "states_checked": 65536,
+    "negative_zero_states": 5432,
+    "state_census_sha256": "195d9e9aac6dca94828fa8f693e9bcbba6804f8e160566ce02cad7ba742b7ba1",
+    "scale": "positive E4M3 bytes 1..126 per K16",
+    "weight_lookup_table_bytes": 0,
+    "stream_plus_scale_bpw": 4.5,
+    "global_scalars": "Three FP32 values per expert per rank, additionally charged by bridge; physical_bpw label denotes stream plus block scales only."
+  },
+  "offline_compiler": {
+    "target": "sm_120a",
+    "linked_flags": "-std=c++17 -O3 -lineinfo -gencode=arch=compute_120a,code=sm_120a --shared -Xcompiler=-fPIC",
+    "ptx_sha256": "a3dedbf23a8fc1153b5ae2fcf4cb28e4be86d2ec5084076811e68e182a5e9bcc",
+    "assembled_mma_sites": 15,
+    "all_mma": "OMMA.SF.16864.F32.E2M1.E2M1.UE4M3.4X",
+    "projection_registers": 62,
+    "projection_shared_bytes": 1728,
+    "projection_spill_bytes": 0,
+    "activation_quantizer_registers": 31,
+    "shared_library_loaded_on_device": false
+  },
+  "optimization_checks": {
+    "activation_quantizer_calls_per_nonempty_forward": 2,
+    "A_reuse": "Packed native activations and physical scale bytes reused across every N8 tile in the corresponding FC stage",
+    "route_grid_bound": "min(routes, floor((routes + 15*experts)/16))",
+    "route_grid_exhaustive_host_test": "All count partitions through dynamic programming for 1..7 experts and 0..128 routes",
+    "C1_topk8_E288_Y_blocks_before": 289,
+    "C1_topk8_E288_Y_blocks_after": 8,
+    "workspace": "Shape/stream-scoped persistent activation and routing scratch, reused across sequential layers; caller outputs independent",
+    "no_measured_speedup": true
+  },
+  "pending": ["real-device byte and arithmetic closure", "graph execution parity", "coherent GLM serving", "full-model KLD", "five-run GPU bitwise determinism", "TP4 prefill/decode throughput"],
+  "isa_cost": "P4 uses native mxf4nvf4 K64 issue class. P8 mxf8f6f4 K32 requires twice the MMA issues per equal K span; it is a separate quality product.",
+  "conclusion": "GLM factory, post-load and modular-forward code reaches both native P4 projections under the v2 codec contract and passes host/static/offline compiler checks. This does not establish GPU correctness, hidden decode latency, KLD benefit or speed."
+}

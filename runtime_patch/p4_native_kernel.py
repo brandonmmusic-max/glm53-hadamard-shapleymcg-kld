@@ -1,7 +1,8 @@
 """Experimental P4 TP-local MoE: cyclic K4 MCG -> E2M1/E4M3/16 -> mxf4nvf4.
 
-Independent endpoint; importing this module neither compiles nor launches.
-CUDA compilation/device closure and serving integration are separate gates.
+GLM serving selects this endpoint through the B12X P4 backend adapter.
+Importing this module neither compiles nor launches. Device closure remains
+a separate gate from the host/static serving integration.
 Port provenance: ExLlamaV3 law/stream, KQuant/QSRT codec/lane conventions,
 and B12X w4a8_trellis producer/consumer design; see THIRD_PARTY_NOTICES.md.
 """
@@ -22,16 +23,46 @@ import torch
 
 SOURCE = Path(__file__).resolve().parent / "p4" / "p4_moe.cu"
 MMA = "mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.block_scale.scale_vec::4X.f32.e2m1.e2m1.f32.ue4m3"
+_LIBRARIES = {}
+_WORKSPACES = {}
+
+
+def max_route_tiles(routes: int, experts: int) -> int:
+    """Tight worst-case number of nonempty M16 tiles for arbitrary routing."""
+    if type(routes) is not int or type(experts) is not int or routes < 0 or experts <= 0:
+        raise ValueError("P4 route/expert counts must be nonnegative/positive integers")
+    return min(routes, (routes + 15 * experts) // 16)
+
+
+def _verify_file(path: Path, expected_sha256: str, expected_bytes: int | None) -> None:
+    if (len(expected_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in expected_sha256)):
+        raise ValueError("P4 file hash must be 64 lowercase hexadecimal characters")
+    digest = hashlib.sha256()
+    size = 0
+    with Path(path).open("rb") as handle:
+        for data in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(data)
+            size += len(data)
+    if digest.hexdigest() != expected_sha256 or (expected_bytes is not None and size != expected_bytes):
+        raise ValueError(f"P4 sidecar content identity mismatch: {path}")
 
 
 def validate_payload(tensors: dict[str, torch.Tensor], metadata: dict[str, str], *,
                      layer: int, tp_rank: int, expected_design_sha256: str) -> tuple[int, int, int]:
     """Validate the complete physical ABI on CPU before any device allocation."""
     required = {
-        "schema": "glm53-p4-mcg-tp-rank.v1", "role": "physical-codec",
+        "schema": "glm53-p4-mcg-tp-rank.v2", "role": "physical-codec",
         "layer": str(layer), "rank": str(tp_rank), "world_size": "4", "bits": "4",
-        "alphabet": "e2m1", "scale": "e4m3-k16", "law": "procedural-mcg",
-        "compander": "1", "weight_rounding": "nearest-ties-low-magnitude",
+        "alphabet": "e2m1", "scale": "e4m3-k16", "law": "procedural-mcg-alpha1-rne-e2m1",
+        "compander": "1", "weight_rounding": "nearest-even-satfinite",
+        "signed_zero": "preserve", "scale_layout": "row-major-n-k16",
+        "state_bits": "16", "tile_values": "256", "state_boundary": "cyclic-per-tile",
+        "mcg_arithmetic": "u32-wrap-mask-xor-add-rn-f16", "byte_order": "little",
+        "trellis_layout": "k16-n16-exl3-lane-pair-swapped-i16",
+        "global_scale": "positive-f32-per-projection-expert",
+        "expert_order": "global-contiguous-zero-based", "tp_sharding": "gate-up-rows-down-columns",
+        "state_lut_bytes": "0",
         "boundary": "identity", "w13_order": "gate,up", "ldlq": "false",
         "source_design_sha256": expected_design_sha256,
     }
@@ -53,6 +84,10 @@ def validate_payload(tensors: dict[str, torch.Tensor], metadata: dict[str, str],
         raise ValueError("invalid P4 W13 K4 stream")
     _, experts, k16, n16, _ = w13.shape
     hidden, intermediate = k16 * 16, n16 * 16
+    dimensions = {"experts": str(experts), "hidden": str(hidden),
+                  "intermediate": str(intermediate * 4), "intermediate_per_rank": str(intermediate)}
+    if any(metadata.get(name) != value for name, value in dimensions.items()):
+        raise ValueError("P4 metadata dimensions do not match physical TP4 tensors")
     if experts <= 0 or hidden <= 0 or intermediate <= 0 or hidden % 64 or intermediate % 64:
         raise ValueError("P4 K dimensions must be positive multiples of 64")
     if w2.dtype != torch.int16 or tuple(w2.shape) != (experts, n16, k16, 64):
@@ -60,7 +95,8 @@ def validate_payload(tensors: dict[str, torch.Tensor], metadata: dict[str, str],
     for name, shape in (("w13_scale_e4m3", (2, experts, intermediate, hidden // 16)),
                         ("w2_scale_e4m3", (experts, hidden, intermediate // 16))):
         sf = tensors[name]
-        if sf.dtype != torch.uint8 or tuple(sf.shape) != shape or bool((sf > 126).any()):
+        if (sf.dtype != torch.uint8 or tuple(sf.shape) != shape
+                or bool(((sf == 0) | (sf > 126)).any())):
             raise ValueError(f"invalid P4 E4M3/16 scale plane: {name}")
     for name, shape in (("w13_global_scale", (2, experts)), ("w2_global_scale", (experts,))):
         gs = tensors[name]
@@ -96,22 +132,29 @@ def compile_library(build_dir: Path, *, nvcc: str | None = None) -> Path:
 class P4NativeTPMoE:
     """Two fused trellis projections with FP32 activation scratch and fixed-order top-k sum.
 
-    This initial launch seam uses stable route sorting and per-call scratch.
-    CUDA graph parity and throughput remain unqualified. It does not modify
-    sitecustomize, production loaders, P8 dispatch, or any service.
+    Stable route sorting uses reusable, shape/stream-keyed activation scratch.
+    CUDA graph parity and throughput remain unqualified. Serving calls
+    prepare() during weight loading, before vLLM may capture CUDA graphs.
     """
 
     def __init__(self, sidecar: Path, *, device: torch.device, tp_rank: int, layer: int,
                  expected_design_sha256: str, topk: int = 8, swiglu_limit: float = 10.0,
-                 build_dir: Path | None = None):
+                 build_dir: Path | None = None, expected_file_sha256: str | None = None,
+                 expected_file_bytes: int | None = None,
+                 expected_geometry: tuple[int, int, int] | None = None):
         from safetensors import safe_open
 
+        if expected_file_sha256 is not None:
+            _verify_file(sidecar, expected_file_sha256, expected_file_bytes)
         with safe_open(sidecar, framework="pt", device="cpu") as src:
             tensors = {key: src.get_tensor(key) for key in src.keys()}
             metadata = src.metadata() or {}
+        if expected_file_sha256 is not None:
+            _verify_file(sidecar, expected_file_sha256, expected_file_bytes)
         self._initialize(tensors, metadata, device=device, tp_rank=tp_rank, layer=layer,
                          expected_design_sha256=expected_design_sha256, topk=topk,
-                         swiglu_limit=swiglu_limit, build_dir=build_dir)
+                         swiglu_limit=swiglu_limit, build_dir=build_dir,
+                         expected_geometry=expected_geometry)
 
     @classmethod
     def from_tensors(cls, tensors, metadata, **kwargs):
@@ -121,10 +164,14 @@ class P4NativeTPMoE:
         return obj
 
     def _initialize(self, tensors, metadata, *, device, tp_rank, layer,
-                    expected_design_sha256, topk=8, swiglu_limit=10.0, build_dir=None):
+                    expected_design_sha256, topk=8, swiglu_limit=10.0, build_dir=None,
+                    expected_geometry=None):
         self.experts, self.hidden, self.intermediate = validate_payload(
             tensors, metadata, layer=layer, tp_rank=tp_rank,
             expected_design_sha256=expected_design_sha256)
+        if (expected_geometry is not None
+                and (self.experts, self.hidden, self.intermediate) != expected_geometry):
+            raise ValueError("P4 sidecar geometry does not match the serving layer")
         if not isinstance(topk, int) or isinstance(topk, bool) or not 1 <= topk <= self.experts:
             raise ValueError("P4 topk must be an integer in 1..experts")
         if not math.isfinite(swiglu_limit) or swiglu_limit <= 0:
@@ -139,23 +186,78 @@ class P4NativeTPMoE:
         self.tensors = {name: tensor.to(self.device) for name, tensor in tensors.items()}
         self.build_dir = build_dir or SOURCE.parents[2] / "build" / "p4-native"
         self.lib = None
+        self.prepared = False
 
     def compile(self):
         if self.lib is None:
+            if torch.cuda.is_current_stream_capturing():
+                raise RuntimeError("P4 must compile and prepare during weight loading, before graph capture")
+            key = (str(self.build_dir.resolve()), hashlib.sha256(
+                SOURCE.read_bytes() + SOURCE.with_name("p4_decode.cuh").read_bytes()).hexdigest())
+            if key in _LIBRARIES:
+                self.lib = _LIBRARIES[key]
+                return self.lib
             self.lib = ctypes.CDLL(str(compile_library(self.build_dir)))
             ptr, integer = ctypes.c_void_p, ctypes.c_int
-            self.lib.p4_project.argtypes = [ptr] * 8 + [integer] * 6 + [ptr]
+            self.lib.p4_project.argtypes = [ptr] * 9 + [integer] * 6 + [ptr]
+            self.lib.p4_quantize.argtypes = [ptr] * 3 + [integer] * 3 + [ptr]
             self.lib.p4_swiglu.argtypes = [ptr, ptr, integer, integer, ctypes.c_float, ptr]
             self.lib.p4_sum.argtypes = [ptr] * 3 + [integer] * 3 + [ptr]
             self.lib.p4_decode_probe.argtypes = [ptr, ptr] + [integer] * 3 + [ptr]
-            for name in ("p4_project", "p4_swiglu", "p4_sum", "p4_decode_probe"):
+            self.lib.p4_prepare.argtypes = []
+            for name in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare"):
                 getattr(self.lib, name).restype = integer
+            _LIBRARIES[key] = self.lib
         return self.lib
+
+    def prepare(self):
+        """Compile/load all CUDA functions outside graph capture; no kernel launch."""
+        with torch.cuda.device(self.device):
+            if self.prepared:
+                return
+            if torch.cuda.is_current_stream_capturing():
+                raise RuntimeError("P4 prepare must finish before CUDA graph capture")
+            self._check(self.compile().p4_prepare())
+            self.prepared = True
 
     @staticmethod
     def _check(status):
         if status:
             raise RuntimeError(f"P4 CUDA launch failed with status {status}")
+
+    def workspace(self, rows, stream):
+        """Activation/routing scratch only; never decoded weight matrices.
+
+        Reuse across sequential GLM layers on one stream avoids retaining an
+        entire activation workspace per layer. Distinct streams and shapes
+        have distinct storage; graph captures retain stable addresses. DBO
+        and sequence/expert parallelism are rejected by the serving adapter.
+        Returned model outputs never alias this reusable pool.
+        """
+        key = (str(self.device), rows, int(stream), self.experts, self.hidden,
+               self.intermediate, self.topk)
+        if key not in _WORKSPACES:
+            routes = rows * self.topk
+            def empty(shape, dtype):
+                return torch.empty(shape, dtype=dtype, device=self.device)
+            work = {name: empty((routes,), torch.int64) for name in ("ids", "sorted_ids", "order")}
+            work.update({
+                "ones": torch.ones(routes, dtype=torch.int64, device=self.device),
+                "counts": empty((self.experts,), torch.int64),
+                "tile_counts": empty((self.experts,), torch.int64),
+                "offsets": torch.zeros(self.experts + 1, dtype=torch.int64, device=self.device),
+                "tiles": torch.zeros(self.experts + 1, dtype=torch.int64, device=self.device),
+                "a1": empty((rows, self.hidden // 8), torch.int32),
+                "sfa1": empty((rows, self.hidden // 16), torch.uint8),
+                "a2": empty((routes, self.intermediate // 8), torch.int32),
+                "sfa2": empty((routes, self.intermediate // 16), torch.uint8),
+                "gu": empty((routes, 2, self.intermediate), torch.float32),
+                "mid": empty((routes, self.intermediate), torch.float32),
+                "routed": empty((routes, self.hidden), torch.float32),
+                "output": empty((rows, self.hidden), torch.float32),
+            })
+            _WORKSPACES[key] = work
+        return _WORKSPACES[key]
 
     @torch.inference_mode()
     def __call__(self, x, topk_weights, topk_ids, *, return_intermediates=False):
@@ -175,45 +277,54 @@ class P4NativeTPMoE:
                         torch.empty((0, self.hidden), dtype=torch.float32, device=self.device))
             return result
         routes = m * self.topk
-        if (routes + 15) // 16 + self.experts > 65535:
+        if max_route_tiles(routes, self.experts) > 65535:
             raise ValueError("P4 route tile count exceeds the initial launch grid")
         with torch.cuda.device(self.device):
-            lib = self.compile()
-            ids = topk_ids.contiguous().view(-1).long()
+            self.prepare()
+            lib = self.lib
+            current_stream = torch.cuda.current_stream(self.device)
+            cuda_stream = current_stream.cuda_stream
+            work = self.workspace(m, cuda_stream)
+            ids = work["ids"]
+            ids.view(m, self.topk).copy_(topk_ids)
             torch._assert_async(((ids >= 0) & (ids < self.experts)).all(), "P4 expert ID outside payload")
             torch._assert_async(torch.isfinite(x).all(), "P4 input is non-finite")
             torch._assert_async(torch.isfinite(topk_weights).all(), "P4 route weight is non-finite")
-            order = torch.argsort(ids, stable=True)
+            order = work["order"]
+            torch.sort(ids, stable=True, out=(work["sorted_ids"], order))
             # Fixed-size scatter histogram avoids bincount's data-dependent
             # result extent and rejects invalid IDs before index arithmetic.
-            counts = torch.zeros(self.experts, dtype=torch.int64, device=self.device)
-            counts.scatter_add_(0, ids, torch.ones_like(ids))
-            offsets = torch.cat((counts.new_zeros(1), counts.cumsum(0)))
-            tiles = torch.cat((counts.new_zeros(1), ((counts + 15) // 16).cumsum(0)))
-            activation = x.float().contiguous()
+            counts = work["counts"].zero_()
+            counts.scatter_add_(0, ids, work["ones"])
+            offsets, tiles = work["offsets"], work["tiles"]
+            torch.cumsum(counts, 0, out=offsets[1:])
+            torch.add(counts, 15, out=work["tile_counts"])
+            torch.div(work["tile_counts"], 16, rounding_mode="floor", out=work["tile_counts"])
+            torch.cumsum(work["tile_counts"], 0, out=tiles[1:])
+            activation = x.contiguous()
             weights = topk_weights.contiguous()
-            gu = torch.empty((routes, 2, self.intermediate), dtype=torch.float32, device=self.device)
-            mid = torch.empty((routes, self.intermediate), dtype=torch.float32, device=self.device)
-            routed = torch.empty((routes, self.hidden), dtype=torch.float32, device=self.device)
-            output = torch.empty((m, self.hidden), dtype=torch.float32, device=self.device)
-            cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+            gu, mid, routed, output = (work[name] for name in ("gu", "mid", "routed", "output"))
             t = self.tensors
 
-            def project(inp, name, out, n, k, projections, divisor):
-                args = (inp, t[name + "_trellis"], t[name + "_scale_e4m3"],
+            def project(inp, sf, name, out, n, k, projections, divisor):
+                args = (inp, sf, t[name + "_trellis"], t[name + "_scale_e4m3"],
                         t[name + "_global_scale"], order, offsets, tiles, out)
                 self._check(lib.p4_project(*[v.data_ptr() for v in args], self.experts,
                                           routes, n, k, projections, divisor, cuda_stream))
 
-            project(activation, "w13", gu, self.intermediate, self.hidden, 2, self.topk)
+            self._check(lib.p4_quantize(activation.data_ptr(), work["a1"].data_ptr(),
+                         work["sfa1"].data_ptr(), m, self.hidden, 1, cuda_stream))
+            project(work["a1"], work["sfa1"], "w13", gu, self.intermediate, self.hidden, 2, self.topk)
             self._check(lib.p4_swiglu(gu.data_ptr(), mid.data_ptr(), routes,
                                      self.intermediate, self.limit, cuda_stream))
-            project(mid, "w2", routed, self.hidden, self.intermediate, 1, 1)
+            self._check(lib.p4_quantize(mid.data_ptr(), work["a2"].data_ptr(),
+                         work["sfa2"].data_ptr(), routes, self.intermediate, 0, cuda_stream))
+            project(work["a2"], work["sfa2"], "w2", routed, self.hidden, self.intermediate, 1, 1)
             self._check(lib.p4_sum(routed.data_ptr(), weights.data_ptr(), output.data_ptr(),
                                   m, self.topk, self.hidden, cuda_stream))
             # ctypes launches are external to Torch's allocator. Record all
             # referenced tensors on the actual stream, including sidecars.
-            for v in (*t.values(), activation, weights, order, offsets, tiles, gu, mid, routed, output):
-                v.record_stream(torch.cuda.current_stream(self.device))
+            for v in (*t.values(), *work.values(), activation, weights):
+                v.record_stream(current_stream)
             result = output.to(torch.bfloat16)
-            return (result, gu, mid, routed) if return_intermediates else result
+            return (result, gu.clone(), mid.clone(), routed.clone()) if return_intermediates else result
