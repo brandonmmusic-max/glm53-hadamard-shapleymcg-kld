@@ -74,6 +74,9 @@ if P8_NATIVE:
         _P8NativeModelOptNvFp4FusedMoE.process_weights_after_loading
     )
     _P8N_ORIGINAL_MODELOPT_APPLY = _P8NativeModelOptNvFp4FusedMoE.apply
+    _P8N_ORIGINAL_MODELOPT_GET_QUANT_CONFIG = (
+        _P8NativeModelOptNvFp4FusedMoE.get_fused_moe_quant_config
+    )
     _P8N_ORIGINAL_IS_MONOLITHIC = _P8NativeFusedMoEMethodBase.is_monolithic.fget
 
     def _p8n_release_carrier_parameters(layer):
@@ -143,6 +146,15 @@ if P8_NATIVE:
         assert _P8N_ORIGINAL_IS_MONOLITHIC is not None
         return _P8N_ORIGINAL_IS_MONOLITHIC(self)
 
+    def _p8n_modelopt_get_fused_moe_quant_config(self, layer):
+        # RoutedExperts._ensure_moe_quant_config_init runs before the modular
+        # forward. Native P8 owns its activation/weight operand conversion and
+        # has already released the ModelOpt carrier scales, so rebuilding the
+        # inherited NVFP4 config here would dereference empty parameters.
+        if getattr(self, "_glm53_p8_native", False):
+            return None
+        return _P8N_ORIGINAL_MODELOPT_GET_QUANT_CONFIG(self, layer)
+
     def _p8n_run(layer, x, topk_weights, topk_ids):
         output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
         if not getattr(layer, "_glm53_p8_native_forward_logged", False):
@@ -195,6 +207,9 @@ if P8_NATIVE:
         _p8n_modelopt_process_weights_after_loading
     )
     _P8NativeModelOptNvFp4FusedMoE.apply = _p8n_modelopt_apply
+    _P8NativeModelOptNvFp4FusedMoE.get_fused_moe_quant_config = (
+        _p8n_modelopt_get_fused_moe_quant_config
+    )
     _P8NativeModelOptNvFp4FusedMoE.is_monolithic = property(
         _p8n_modelopt_is_monolithic
     )
