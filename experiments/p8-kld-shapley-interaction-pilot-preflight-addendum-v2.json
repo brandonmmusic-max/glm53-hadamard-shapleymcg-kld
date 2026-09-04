@@ -1,0 +1,23 @@
+{
+  "schema": "glm53-p8.direct-kld-shapley-pilot-preflight-addendum.v2",
+  "status": "written-before-any-pilot-KLD-request",
+  "parent_addendum_sha256": "6d4b8e8c661cdeddab13fe26bb851860e9a658adb54436a8274ba63839c771d0",
+  "second_failed_launch": {
+    "run_id": "p8-kld-shapley-pilot-v1-kld-c-e3b0c44298fc1c14",
+    "stage": "MoE weight load before server readiness",
+    "kld_windows_opened": 0,
+    "cause": "The pilot runner left the MoE backend at auto, which selected FlashInfer CUTLASS; the matched full-BF16 expert overlays require the Humming path used by the prior successful composite runs.",
+    "error": "w2 local tensor width 1024 did not match full BF16 overlay width 2048",
+    "interpretation": "preflight runtime-ABI failure; not an experimental endpoint and not a reroll"
+  },
+  "correction": {
+    "moe_backend": "humming",
+    "evidence": "The existing completed matched composite control run used config nvfp4-v5-identity-gate-up-humming-bf16-instanttensor-tp4-ep4-dcp4-eager-nomtp-kvfp8.",
+    "model_overlays_unchanged": true,
+    "run_order_unchanged": true,
+    "roles_unchanged": true
+  },
+  "stopping_rule_unchanged": "Run every one of the eight unique coalitions once; resume incomplete windows only; no exclusions, substitutions, or rerolls.",
+  "protected_boundary": "Selection, confirmation, final, and all reserved 28 confirmation logits remain unopened.",
+  "ldlq": false
+}
