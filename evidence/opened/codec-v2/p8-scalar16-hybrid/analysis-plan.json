@@ -1,0 +1,119 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090531,
+    "unit": "expert"
+  },
+  "candidate": {
+    "activation_carrier": "E4M3 with UE8M0 per 32 elements",
+    "arms": {
+      "mcg": "K4 Viterbi stream decoded procedurally to E4M3",
+      "scalar16": "independent K4 indices decoded through three learned 16-byte E4M3 projection tables"
+    },
+    "block_size": 32,
+    "charged_bpw": 4.5,
+    "encoder": "Viterbi or scalar nearest-code choice with GPTQ-style full-Hessian inter-group error feedback, static within-group activation order, and alternating UE8M0 scale refit",
+    "hybrid_policy": "for each expert choose the best of four gate/up arm pairs on fit middle-output NMSE, then choose MCG or scalar16 down on fit full-output NMSE",
+    "physical_bpw": 4.25,
+    "policy_storage": "three bits per expert (108 bytes for 288 experts) plus 48 bytes of projection tables",
+    "product": "P8 quality",
+    "rate_accounting": "reserve the spare 0.25 bpw so the comparison is at the same charged stored budget as GPTQ NVFP4",
+    "runtime_table_bytes": 48,
+    "scale": "UE8M0",
+    "symbol_bits": 4
+  },
+  "control": {
+    "charged_bpw": 4.5,
+    "name": "full-Hessian GPTQ NVFP4",
+    "physical_bpw": 4.5
+  },
+  "created_at": "2026-09-04T17:32:47.453679+00:00",
+  "decision_rule": "advance to one unopened n=32 teacher-KLD role only if the frozen hybrid improves held-out geometric-mean full-expert NMSE at least 10 percent versus GPTQ NVFP4 and at least 5 percent versus MCG, wins at least 12 of 16 experts versus both, and both paired BCa 95 percent upper mean-log-ratio bounds are below zero",
+  "experts": [
+    72,
+    77,
+    82,
+    87,
+    92,
+    97,
+    102,
+    107,
+    112,
+    117,
+    122,
+    127,
+    132,
+    137,
+    142,
+    143
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "bytes": 310332,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "codebooks": {
+      "bytes": 424,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-scalar16-hybrid-v1/scalar16-codebooks.safetensors",
+      "sha256": "a0f5f646de1316a166c7baae9895bdf55a2fc8850d1e4cb9ee56a64a1da03c30"
+    },
+    "fit_receipt": {
+      "bytes": 7561,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-scalar16-hybrid-v1/codebook-fit-receipt.json",
+      "sha256": "cb11407261c158b20151e57ee4ba57bc05d3cdf2bb779ae46a0d95b7f775ee32"
+    },
+    "roles": {
+      "bytes": 86518,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "bytes": 4083163,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "isa_cost": "P8 mxf8f6f4 issues twice the MMA instructions of NVFP4; this is a quality product, not an NVFP4-speed claim",
+  "law_fit_experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "layer": 3,
+  "primary_estimand": "paired per-expert log ratio of held-out causal full-expert routed-output NMSE, hybrid divided by GPTQ NVFP4",
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "fit-only expert-disjoint P8 encoder validation before teacher KLD",
+  "sampling": {
+    "evaluation": {
+      "count": 128,
+      "offset": 256
+    },
+    "hessian_and_policy_fit": {
+      "count": 256,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert"
+  },
+  "schema": "glm53-p8-scalar16-mcg-hybrid-plan.v1",
+  "secondary_estimands": [
+    "hybrid versus procedural MCG",
+    "scalar16 versus MCG",
+    "per-projection weight NMSE"
+  ]
+}

@@ -216,7 +216,15 @@ def main() -> None:
                     "expert": expert,
                     "projection": projection,
                     "variant": variant,
-                    "stored_bpw": 4.5 if variant == "gptq-nvfp4" else (16.0 if variant == "bf16-weight-p8-carrier" else 4.25),
+                    "stored_bpw": (
+                        4.5
+                        if variant == "gptq-nvfp4"
+                        else 16.0
+                        if variant == "bf16-weight-p8-carrier"
+                        else 8.25
+                        if variant == "scalar-e4m3-k32"
+                        else 4.25
+                    ),
                     "fit": _score(weight, candidate, fit_source, fit_carrier, fit_route),
                     "tuning": _score(weight, candidate, tune_source, tune_carrier, tune_route),
                     "validation": _score(weight, candidate, val_source, val_carrier, val_route),

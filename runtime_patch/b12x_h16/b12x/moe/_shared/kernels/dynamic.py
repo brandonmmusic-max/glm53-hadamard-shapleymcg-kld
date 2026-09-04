@@ -130,7 +130,7 @@ from b12x.moe._shared.kernels.w4a8_trellis_decode import (
     _w4a8_stage_trellis_b_tile,
     _w4a8_trellis_decode_half,
     _w4a8_trellis_lane_geom,
-    _w4a8_trellis_pair_words,
+    _w4a8_trellis_pair_words as _w4a8_trellis_pair_words_sqg,
     _w4a8_trellis_permute_k32,
 )
 from b12x.moe._shared.kernels.w4a8_phase1 import (
@@ -168,6 +168,129 @@ _WORK_SOURCES = {
 # alignment = copy size) and 20*g mod 32 spreads the eight g-rows a lane
 # quad touches across distinct bank groups.
 _W4A8_B_ROW_PAD = 80
+
+
+@dsl_user_op
+def _packed_decode_trellis_mcg2_to_e4m3x8(
+    win_a,
+    win_b,
+    bits: int,
+    *,
+    loc=None,
+    ip=None,
+):
+    """Decode eight procedural MCG states directly to scaled E4M3 bytes.
+
+    This is the P8 law used by the no-LDLQ pseudoquant encoder: the original
+    ExLlamaV3 MCG state value is multiplied by the frozen family compander
+    ``2.0`` and rounded once to finite E4M3. The result stays in the native
+    B-register form consumed by ``mxf8f6f4.m16n8k32``.
+    """
+    bits = int(bits)
+    if bits not in (3, 4):
+        raise ValueError(f"P8 MCG supports K3/K4 trellis streams, got K{bits}")
+    asm = """
+        {
+            .reg .b32 w0,w1,w2,w3,w4,w5,w6,w7, lo, hi, M;
+            .reg .b32 h01,h23,h45,h67;
+            .reg .b16 e01,e23,e45,e67;
+            mov.b32 M, 0xCBAC1FED;
+            and.b32 w7, $2, 0xffff;
+            shr.u32 w6, $2, __B1__;  and.b32 w6, w6, 0xffff;
+            shr.u32 w5, $2, __B2__;  and.b32 w5, w5, 0xffff;
+            shr.u32 w4, $2, __B3__;  and.b32 w4, w4, 0xffff;
+            and.b32 w3, $3, 0xffff;
+            shr.u32 w2, $3, __B1__;  and.b32 w2, w2, 0xffff;
+            shr.u32 w1, $3, __B2__;  and.b32 w1, w1, 0xffff;
+            shr.u32 w0, $3, __B3__;  and.b32 w0, w0, 0xffff;
+            mul.lo.u32 w0, w0, M;  lop3.b32 w0, w0, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w1, w1, M;  lop3.b32 w1, w1, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w2, w2, M;  lop3.b32 w2, w2, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w3, w3, M;  lop3.b32 w3, w3, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w4, w4, M;  lop3.b32 w4, w4, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w5, w5, M;  lop3.b32 w5, w5, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w6, w6, M;  lop3.b32 w6, w6, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            mul.lo.u32 w7, w7, M;  lop3.b32 w7, w7, 0x8FFF8FFF, 0x3B603B60, 0x6a;
+            prmt.b32 lo, w0, w1, 0x5410;  prmt.b32 hi, w0, w1, 0x7632;  add.rn.f16x2 h01, lo, hi;
+            prmt.b32 lo, w2, w3, 0x5410;  prmt.b32 hi, w2, w3, 0x7632;  add.rn.f16x2 h23, lo, hi;
+            prmt.b32 lo, w4, w5, 0x5410;  prmt.b32 hi, w4, w5, 0x7632;  add.rn.f16x2 h45, lo, hi;
+            prmt.b32 lo, w6, w7, 0x5410;  prmt.b32 hi, w6, w7, 0x7632;  add.rn.f16x2 h67, lo, hi;
+            add.rn.f16x2 h01, h01, h01;
+            add.rn.f16x2 h23, h23, h23;
+            add.rn.f16x2 h45, h45, h45;
+            add.rn.f16x2 h67, h67, h67;
+            cvt.rn.satfinite.e4m3x2.f16x2 e01, h01;
+            cvt.rn.satfinite.e4m3x2.f16x2 e23, h23;
+            cvt.rn.satfinite.e4m3x2.f16x2 e45, h45;
+            cvt.rn.satfinite.e4m3x2.f16x2 e67, h67;
+            mov.b32 $0, {e01, e23};
+            mov.b32 $1, {e45, e67};
+        }
+        """
+    asm = (
+        asm.replace("__B1__", str(bits))
+        .replace("__B2__", str(2 * bits))
+        .replace("__B3__", str(3 * bits))
+    )
+    result = llvm.inline_asm(
+        llvm.StructType.get_literal([T.i32(), T.i32()]),
+        [
+            Uint32(win_a).ir_value(loc=loc, ip=ip),
+            Uint32(win_b).ir_value(loc=loc, ip=ip),
+        ],
+        asm,
+        "=r,=r,r,r",
+        has_side_effects=False,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+    lo = llvm.extractvalue(T.i32(), result, [0], loc=loc, ip=ip)
+    hi = llvm.extractvalue(T.i32(), result, [1], loc=loc, ip=ip)
+    return Uint32(lo), Uint32(hi)
+
+
+@cute.jit
+def _w4a8_trellis_pair_words_mcg(
+    smem_base: Int32,
+    lane: Int32,
+    base0_u32: Int32,
+    base1_u32: Int32,
+    ia: Int32,
+    ib: Int32,
+    s2: Int32,
+    n_high: Int32,
+    bits: cutlass.Constexpr,
+):
+    """Decode adjacent K16 MCG windows and butterfly into MMA B order."""
+    words = cute.make_rmem_tensor((4,), Uint32)
+    for which in cutlass.range_constexpr(2):
+        base = base0_u32
+        if which == 1:
+            base = base1_u32
+        a = Uint32(ld_shared_u32(smem_base + ((base + ia) << Int32(2))))
+        b = Uint32(ld_shared_u32(smem_base + ((base + ib) << Int32(2))))
+        merged = (Int64(a) << Int64(32)) | Int64(b)
+        win_a = Uint32(merged >> Int64(s2))
+        win_b = Uint32(merged >> Int64(s2 + Int32(4 * int(bits))))
+        lo, hi = _packed_decode_trellis_mcg2_to_e4m3x8(
+            win_a, win_b, int(bits)
+        )
+        words[which * 2] = lo
+        words[which * 2 + 1] = hi
+    e0 = words[0]
+    e1 = words[2]
+    if n_high != Int32(0):
+        e0 = words[1]
+        e1 = words[3]
+    lane_quarter = lane & Int32(3)
+    own = e0
+    send = e1
+    if lane_quarter >= Int32(2):
+        own = e1
+        send = e0
+    return own, Uint32(cute.arch.shuffle_sync_bfly(send, offset=2))
 
 
 @cute.jit
@@ -707,6 +830,7 @@ class MoEDynamicKernelBackend:
         trellis_bits: int | None = None,
         trellis_coupled: bool = False,
         trellis_direct_lut: bool = False,
+        trellis_codebook: str | None = None,
     ):
         activation = normalize_moe_activation(activation)
         if quant_recipe not in {
@@ -809,6 +933,15 @@ class MoEDynamicKernelBackend:
         # format differ.
         self.w4a8_trellis = quant_recipe == "w4a8_trellis"
         if self.w4a8_trellis:
+            if trellis_codebook is None:
+                trellis_codebook = os.environ.get(
+                    "B12X_TRELLIS_CODEBOOK", "sqg-xor-cheb-t12"
+                ).strip().lower()
+            if trellis_codebook not in {"sqg-xor-cheb-t12", "mcg"}:
+                raise ValueError(
+                    "w4a8_trellis codebook must be 'sqg-xor-cheb-t12' or "
+                    f"'mcg', got {trellis_codebook!r}"
+                )
             if trellis_bits not in (2, 3, 4):
                 raise ValueError(
                     "w4a8_trellis requires trellis_bits in {2, 3, 4}, "
@@ -833,9 +966,18 @@ class MoEDynamicKernelBackend:
                     "w4a8_trellis requires a gated activation (the trellis "
                     "activation boundary rotates gate and up jointly)"
                 )
+            if trellis_codebook == "mcg" and trellis_bits == 2:
+                raise ValueError("the redesigned P8 MCG product supports K3/K4, not K2")
+            if trellis_codebook == "mcg" and materialize_intermediate:
+                raise NotImplementedError(
+                    "P8 MCG split-materialized phase kernels are not ported yet"
+                )
         elif trellis_bits is not None:
             raise ValueError("trellis_bits is only valid for w4a8_trellis")
         self.trellis_bits = 0 if trellis_bits is None else int(trellis_bits)
+        self.trellis_codebook = (
+            "none" if trellis_codebook is None else str(trellis_codebook)
+        )
         if trellis_coupled and not self.w4a8_trellis:
             raise ValueError("trellis_coupled requires quant_recipe='w4a8_trellis'")
         self.trellis_coupled = bool(trellis_coupled)
@@ -5335,27 +5477,45 @@ class MoEDynamicKernelBackend:
                                             tr_base0 = (
                                                 Int32(_kb * 16) + n16_local
                                             ) * Int32(8 * self.trellis_bits)
-                                            blo, bhi = _w4a8_trellis_pair_words(
-                                                b_buf,
-                                                Int32(lane_id),
-                                                tr_base0,
-                                                tr_base0
-                                                + Int32(64 * self.trellis_bits),
-                                                tr_ia,
-                                                tr_ib,
-                                                tr_s2,
-                                                tr_n_high,
-                                                self.trellis_bits,
-                                                trellis_lut_addr,
-                                            )
+                                            if cutlass.const_expr(
+                                                self.trellis_codebook == "mcg"
+                                            ):
+                                                blo, bhi = _w4a8_trellis_pair_words_mcg(
+                                                    b_buf, Int32(lane_id), tr_base0,
+                                                    tr_base0 + Int32(64 * self.trellis_bits),
+                                                    tr_ia, tr_ib, tr_s2, tr_n_high,
+                                                    self.trellis_bits,
+                                                )
+                                            else:
+                                                blo, bhi = _w4a8_trellis_pair_words_sqg(
+                                                    b_buf, Int32(lane_id), tr_base0,
+                                                    tr_base0 + Int32(64 * self.trellis_bits),
+                                                    tr_ia, tr_ib, tr_s2, tr_n_high,
+                                                    self.trellis_bits, trellis_lut_addr,
+                                                )
                                             b_lo[_nt] = blo
                                             b_hi[_nt] = bhi
                                             if cutlass.const_expr(self.w4a8_fused):
                                                 tr_base0_u = tr_base0 + Int32(
                                                     512 * self.trellis_bits
                                                 )
-                                                blo_u, bhi_u = (
-                                                    _w4a8_trellis_pair_words(
+                                                if cutlass.const_expr(
+                                                    self.trellis_codebook == "mcg"
+                                                ):
+                                                    blo_u, bhi_u = _w4a8_trellis_pair_words_mcg(
+                                                        b_buf,
+                                                        Int32(lane_id),
+                                                        tr_base0_u,
+                                                        tr_base0_u
+                                                        + Int32(64 * self.trellis_bits),
+                                                        tr_ia,
+                                                        tr_ib,
+                                                        tr_s2,
+                                                        tr_n_high,
+                                                        self.trellis_bits,
+                                                    )
+                                                else:
+                                                    blo_u, bhi_u = _w4a8_trellis_pair_words_sqg(
                                                         b_buf,
                                                         Int32(lane_id),
                                                         tr_base0_u,
@@ -5370,7 +5530,6 @@ class MoEDynamicKernelBackend:
                                                         self.trellis_bits,
                                                         trellis_lut_addr,
                                                     )
-                                                )
                                                 b_lo_u[_nt] = blo_u
                                                 b_hi_u[_nt] = bhi_u
                                     elif cutlass.const_expr(self.w4a8_repacked):
@@ -7291,19 +7450,22 @@ class MoEDynamicKernelBackend:
                                             ) + (
                                                 Int32(_kb * 16) + n16_local2
                                             ) * Int32(8 * self.trellis_bits)
-                                            blo, bhi = _w4a8_trellis_pair_words(
-                                                b_buf,
-                                                Int32(lane_id),
-                                                tr2_base0,
-                                                tr2_base0
-                                                + Int32(64 * self.trellis_bits),
-                                                tr_ia,
-                                                tr_ib,
-                                                tr_s2,
-                                                tr_n_high2,
-                                                self.trellis_bits,
-                                                trellis_lut_addr,
-                                            )
+                                            if cutlass.const_expr(
+                                                self.trellis_codebook == "mcg"
+                                            ):
+                                                blo, bhi = _w4a8_trellis_pair_words_mcg(
+                                                    b_buf, Int32(lane_id), tr2_base0,
+                                                    tr2_base0 + Int32(64 * self.trellis_bits),
+                                                    tr_ia, tr_ib, tr_s2, tr_n_high2,
+                                                    self.trellis_bits,
+                                                )
+                                            else:
+                                                blo, bhi = _w4a8_trellis_pair_words_sqg(
+                                                    b_buf, Int32(lane_id), tr2_base0,
+                                                    tr2_base0 + Int32(64 * self.trellis_bits),
+                                                    tr_ia, tr_ib, tr_s2, tr_n_high2,
+                                                    self.trellis_bits, trellis_lut_addr,
+                                                )
                                             b_lo[_ot, _nt] = blo
                                             b_hi[_ot, _nt] = bhi
                                 elif cutlass.const_expr(self.w4a8_repacked):

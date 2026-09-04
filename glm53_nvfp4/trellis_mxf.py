@@ -41,6 +41,19 @@ class TrellisMXF:
         return self.bits + 8.0 / self.block_size
 
 
+@dataclass(frozen=True)
+class ScalarCodebookMXF:
+    reconstruction: torch.Tensor
+    scales: torch.Tensor
+    indices: torch.Tensor
+    codebook_e4m3: torch.Tensor
+    block_size: int
+
+    @property
+    def stored_bpw(self) -> float:
+        return 4.0 + 8.0 / self.block_size
+
+
 def pack_ue8m0(scales: torch.Tensor) -> torch.Tensor:
     """Pack positive power-of-two scales using the UE8M0 exponent bias."""
     values = scales.float()
@@ -114,10 +127,15 @@ def state_lut(
         values = procedural_state_values(law).float()
     else:
         raise ValueError(f"unsupported trellis law: {law}")
-    projected = nearest_levels(
-        values * compander_scale,
-        alphabet_levels(alphabet),
-    )
+    scaled = values * compander_scale
+    if alphabet == "e4m3" and law in ("mcg", "mul1"):
+        # The procedural P8 prologue ends with the native
+        # cvt.rn.satfinite.e4m3x2.f16x2 instruction. Match its ties-to-even
+        # rounding exactly rather than nearest_levels' historical lower-tie
+        # convention, or 605/65536 MCG states disagree at alpha=2.
+        projected = scaled.to(torch.float8_e4m3fn).float()
+    else:
+        projected = nearest_levels(scaled, alphabet_levels(alphabet))
     projected[projected == 0] = 0
     encoded = projected.to(torch.float8_e4m3fn)
     if not torch.equal(encoded.float(), projected):
@@ -348,6 +366,162 @@ def quantize_scalar_mxf(
         levels,
     )
     return (normalized * scales[..., None]).reshape_as(weight), scales
+
+
+def sqg_scalar16_codebook(
+    *, compander_scale: float = 1.5, device: torch.device | str = "cpu"
+) -> torch.Tensor:
+    """Return 16 SQG-normal reconstruction values stored as E4M3 bytes."""
+    if not math.isfinite(compander_scale) or compander_scale <= 0:
+        raise ValueError("compander scale must be positive and finite")
+    probability = (torch.arange(16, dtype=torch.float64) + 0.5) / 16.0
+    values = (compander_scale * torch.special.ndtri(probability)).float()
+    encoded = values.to(torch.float8_e4m3fn)
+    if encoded.view(torch.uint8).unique().numel() != 16:
+        raise RuntimeError("SQG scalar codebook collapsed after E4M3 projection")
+    return encoded.view(torch.uint8).to(device).contiguous()
+
+
+def validate_scalar16_codebook(codebook_e4m3: torch.Tensor) -> torch.Tensor:
+    table = codebook_e4m3.detach().to(dtype=torch.uint8, device="cpu").reshape(-1)
+    if table.numel() != 16:
+        raise ValueError("scalar K4 codebook must contain exactly 16 E4M3 bytes")
+    values = table.view(torch.float8_e4m3fn).float()
+    if (
+        not bool(torch.isfinite(values).all())
+        or values.unique().numel() != 16
+        or not bool((values[1:] > values[:-1]).all())
+    ):
+        raise ValueError("scalar K4 codebook must contain 16 ordered distinct finite values")
+    return table.contiguous()
+
+
+def pack_scalar16_indices(indices: torch.Tensor) -> torch.Tensor:
+    values = indices.detach().to(torch.uint8).contiguous()
+    if values.shape[-1] % 2 or bool((values > 15).any()):
+        raise ValueError("scalar K4 indices must be 0..15 with an even final dimension")
+    return (values[..., 0::2] | (values[..., 1::2] << 4)).contiguous()
+
+
+def unpack_scalar16_indices(packed: torch.Tensor) -> torch.Tensor:
+    values = packed.detach().to(torch.uint8).contiguous()
+    result = torch.empty((*values.shape[:-1], values.shape[-1] * 2), dtype=torch.uint8, device=values.device)
+    result[..., 0::2] = values & 0x0F
+    result[..., 1::2] = values >> 4
+    return result
+
+
+def decode_scalar16_mxf(
+    packed_indices: torch.Tensor,
+    codebook_e4m3: torch.Tensor,
+    scale_ue8m0: torch.Tensor,
+    *,
+    rows: int,
+    width: int,
+    block_size: int = 32,
+    device: torch.device | str,
+) -> torch.Tensor:
+    """Reference-decode a K4 scalar-codebook payload exactly as the prologue will."""
+    if width % block_size or packed_indices.shape != (rows, width // 2):
+        raise ValueError("scalar K4 payload shape disagrees with matrix geometry")
+    if scale_ue8m0.shape != (rows, width // block_size):
+        raise ValueError("scalar K4 UE8M0 scale shape disagrees with matrix geometry")
+    table = validate_scalar16_codebook(codebook_e4m3).to(device)
+    indices = unpack_scalar16_indices(packed_indices.to(device))
+    levels = table.view(torch.float8_e4m3fn).float()
+    normalized = levels[indices.long()].reshape(rows, width // block_size, block_size)
+    scales = unpack_ue8m0(scale_ue8m0.to(device))
+    return (normalized * scales[..., None]).reshape(rows, width)
+
+
+@torch.no_grad()
+def _encode_scalar16_with_gptq_feedback(
+    weight: torch.Tensor,
+    hessian: torch.Tensor,
+    scales: torch.Tensor,
+    levels: torch.Tensor,
+    *,
+    block_size: int,
+    percdamp: float,
+    column_block: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    rows, width = weight.shape
+    if hessian.shape != (width, width) or width % block_size or column_block % 16:
+        raise ValueError("scalar K4 GPTQ geometry mismatch")
+    hinv, permutation = _prepare_full_inverse(hessian, percdamp, 16)
+    inverse = torch.empty_like(permutation)
+    inverse[permutation] = torch.arange(width, device=weight.device)
+    work = weight.float()[:, permutation].clone()
+    indices_native = torch.empty((rows, width), dtype=torch.uint8, device=weight.device)
+    levels = levels.to(weight.device).float()
+    for slab_start in range(0, width, column_block):
+        slab_end = min(slab_start + column_block, width)
+        slab = work[:, slab_start:slab_end]
+        errors = torch.zeros_like(slab)
+        inverse_slab = hinv[slab_start:slab_end, slab_start:slab_end]
+        for local_start in range(0, slab_end - slab_start, 16):
+            absolute_start = slab_start + local_start
+            local_order = permutation[absolute_start : absolute_start + 16] - absolute_start
+            inverse_local = torch.argsort(local_order)
+            current_permuted = slab[:, local_start : local_start + 16]
+            current_native = current_permuted[:, inverse_local]
+            scale = scales[:, absolute_start // block_size].float()
+            normalized = current_native / scale[:, None].clamp_min(1e-30)
+            distance = (normalized[..., None] - levels).abs()
+            index_native = distance.argmin(-1).to(torch.uint8)
+            quantized_native = levels[index_native.long()] * scale[:, None]
+            quantized_permuted = quantized_native[:, local_order]
+            indices_native[:, absolute_start : absolute_start + 16] = index_native
+            for column in range(16):
+                slab_column = local_start + column
+                current = slab[:, slab_column]
+                quantized = quantized_permuted[:, column]
+                diagonal = inverse_slab[slab_column, slab_column]
+                error = (current - quantized) / diagonal
+                slab[:, slab_column:] -= error[:, None] * inverse_slab[slab_column, slab_column:][None, :]
+                slab[:, slab_column] = quantized
+                errors[:, slab_column] = error
+        if slab_end < width:
+            work[:, slab_end:] -= errors @ hinv[slab_start:slab_end, slab_end:]
+    return work[:, inverse].contiguous(), indices_native
+
+
+@torch.no_grad()
+def quantize_scalar16_mxf_gptq(
+    weight: torch.Tensor,
+    hessian: torch.Tensor,
+    codebook_e4m3: torch.Tensor,
+    *,
+    block_size: int = 32,
+    scale_refinement_iterations: int = 2,
+    percdamp: float = 0.01,
+    column_block: int = 128,
+) -> ScalarCodebookMXF:
+    """Quantize to real K4 indices plus a shared 16-value E4M3 table."""
+    table = validate_scalar16_codebook(codebook_e4m3)
+    levels = table.to(weight.device).view(torch.float8_e4m3fn).float()
+    scales = _best_power2_scales(weight, levels, block_size)
+    reconstruction = indices = None
+    for iteration in range(scale_refinement_iterations + 1):
+        reconstruction, indices = _encode_scalar16_with_gptq_feedback(
+            weight,
+            hessian,
+            scales,
+            levels,
+            block_size=block_size,
+            percdamp=percdamp,
+            column_block=column_block,
+        )
+        if iteration < scale_refinement_iterations:
+            normalized = levels[indices.long()].reshape(weight.shape[0], -1, block_size)
+            scales = _refit_power2_scales(weight, normalized, scales)
+    return ScalarCodebookMXF(
+        reconstruction=reconstruction,
+        scales=scales,
+        indices=indices,
+        codebook_e4m3=table.to(weight.device),
+        block_size=block_size,
+    )
 
 
 @torch.no_grad()

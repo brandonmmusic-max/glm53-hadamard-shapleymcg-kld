@@ -7,7 +7,9 @@ from glm53_nvfp4.trellis_mxf import (
     pack_ue8m0,
     state_lut,
     expand_xor_t12_lut,
+    pack_scalar16_indices,
     unpack_ue8m0,
+    unpack_scalar16_indices,
 )
 
 
@@ -40,6 +42,11 @@ def test_fp6_luts_are_exact_e4m3_representable() -> None:
 def test_ue8m0_scale_roundtrip() -> None:
     scales = torch.pow(2.0, torch.tensor([-20.0, -1.0, 0.0, 7.0]))
     assert torch.equal(unpack_ue8m0(pack_ue8m0(scales)), scales)
+
+
+def test_scalar16_index_packing_roundtrip() -> None:
+    indices = torch.arange(32, dtype=torch.uint8).remainder(16).reshape(2, 16)
+    assert torch.equal(unpack_scalar16_indices(pack_scalar16_indices(indices)), indices)
 
 
 def test_xor_t12_table_expands_to_reference_lut() -> None:
@@ -90,4 +97,35 @@ def test_gptq_trellis_payload_closes_against_reference_decoder() -> None:
         width=32,
         device="cuda",
     )
+    assert torch.equal(decoded, payload.reconstruction)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA GPTQ encoder required")
+def test_gptq_scalar16_payload_is_exactly_four_bit_decodable() -> None:
+    from glm53_nvfp4.trellis_mxf import (
+        decode_scalar16_mxf,
+        quantize_scalar16_mxf_gptq,
+        sqg_scalar16_codebook,
+    )
+
+    torch.manual_seed(12)
+    weight = torch.randn(16, 32, device="cuda") * 0.1
+    samples = torch.randn(64, 32, device="cuda")
+    hessian = samples.T @ samples / samples.shape[0]
+    payload = quantize_scalar16_mxf_gptq(
+        weight,
+        hessian,
+        sqg_scalar16_codebook(device="cuda"),
+        scale_refinement_iterations=1,
+        column_block=32,
+    )
+    decoded = decode_scalar16_mxf(
+        pack_scalar16_indices(payload.indices),
+        payload.codebook_e4m3,
+        pack_ue8m0(payload.scales),
+        rows=16,
+        width=32,
+        device="cuda",
+    )
+    assert payload.stored_bpw == 4.25
     assert torch.equal(decoded, payload.reconstruction)
