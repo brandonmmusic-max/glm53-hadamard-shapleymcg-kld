@@ -1,0 +1,815 @@
+{
+  "adapter": {
+    "adapter": "vllm_b12x_capture",
+    "capture_root": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020",
+    "cmd": [
+      "-lc",
+      "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model     --served-model-name glm53-wave2-h16-layers-003-019-020 --host 0.0.0.0 --port 8016 --language-model-only     --tensor-parallel-size 4 --enable-expert-parallel --decode-context-parallel-size 4     --dcp-comm-backend a2a --dtype bfloat16 --quantization modelopt --load-format instanttensor     --attention-backend FLASHINFER_MLA_SPARSE_SM120 --kv-cache-dtype fp8_ds_mla     --max-model-len 32768 --max-num-batched-tokens 2048 --max-num-seqs 1 --gpu-memory-utilization 0.94     --enable-chunked-prefill --no-enable-prefix-caching --no-enable-flashinfer-autotune --generation-config /model     --reasoning-parser glm45 --disable-custom-all-reduce --enforce-eager --moe-backend humming"
+    ],
+    "container": "glm53-nvfp4-v3-kld",
+    "env": [
+      "VLLM_CPP_AR_1STAGE_NCCL_CUTOFF=56KB",
+      "VLLM_ENGINE_READY_TIMEOUT_S=3600",
+      "CUDA_VISIBLE_DEVICES=0,1,2,3",
+      "NCCL_PROTO=LL,LL128,Simple",
+      "VLLM_ENABLE_PCIE_ALLREDUCE=1",
+      "CUBLAS_WORKSPACE_CONFIG=:4096:8",
+      "NCCL_CUMEM_ENABLE=0",
+      "NVIDIA_TF32_OVERRIDE=0",
+      "OMP_NUM_THREADS=2",
+      "NCCL_IB_DISABLE=1",
+      "NCCL_P2P_DISABLE=0",
+      "VLLM_CPP_AR_IGNORE_CUTOFF_MAX_ROWS=0",
+      "KV_FP8_ROPE=0",
+      "VLLM_KLD_CAPTURE_DIR=/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020",
+      "NCCL_P2P_LEVEL=SYS",
+      "VLLM_USE_B12X_DCP_A2A=1",
+      "VLLM_PCIE_ALLREDUCE_BACKEND=cpp",
+      "NCCL_NET_PLUGIN=none",
+      "OMPI_MCA_coll_hcoll_enable=0",
+      "_CUDA_COMPAT_PATH=/usr/local/cuda/compat",
+      "NCCL_VERSION=2.31.2",
+      "CUBLAS_VERSION=13.6.0.2",
+      "CUBLASMP_VERSION=0.9.1.3056",
+      "NVPTXCOMPILER_VERSION=13.3.73",
+      "NSIGHT_COMPUTE_VERSION=2026.2.1.5",
+      "CUDA_COMPONENT_LIST=crt nvrtc driver-dev culibos-dev cudart cudart-dev nvcc tileiras",
+      "PYTORCH_BUILD_VERSION=2.13.0a0+9186a08",
+      "PYTORCH_VERSION=2.13.0a0+9186a08",
+      "PYTORCH_BUILD_NUMBER=0",
+      "NVIDIA_PYTORCH_VERSION=26.07",
+      "TORCHAO_BUILD_VERSION=+git18278f9b",
+      "TORCHTITAN_BUILD_VERSION=0.2.2+gitebfceebe",
+      "TORCH_CUDA_ARCH_LIST=12.0a",
+      "PYTORCH_HOME=/opt/pytorch/pytorch",
+      "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1",
+      "TORCHINDUCTOR_CUTLASS_DIR=/opt/pytorch/pytorch/third_party/cutlass",
+      "TORCH_NCCL_USE_COMM_NONBLOCKING=0",
+      "TORCHINDUCTOR_LOOP_ORDERING_AFTER_FUSION=0",
+      "VLLM_NCCL_SO_PATH=/opt/local-inference/nccl/lib/libnccl.so.2.31.2",
+      "NCCL_LOCAL_INFERENCE_PATH=/opt/local-inference/nccl/lib/libnccl.so.2.31.2",
+      "NCCL_PR2127_PATH=/opt/local-inference/nccl/lib/libnccl.so.2.31.2",
+      "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+      "VLLM_DISABLED_KERNELS=MarlinFP8ScaledMMLinearKernel",
+      "VLLM_EXL3_EXT_PATH=/opt/exllamav3",
+      "VLLM_EXL3_ENCODER_SOURCE=/opt/exllamav3-python/exllamav3",
+      "VLLM_EXL3_ENCODER_REVISION=704aefd743b390af4bd0fb429d1906f9b964c7d8",
+      "VLLM_EXL3_ONLINE_CACHE_DIR=/cache/exl3-online",
+      "VLLM_EXL3_ONLINE_CACHE_MODE=readwrite",
+      "VLLM_CACHE_ROOT=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/vllm",
+      "VLLM_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/vllm",
+      "TORCH_EXTENSIONS_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/torch-extensions",
+      "TORCHINDUCTOR_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/torchinductor",
+      "VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/flashinfer-autotune-sm-family",
+      "B12X_CUTE_COMPILE_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/b12x/cute",
+      "B12X_COMPILE_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/b12x/compile",
+      "SPARKINFER_COMPILE_CACHE_DIR=/cache/jit/cu133-torch213-vllm174c789e09-b12x12c426322c-lmcachee045d729bc/b12x/compile",
+      "NCCL_TUNER_PLUGIN=none",
+      "B12X_GL53_ROUTE128_WIDE=1",
+      "B12X_GL53_ROUTE128_HYBRID_TAIL=1",
+      "VLLM_EXL3_PREFILL_BLOCK_M=128",
+      "VLLM_EXL3_PREFILL_TRELLIS=1",
+      "VLLM_B12X_GLM_NOPE_NVFP4=1",
+      "VLLM_NVFP4_MLA_DYNAMIC_SCALE=0",
+      "VLLM_NVFP4_MLA_SCALES_FILE=/opt/glm53/calibration/glm53_nvfp4_mla_outer_scales_mtp_power2_v2.json"
+    ],
+    "image": "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate",
+    "image_digest": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "model_name": "glm53-wave2-h16-layers-003-019-020",
+    "served_models": {
+      "data": [
+        {
+          "created": 1788485028,
+          "id": "glm53-wave2-h16-layers-003-019-020",
+          "max_model_len": 32768,
+          "object": "model",
+          "owned_by": "vllm",
+          "parent": null,
+          "permission": [
+            {
+              "allow_create_engine": false,
+              "allow_fine_tuning": false,
+              "allow_logprobs": true,
+              "allow_sampling": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "created": 1788485028,
+              "group": null,
+              "id": "modelperm-8a9429a4c1ce1c41",
+              "is_blocking": false,
+              "object": "model_permission",
+              "organization": "*"
+            }
+          ],
+          "root": "/model"
+        }
+      ],
+      "object": "list"
+    },
+    "url": "http://127.0.0.1:8016/v1/completions"
+  },
+  "config_id": "nvfp4-v5-had16-all-humming-bf16-instanttensor-tp4-ep4-dcp4-eager-nomtp-kvfp8",
+  "finished_unix": 1788485160.353222,
+  "freeze_receipt_sha256": "a6ed03f19d9b81b94cd12635e9d1d71efde09ae499fcc425b73edce9a5163a69",
+  "harness_commit": "565aca8ded8f015eeecb7f9e2aa99e1da965e5e7",
+  "mean_of_window_means": 0.0359580133508586,
+  "metric_code_sha256": "752af6740595791f300cf47f15ef81f8ca85245d5282fc600ef26ee57eae41e6",
+  "role": "selection",
+  "roles_sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8",
+  "run_id": "exact-v10-wave2-h16-layers-003-019-020",
+  "schema": "glm53-nvfp4-v2.role-kld-run.v1",
+  "started_unix": 1788485028.3793848,
+  "status": "complete",
+  "teacher_manifest_sha256": "c0c70608c6436324852732720afa6d060e7e220f2a6ce2945e8fe63ba8b99a8f",
+  "teacher_revision": "95f4fdd94bf29989db2e0d1054e4931f55edb6aa",
+  "windows": {
+    "selection-0001": {
+      "domain": "axis2_legal",
+      "elapsed_seconds": 5.6539022689685225,
+      "mean_kld": 0.03718372657257888,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0001.parquet",
+      "record_sha256": "2993a8a3a63186a5aabcc6a44a2069ac18279891e2110a11a8135fe774fa6f7e",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-82240f1cb741d84f-0-b7a47cac",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-82240f1cb741d84f-0-b7a47cac/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "bbd2678931fba98a31d24a18c7b3b957fe86c3173424a67d2a660eacef37de5b"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-82240f1cb741d84f-0-b7a47cac/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "604e3bc5b800ed74e1cd44b62fa065ddec194d0b2f23d402e1795b8866b74bb1"
+          }
+        ],
+        "elapsed_seconds": 2.725845073000528,
+        "payload_deleted": true,
+        "request_id": "cmpl-82240f1cb741d84f",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "8c99bcf3d811e6b0065b85351775a39161374445e0f4af0f648c6e5e70ab7042",
+      "teacher_sha256": "073e120da97acf021d00842be0702cc859651ee305f7462247c6796f83ec4396",
+      "teacher_top1_realized_agreement": 0.6072300928187592,
+      "top1_agreement": 0.9125549584758182
+    },
+    "selection-0007": {
+      "domain": "axis4_reasoning_termination",
+      "elapsed_seconds": 24.04946118593216,
+      "mean_kld": 0.024570099054295823,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0007.parquet",
+      "record_sha256": "1a6fc1a15ec7429c3a24cee86ab800f7207a12c075414128f2c8e203a295ba97",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-961644649f39da5b-0-aba1d23f",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-961644649f39da5b-0-aba1d23f/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "fb1a4c64bf7c7cd8bf140cb18270e150fbdd91939b5ce19b928fac35a4320bf3"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-961644649f39da5b-0-aba1d23f/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "a66ebb8298606f1cfddcda577ce49fce1d5a1c217016f09dbb7ad74397e430d2"
+          }
+        ],
+        "elapsed_seconds": 20.7059251149185,
+        "payload_deleted": true,
+        "request_id": "cmpl-961644649f39da5b",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "a5da9da5a976d92baa2ad26e608fed2667a73cb71d3c66f20ebc7801cf568205",
+      "teacher_sha256": "6dffb602fb511eceda23b1299bab7335d0fc993b27dd5dfe631d5122c9a4634d",
+      "teacher_top1_realized_agreement": 0.8969223253541768,
+      "top1_agreement": 0.9658036150464093
+    },
+    "selection-0014": {
+      "domain": "axis3_code_agentic",
+      "elapsed_seconds": 5.956941178999841,
+      "mean_kld": 0.02940949791734659,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0014.parquet",
+      "record_sha256": "16346015a4bca74ea46b118048653afbabae74a3bb08b896e3541163474fe5c1",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ae56d56ceb5743d9-0-a52dac76",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ae56d56ceb5743d9-0-a52dac76/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "09e8cc8bab2ab3b6fd97553111446ba599697f93609cd8f468faad2d7a60ab6d"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ae56d56ceb5743d9-0-a52dac76/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "8f93887c8d978ffaca6ae6623504c88edf6048fb0e451be158d10bf61ef5afb0"
+          }
+        ],
+        "elapsed_seconds": 2.707954212091863,
+        "payload_deleted": true,
+        "request_id": "cmpl-ae56d56ceb5743d9",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "353e71e4943a2685136eeaaeeb73c09433598fe550ba757d8053690350e90450",
+      "teacher_sha256": "250a33bcc1f281165b0c2b08935a6cc33cee44adcc8ec9896b686abc4fc9518e",
+      "teacher_top1_realized_agreement": 0.7992183683439179,
+      "top1_agreement": 0.95847581827064
+    },
+    "selection-0021": {
+      "domain": "axis2_legal",
+      "elapsed_seconds": 5.595392560004257,
+      "mean_kld": 0.03986944355839848,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0021.parquet",
+      "record_sha256": "9d8ee61550b7a79a1bf85535960af4e075ce198eb5dbf58514f4b9635bf73968",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ba822c4d7ebf4ec7-0-a2ba7f24",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ba822c4d7ebf4ec7-0-a2ba7f24/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "f7b8bfce2f908d5e6f9b7b14a0635f53a60d4dcec9df2c8ea6d157a4a49fb91b"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-ba822c4d7ebf4ec7-0-a2ba7f24/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "a23dc2c76396603464beab2bd3464b922692348a6a9f9030c78ac53cc0621142"
+          }
+        ],
+        "elapsed_seconds": 2.727502865018323,
+        "payload_deleted": true,
+        "request_id": "cmpl-ba822c4d7ebf4ec7",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "16aef0c53715c6133fc2ac07ea964f367cbdb438e97d3e266fd43938237572c5",
+      "teacher_sha256": "c176cb9bda031e91069db8952521a056c334330332b4ea980972316ebc86b9f4",
+      "teacher_top1_realized_agreement": 0.5940400586223742,
+      "top1_agreement": 0.918905715681485
+    },
+    "selection-0024": {
+      "domain": "axis1_general",
+      "elapsed_seconds": 8.508729584049433,
+      "mean_kld": 0.01717231983087407,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0024.parquet",
+      "record_sha256": "8e031ecc2e644ced0c5a55b2e7ad4e99f46194020426804059ebacbc5ce2a0d6",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b2d4942b063a2a1d-0-89ee6952",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b2d4942b063a2a1d-0-89ee6952/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "6d4064368ccef576ce1e51b925a001636a77f77dd8bd612e95c5e8bc395894e3"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b2d4942b063a2a1d-0-89ee6952/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "712beccc2a8b32e24c37a63fd4542fb636f6e9fb9a87aa0876b47d76a379b3be"
+          }
+        ],
+        "elapsed_seconds": 5.475413647014648,
+        "payload_deleted": true,
+        "request_id": "cmpl-b2d4942b063a2a1d",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "b121a1ba097897ec9b9edb7503d4ad11b577cfe324afc91f8f7661c072bb49bf",
+      "teacher_sha256": "a6d82ccf92538fda1cad08d2df38e53d523297f0b3a03e6611e2e9fe2a2c47ef",
+      "teacher_top1_realized_agreement": 0.7244748412310699,
+      "top1_agreement": 0.953590620420127
+    },
+    "selection-0028": {
+      "domain": "axis1_general",
+      "elapsed_seconds": 6.1290544220246375,
+      "mean_kld": 0.013052970852334457,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0028.parquet",
+      "record_sha256": "5f41254a791e90fc54ac4c27487a9a268fb6f15ac52bcb8e52fa156d596c4b0d",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-958144025d6ec34b-0-a0106c6d",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-958144025d6ec34b-0-a0106c6d/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "828a6abe16d927247ed3c3b0e1bc72cfbcd1477f333d1133fe66d5d300e9aa92"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-958144025d6ec34b-0-a0106c6d/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "c8b20bef8feb5a9ba8b8f0aa6e699128fc99dceefcd52d27204ccb7b7b6688a8"
+          }
+        ],
+        "elapsed_seconds": 2.716984963044524,
+        "payload_deleted": true,
+        "request_id": "cmpl-958144025d6ec34b",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "baaeb76ddbbeacd1daea27cde82daa00c343912205d7f1fed3f251a0ea885ca7",
+      "teacher_sha256": "2cb566f7f7ab7ec1a50a664cb35192dba6eb27c3bd4cc7a75b0a818d514418d8",
+      "teacher_top1_realized_agreement": 0.8304836345872008,
+      "top1_agreement": 0.9682462139716659
+    },
+    "selection-0029": {
+      "domain": "axis2_legal",
+      "elapsed_seconds": 5.777097246958874,
+      "mean_kld": 0.04532243732171445,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0029.parquet",
+      "record_sha256": "6b58ef2c9feea235fdc9be514f251b4bbe776af2c5c0f86966428433126a5cfa",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a293c5520fbd48a0-0-9761fd62",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a293c5520fbd48a0-0-9761fd62/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "230a7be98d0afd1c35f62c57b036beb64511ee010a20be42b387fdfca7d5ebc6"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a293c5520fbd48a0-0-9761fd62/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "74d57870bd09541c54fad91737c68c2aac13e1708e546b26747d6f34dd46ce2c"
+          }
+        ],
+        "elapsed_seconds": 2.7625810799654573,
+        "payload_deleted": true,
+        "request_id": "cmpl-a293c5520fbd48a0",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "fa21bea966d7890641e8cba94b1bd398de49708b5c5c85c9c0da7c3ab532a819",
+      "teacher_sha256": "31e0fb788613587fa0ed00b47c055f8582e6679dd60995cf788404c00e1b8767",
+      "teacher_top1_realized_agreement": 0.6350757205666829,
+      "top1_agreement": 0.9272105520273571
+    },
+    "selection-0030": {
+      "domain": "axis3_code_agentic",
+      "elapsed_seconds": 5.702281920006499,
+      "mean_kld": 0.07325860843826376,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0030.parquet",
+      "record_sha256": "aac073e7dc1bcb8f1e454d9ca9e710fadfa8c9d89ae3a4622a51f233aa99c5d1",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b0dc9844ebd0a55e-0-b1bfa4a8",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b0dc9844ebd0a55e-0-b1bfa4a8/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "d24c2a84ee2b2e393d7cd14374b1b4ed9ba68b459e46ea7537109d74537e2b88"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b0dc9844ebd0a55e-0-b1bfa4a8/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "a2d773794f6ab266f3c9f6b08aa8a3ac49318932716ac72c2f36ae1ae95362af"
+          }
+        ],
+        "elapsed_seconds": 2.7466201189672574,
+        "payload_deleted": true,
+        "request_id": "cmpl-b0dc9844ebd0a55e",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "6a9228750cd56c93d44fffcb7dd8953cebdc382a166ac73a5672139462589309",
+      "teacher_sha256": "06759bbb40d96ee72005bb6c6b596f7afc1d7082b8bfc76bae85c5326faeba38",
+      "teacher_top1_realized_agreement": 0.8011724474841231,
+      "top1_agreement": 0.9296531509526136
+    },
+    "selection-0031": {
+      "domain": "axis4_reasoning_termination",
+      "elapsed_seconds": 6.446003520046361,
+      "mean_kld": 0.012589484689285179,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0031.parquet",
+      "record_sha256": "ed355845909d5aa4838d7f301753ad6f6c76e216d6a9b7a8bb72bc3bd037cfd9",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9520bb2ac9eb8d13-0-bc7bfae0",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9520bb2ac9eb8d13-0-bc7bfae0/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "ddd199d000a3ddf50437883f577b6e96a7aaf85dd20df6c9a1540dd16c330a89"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9520bb2ac9eb8d13-0-bc7bfae0/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "24105225b3dacd897de5b1488531c5646e47154082c84f1de52fb84642d8390a"
+          }
+        ],
+        "elapsed_seconds": 2.9574399180710316,
+        "payload_deleted": true,
+        "request_id": "cmpl-9520bb2ac9eb8d13",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "dcbe74167c064305ce4e0ace011b7d922fe7424df562f1f7650aa9c989e38d78",
+      "teacher_sha256": "58aac54d956a40b4f9707502471d15bb5952d9af067aa843cf83ae9a21f93aed",
+      "teacher_top1_realized_agreement": 0.8974108451392281,
+      "top1_agreement": 0.9662921348314607
+    },
+    "selection-0032": {
+      "domain": "axis1_general",
+      "elapsed_seconds": 7.378602365031838,
+      "mean_kld": 0.04850354947457295,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0032.parquet",
+      "record_sha256": "002aee5a615b753b1385fc48733d366e30ff6beffc110cc500d4e81d96aa0aa8",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9294f14a7a05cdf6-0-a5557fe0",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9294f14a7a05cdf6-0-a5557fe0/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "3275734c0ebfc2be18ddc2b338fb6bca6e5e00eebbdaf9efba7c9cf5b9ab5e33"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9294f14a7a05cdf6-0-a5557fe0/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "9f83a37c3dc1edbdef405b17aec0909eb68cc775ac6d5b484dd586a42f892273"
+          }
+        ],
+        "elapsed_seconds": 4.262455815100111,
+        "payload_deleted": true,
+        "request_id": "cmpl-9294f14a7a05cdf6",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "041505857e351726a0e0fb700e1045dc473dbd7878478cd9be678565ad87120f",
+      "teacher_sha256": "78d3bd76ede9f311abc0d7e9d62494713474a949a2b7f7b3cca91ab5fa71bb2b",
+      "teacher_top1_realized_agreement": 0.6775769418661456,
+      "top1_agreement": 0.9262335124572545
+    },
+    "selection-0035": {
+      "domain": "axis4_reasoning_termination",
+      "elapsed_seconds": 12.81332560593728,
+      "mean_kld": 0.014426155751689804,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0035.parquet",
+      "record_sha256": "95175b211e2708bbf59ced4d1c2e9da87649efc27f6dc47be59c59a910cb2f27",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b4781c033917d94a-0-a18b3e58",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b4781c033917d94a-0-a18b3e58/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "13a7347da938f8041fae8d053bf47e7028fff23c75074f885470be709294afc2"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b4781c033917d94a-0-a18b3e58/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "260cf535df04271dedb4abdc5453a21fca8d9523455ec634217e124ce15d63ff"
+          }
+        ],
+        "elapsed_seconds": 9.622330444981344,
+        "payload_deleted": true,
+        "request_id": "cmpl-b4781c033917d94a",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "6918065ca377ec3b319232649effcc078eee62bd06b2fb2bce89fd99a2aca23a",
+      "teacher_sha256": "68bdbf211f9cf719704c492c64345a6f86eeb6fe3371fca2ab0059c67cf7ba58",
+      "teacher_top1_realized_agreement": 0.9013190034196384,
+      "top1_agreement": 0.9638495359062041
+    },
+    "selection-0039": {
+      "domain": "axis4_reasoning_termination",
+      "elapsed_seconds": 5.539380947011523,
+      "mean_kld": 0.03267448930432012,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0039.parquet",
+      "record_sha256": "e84ac6c20e3d1892d03268a40b1d72174b1b096dacf25764a0c24a9667905292",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a096ff24f445ad92-0-95e61329",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a096ff24f445ad92-0-95e61329/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "8baf5ecf689fd1d2c7de220ddbf555d49a19ce29a9e2068e6d2811a25f2dec02"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-a096ff24f445ad92-0-95e61329/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "b30522cff7f110a70f073d162ce1848328b9358a9bb8f6c0aba530f8eee60dc8"
+          }
+        ],
+        "elapsed_seconds": 2.664737032027915,
+        "payload_deleted": true,
+        "request_id": "cmpl-a096ff24f445ad92",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "e9a32ff4b47b41ee1bfe324cc0b9234191ef5e9ac9a0222172fd271082233914",
+      "teacher_sha256": "9932db80df51ad135926c6c13702d618be1a2d7ee742ee4b25d381e1c57fb826",
+      "teacher_top1_realized_agreement": 0.8920371275036639,
+      "top1_agreement": 0.9555446995603322
+    },
+    "selection-0041": {
+      "domain": "axis2_legal",
+      "elapsed_seconds": 5.638426989899017,
+      "mean_kld": 0.049565689488985334,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0041.parquet",
+      "record_sha256": "a87dabbde490e6d8c9745281c6084b62b1a0f0e84e7ac987f8fabe8e515d3c6c",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e19acd4de73acd9-0-a349b156",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e19acd4de73acd9-0-a349b156/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "b28f8bcae569705b05ae257b9d25adbfe946eadf23c15e87990d90139a6b72f4"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e19acd4de73acd9-0-a349b156/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "ca7e9308451bcc7ee30f5db637675900426e13b9e6e1cbced549a8617d007b35"
+          }
+        ],
+        "elapsed_seconds": 2.7046952730743214,
+        "payload_deleted": true,
+        "request_id": "cmpl-9e19acd4de73acd9",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "76098c157f30e84354d9ad93f9fdeafac200c1002df6bdcf6b20df8a689f527c",
+      "teacher_sha256": "1299aa8ef5bc6348fa21b3e015d92b06625311233a32ef883923aa4f3a703c41",
+      "teacher_top1_realized_agreement": 0.5925744992672203,
+      "top1_agreement": 0.912066438690767
+    },
+    "selection-0042": {
+      "domain": "axis3_code_agentic",
+      "elapsed_seconds": 5.619463323964737,
+      "mean_kld": 0.08069424407885684,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0042.parquet",
+      "record_sha256": "b6827d0fb7b967d5b695656c285b741c6a24845b2ac87201dab0b84978eae950",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e0cdbc0ad87a9d8-0-996d2217",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e0cdbc0ad87a9d8-0-996d2217/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "b8f14781f5db484bcbf6dc154f96028242301a10978623414a77f991fbf1de24"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-9e0cdbc0ad87a9d8-0-996d2217/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "cd2cbf547d4ff1cf74a4ddcc49ef39e4c9a07fcfd0d2bab0f5d7686943e7aa99"
+          }
+        ],
+        "elapsed_seconds": 2.682036587037146,
+        "payload_deleted": true,
+        "request_id": "cmpl-9e0cdbc0ad87a9d8",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "5e649e30ee5cda9f8dd41c711890f458da0930d1493185a1d1b6290b9efdca7f",
+      "teacher_sha256": "ebc4856f89a02b5e5c776aecacb6a102f73a59886558059944e0507c11d77fdc",
+      "teacher_top1_realized_agreement": 0.7459697117733268,
+      "top1_agreement": 0.9101123595505618
+    },
+    "selection-0056": {
+      "domain": "axis1_general",
+      "elapsed_seconds": 15.308027307968587,
+      "mean_kld": 0.029797496248747446,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0056.parquet",
+      "record_sha256": "9eca78fef2a81ea2f6af9319e53b566ac39ca431e67644ebebe0b7aa9760ff4c",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-adccd7a05bb7a3c1-0-bc78fc17",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-adccd7a05bb7a3c1-0-bc78fc17/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "8aabb86bab10af065259a2c217c95627f8ed7f7ce6b56a5bbddaffa85033000f"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-adccd7a05bb7a3c1-0-bc78fc17/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "e914ec629d71783d99acef89f44b13202e3852d1adb6803561cc3d87ea9c9a9f"
+          }
+        ],
+        "elapsed_seconds": 12.348476454964839,
+        "payload_deleted": true,
+        "request_id": "cmpl-adccd7a05bb7a3c1",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "ed135e0b1360f1429841d9d23a3bd1467847d5b0043eb43326d008e50a5077aa",
+      "teacher_sha256": "21bd5cd989d12a63db12264a68af2e2061b8713f5f0db389d7279db1ded02528",
+      "teacher_top1_realized_agreement": 0.7459697117733268,
+      "top1_agreement": 0.9477283829995115
+    },
+    "selection-0058": {
+      "domain": "axis3_code_agentic",
+      "elapsed_seconds": 5.80296633800026,
+      "mean_kld": 0.027238001031473436,
+      "record_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/exact-v10-wave2-h16-layers-003-019-020/selection-0058.parquet",
+      "record_sha256": "ac7da24c80e37dedb5d20ca6eb221df063167613a0a66fcf74520f64c3486537",
+      "request": {
+        "capture_dir": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b5c36eb1798a5e40-0-a8316892",
+        "chunks": [
+          {
+            "bytes": 634388688,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b5c36eb1798a5e40-0-a8316892/logits.rows-000000-001024.safetensors",
+            "rows": [
+              0,
+              1024
+            ],
+            "sha256": "6f4b99ec322704243913e246fe7a7c0e98d673c9e663ab198c6ba788921cfbbb"
+          },
+          {
+            "bytes": 633769168,
+            "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/captures/exact-v10-wave2-h16-layers-003-019-020/cmpl-b5c36eb1798a5e40-0-a8316892/logits.rows-001024-002047.safetensors",
+            "rows": [
+              1024,
+              2047
+            ],
+            "sha256": "a11b0c8b40e6d6806eb9f1fd5589cd36b57636c67bb52f91103e670f73e190f2"
+          }
+        ],
+        "elapsed_seconds": 2.729604947962798,
+        "payload_deleted": true,
+        "request_id": "cmpl-b5c36eb1798a5e40",
+        "response_usage": {
+          "completion_tokens": 1,
+          "prompt_tokens": 2048,
+          "prompt_tokens_details": null,
+          "total_tokens": 2049
+        }
+      },
+      "student_logits_sha256": "7ed7acee78cdb1a47d71a603e323d870cbb61d0ca3ad3158769b9c941c43a543",
+      "teacher_sha256": "72a58a73a4bdf5d123ec6252745b14a77e2c396f348ca1eb9973b503578fc7d3",
+      "teacher_top1_realized_agreement": 0.769418661455789,
+      "top1_agreement": 0.9589643380556913
+    }
+  }
+}
