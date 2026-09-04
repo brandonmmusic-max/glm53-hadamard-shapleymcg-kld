@@ -27,6 +27,8 @@ P8_BOUNDARY_FILES=${GLM53_P8_BOUNDARY_FILES:-}
 P8_POLICY=${GLM53_P8_POLICY:-}
 P8_NATIVE=${GLM53_P8_NATIVE:-}
 P8_NATIVE_SIDECAR_DIR=${GLM53_P8_NATIVE_SIDECAR_DIR:-}
+P8_NATIVE_LAYERS=${GLM53_P8_NATIVE_LAYERS:-3}
+P8_NATIVE_DESIGN=${GLM53_P8_NATIVE_DESIGN:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/experiments/p8-kld-shapley-native6-v2.json}
 DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
@@ -49,6 +51,7 @@ DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$P8_PSEUDOQUANT_ARM" != hybrid ] || [ -n "$P8_POLICY" ] || { echo "hybrid P8 pseudoquant requires GLM53_P8_POLICY" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ "$DISABLE_EP" = 1 ] || { echo "P8 native reference requires GLM53_DISABLE_EP=1" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -n "$P8_NATIVE_SIDECAR_DIR" ] || { echo "P8 native requires GLM53_P8_NATIVE_SIDECAR_DIR" >&2; exit 2; }
+[ -z "$P8_NATIVE" ] || [ -f "$P8_NATIVE_DESIGN" ] || { echo "P8 native design is missing: $P8_NATIVE_DESIGN" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -z "$P8_PSEUDOQUANT" ] || { echo "P8 native and pseudoquant modes are mutually exclusive" >&2; exit 2; }
 if [ -f "$MODEL_DIR/OVERLAY.json" ] && [ "$LOAD_FORMAT" != instanttensor ]; then
   echo "sparse overlay checkpoints require GLM53_LOAD_FORMAT=instanttensor" >&2
@@ -140,14 +143,20 @@ if [ -n "$P8_PSEUDOQUANT" ]; then
   fi
 fi
 if [ -n "$P8_NATIVE" ]; then
-  rotation_env+=(
-    -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
-    -e GLM53_P8_NATIVE="$P8_NATIVE"
-    -e GLM53_P8_NATIVE_SIDECAR_DIR="$P8_NATIVE_SIDECAR_DIR"
-  )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
     rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
   fi
+  rotation_env+=(
+    -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
+    -e GLM53_P8_NATIVE="$P8_NATIVE"
+    -e GLM53_P8_NATIVE_SIDECAR_DIR=/p8-sidecars
+    -e GLM53_P8_NATIVE_LAYERS="$P8_NATIVE_LAYERS"
+    -e GLM53_P8_NATIVE_DESIGN=/p8-design/native6-v2.json
+  )
+  rotation_mount+=(
+    -v "$P8_NATIVE_SIDECAR_DIR:/p8-sidecars:ro"
+    -v "$P8_NATIVE_DESIGN:/p8-design/native6-v2.json:ro"
+  )
 fi
 [ -z "${GLM53_B12X_FAST_MATH:-}" ] || rotation_env+=( -e B12X_FAST_MATH="$GLM53_B12X_FAST_MATH" )
 [ -z "${GLM53_B12X_DYNAMIC_DOWN_SCALE:-}" ] || rotation_env+=( -e B12X_ENABLE_DYNAMIC_DOWN_SCALE="$GLM53_B12X_DYNAMIC_DOWN_SCALE" )
@@ -219,7 +228,7 @@ docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
 [ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
-[ -z "$P8_NATIVE" ] || grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=3 tp=4 K4 procedural_mcg E4M3 UE8M0_K32 identity deterministic_route_topk_sum physical_bpw=4.25 ldlq=false" "$SESSION/server-ready.log"
+[ -z "$P8_NATIVE" ] || grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=$P8_NATIVE_LAYERS tp=4 .*K4 procedural_mcg E4M3 UE8M0_K32 identity deterministic_route_topk_sum physical_bpw=4.25 ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"
 [ "$MOE_BACKEND" != humming ] || grep -qi 'humming moe' "$SESSION/server-ready.log"
 if [ "$HUMMING_ACT" = nvfp4 ]; then

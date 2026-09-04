@@ -39,42 +39,129 @@ if P8_NATIVE:
     from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
         UnquantizedFusedMoEMethod as _P8NativeUnquantizedFusedMoEMethod,
     )
+    from vllm.model_executor.layers.fused_moe.fused_moe_method_base import (
+        FusedMoEMethodBase as _P8NativeFusedMoEMethodBase,
+    )
+    from vllm.model_executor.layers.quantization.modelopt import (
+        ModelOptNvFp4FusedMoE as _P8NativeModelOptNvFp4FusedMoE,
+    )
 
     _P8N_SIDECAR_TEXT = os.environ.get("GLM53_P8_NATIVE_SIDECAR_DIR", "").strip()
     if not _P8N_SIDECAR_TEXT:
         raise RuntimeError("GLM53_P8_NATIVE requires GLM53_P8_NATIVE_SIDECAR_DIR")
     _P8N_SIDECAR_DIR = Path(_P8N_SIDECAR_TEXT)
+    _P8N_LAYER_SPEC = os.environ.get("GLM53_P8_NATIVE_LAYERS", "3").strip()
+    _P8N_LAYERS = frozenset(
+        int(value) for value in _P8N_LAYER_SPEC.split(",") if value
+    )
+    if not _P8N_LAYERS or not _P8N_LAYERS.issubset(set(range(3, 45))):
+        raise RuntimeError(f"invalid GLM53_P8_NATIVE_LAYERS={_P8N_LAYER_SPEC!r}")
+    _P8N_DESIGN_TEXT = os.environ.get("GLM53_P8_NATIVE_DESIGN", "").strip()
+    if not _P8N_DESIGN_TEXT:
+        raise RuntimeError("GLM53_P8_NATIVE requires GLM53_P8_NATIVE_DESIGN")
+    _P8N_DESIGN = Path(_P8N_DESIGN_TEXT)
+    if not _P8N_DESIGN.is_file():
+        raise RuntimeError(f"missing P8 native design: {_P8N_DESIGN}")
+    _P8N_DESIGN_SHA256 = hashlib.sha256(_P8N_DESIGN.read_bytes()).hexdigest()
     _P8N_LAYER_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
-    _P8N_ORIGINAL_PROCESS = _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
-    _P8N_ORIGINAL_FORWARD = _P8NativeUnquantizedFusedMoEMethod.forward_native
+    _P8N_ORIGINAL_UNQUANTIZED_PROCESS = (
+        _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
+    )
+    _P8N_ORIGINAL_UNQUANTIZED_FORWARD = (
+        _P8NativeUnquantizedFusedMoEMethod.forward_native
+    )
+    _P8N_ORIGINAL_MODELOPT_PROCESS = (
+        _P8NativeModelOptNvFp4FusedMoE.process_weights_after_loading
+    )
+    _P8N_ORIGINAL_MODELOPT_APPLY = _P8NativeModelOptNvFp4FusedMoE.apply
+    _P8N_ORIGINAL_IS_MONOLITHIC = _P8NativeFusedMoEMethodBase.is_monolithic.fget
 
-    def _p8n_process_weights_after_loading(self, layer):
-        if not getattr(layer, "_glm53_p8_native", False):
-            return _P8N_ORIGINAL_PROCESS(self, layer)
-        self.moe_kernel = None
+    def _p8n_release_carrier_parameters(layer):
+        released = 0
+        for name in (
+            "w13_weight",
+            "w2_weight",
+            "w13_weight_scale",
+            "w2_weight_scale",
+            "w13_weight_scale_2",
+            "w2_weight_scale_2",
+            "w13_input_scale",
+            "w2_input_scale",
+        ):
+            value = getattr(layer, name, None)
+            if not isinstance(value, _p8n_torch.Tensor):
+                continue
+            released += value.numel() * value.element_size()
+            empty = _p8n_torch.nn.Parameter(
+                _p8n_torch.empty(0, dtype=value.dtype, device=value.device),
+                requires_grad=False,
+            )
+            setattr(layer, name, empty)
+        return released
+
+    def _p8n_attach(layer, method):
+        method.moe_kernel = None
         rank = int(layer._glm53_p8_tp_rank)
-        sidecar = _P8N_SIDECAR_DIR / f"p8-layer-003-tp4-rank-{rank}.safetensors"
+        layer_id = int(layer._glm53_p8_layer)
+        sidecar = _P8N_SIDECAR_DIR / f"p8-layer-{layer_id:03d}-tp4-rank-{rank}.safetensors"
+        if not sidecar.is_file():
+            raise RuntimeError(f"missing P8 native sidecar: {sidecar}")
         layer._glm53_p8_native_runtime = _P8NativeTPMoE(
             sidecar,
             device=layer.w13_weight.device,
             tp_rank=rank,
+            layer=layer_id,
+            expected_design_sha256=_P8N_DESIGN_SHA256,
             topk=8,
             hidden=4096,
             intermediate=512,
             swiglu_limit=10.0,
         )
+        released = _p8n_release_carrier_parameters(layer)
         print(
             "GLM53_P8_NATIVE_WEIGHTS_READY "
-            f"layer=3 rank={rank} sidecar={sidecar} stream=K4 law=mcg "
-            "alphabet=E4M3 scale=UE8M0_K32 boundary=identity ldlq=false",
+            f"layer={layer_id} rank={rank} sidecar={sidecar} "
+            f"design_sha256={_P8N_DESIGN_SHA256} released_carrier_bytes={released} "
+            "stream=K4 law=mcg alphabet=E4M3 scale=UE8M0_K32 "
+            "boundary=identity ldlq=false",
             flush=True,
         )
+
+    def _p8n_process_weights_after_loading(self, layer):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_UNQUANTIZED_PROCESS(self, layer)
+        _p8n_attach(layer, self)
+
+    def _p8n_modelopt_process_weights_after_loading(self, layer):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_MODELOPT_PROCESS(self, layer)
+        _p8n_attach(layer, self)
+
+    def _p8n_modelopt_is_monolithic(self):
+        if getattr(self, "_glm53_p8_native", False):
+            return False
+        assert _P8N_ORIGINAL_IS_MONOLITHIC is not None
+        return _P8N_ORIGINAL_IS_MONOLITHIC(self)
+
+    def _p8n_run(layer, x, topk_weights, topk_ids):
+        output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
+        if not getattr(layer, "_glm53_p8_native_forward_logged", False):
+            print(
+                "GLM53_P8_NATIVE_FORWARD "
+                f"layer={layer._glm53_p8_layer} rank={layer._glm53_p8_tp_rank} "
+                "stream=K4 mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
+                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
+                "physical_bpw=4.25 ldlq=false",
+                flush=True,
+            )
+            layer._glm53_p8_native_forward_logged = True
+        return output
 
     def _p8n_forward_native(
         self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
     ):
         if not getattr(layer, "_glm53_p8_native", False):
-            return _P8N_ORIGINAL_FORWARD(
+            return _P8N_ORIGINAL_UNQUANTIZED_FORWARD(
                 self,
                 layer,
                 x,
@@ -83,46 +170,66 @@ if P8_NATIVE:
                 shared_experts,
                 shared_experts_input,
             )
-        output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
-        if not getattr(layer, "_glm53_p8_native_forward_logged", False):
-            print(
-                "GLM53_P8_NATIVE_FORWARD "
-                f"layer=3 rank={layer._glm53_p8_tp_rank} stream=K4 "
-                "mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
-                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
-                "physical_bpw=4.25 ldlq=false",
-                flush=True,
+        return _p8n_run(layer, x, topk_weights, topk_ids)
+
+    def _p8n_modelopt_apply(
+        self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
+    ):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_MODELOPT_APPLY(
+                self,
+                layer,
+                x,
+                topk_weights,
+                topk_ids,
+                shared_experts,
+                shared_experts_input,
             )
-            layer._glm53_p8_native_forward_logged = True
-        return output
+        return _p8n_run(layer, x, topk_weights, topk_ids)
 
     _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading = (
         _p8n_process_weights_after_loading
     )
     _P8NativeUnquantizedFusedMoEMethod.forward_native = _p8n_forward_native
+    _P8NativeModelOptNvFp4FusedMoE.process_weights_after_loading = (
+        _p8n_modelopt_process_weights_after_loading
+    )
+    _P8NativeModelOptNvFp4FusedMoE.apply = _p8n_modelopt_apply
+    _P8NativeModelOptNvFp4FusedMoE.is_monolithic = property(
+        _p8n_modelopt_is_monolithic
+    )
     _P8N_ORIGINAL_FACTORY = _p8n_glm_model.FusedMoEFactory
 
     def _p8n_factory(*args, **kwargs):
         prefix = kwargs.get("prefix", "")
         match = _P8N_LAYER_RE.search(prefix)
         runner = _P8N_ORIGINAL_FACTORY(*args, **kwargs)
-        if match is None or int(match.group(1)) != 3:
+        if match is None or int(match.group(1)) not in _P8N_LAYERS:
             return runner
+        layer_id = int(match.group(1))
         routed = runner.routed_experts
-        if not isinstance(routed.quant_method, _P8NativeUnquantizedFusedMoEMethod):
-            raise RuntimeError("P8 native layer 3 requires the BF16 carrier method")
+        if not isinstance(
+            routed.quant_method,
+            (_P8NativeUnquantizedFusedMoEMethod, _P8NativeModelOptNvFp4FusedMoE),
+        ):
+            raise RuntimeError(
+                f"P8 native layer {layer_id} requires BF16 or ModelOpt NVFP4 carrier"
+            )
         tp_size = int(routed.moe_config.moe_parallel_config.tp_size)
         tp_rank = int(routed.moe_config.tp_rank)
         if tp_size != 4 or not 0 <= tp_rank < 4:
             raise RuntimeError(f"P8 native requires TP4, got size={tp_size} rank={tp_rank}")
         routed._glm53_p8_native = True
+        routed.quant_method._glm53_p8_native = True
+        routed._glm53_p8_layer = layer_id
         routed._glm53_p8_tp_rank = tp_rank
         routed._glm53_p8_native_forward_logged = False
         return runner
 
     _p8n_glm_model.FusedMoEFactory = _p8n_factory
     print(
-        "GLM53_P8_NATIVE_PATCH_ACTIVE layers=3 tp=4 K4 procedural_mcg "
+        f"GLM53_P8_NATIVE_PATCH_ACTIVE layers={_P8N_LAYER_SPEC} tp=4 "
+        f"design_sha256={_P8N_DESIGN_SHA256} K4 procedural_mcg "
         "E4M3 UE8M0_K32 identity deterministic_route_topk_sum "
         "physical_bpw=4.25 ldlq=false",
         flush=True,
