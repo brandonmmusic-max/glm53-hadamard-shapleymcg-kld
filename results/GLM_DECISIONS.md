@@ -547,6 +547,36 @@ confirmation, and final roles remained unopened for this redesign branch.
   is run five times. It does not reverse Decisions 18–19's decoder/MMA closure.
   No LDLQ or BlockLDLQ was used.
 
+## 2026-09-04: Decision 21 — corrected deterministic P8 runtime
+
+- **Cause:** E=288 monolithic decode read one-byte sentinels through the
+  logical UE8M0 scale ABI slots. The split path passed because it consumed a
+  different repacked scale plane. Cluster-count arms 4/64/188 all reproduced
+  the same failure, falsifying the resident-grid hypothesis.
+- **Outcome:** dual logical/repacked scale planes close monolithic M3/M33 at
+  cosine `0.999579..0.999693`. Per-route output plus fixed-order top-k sum is
+  bitwise identical across five runs for both monolithic and materialized
+  M3/M33. The deterministic full-model layer-3 arm closes to decoded
+  pseudoquant within the relaxed margin (delta `+0.0013772`, BCa
+  `[-0.0005542,+0.0039721]`) but is a quality null versus GPTQ (`3.06%` worse
+  point estimate; interval crosses zero).
+- **Boundary:** P8 remains a twice-NVFP4-issue quality path; speed and a strict
+  quality win remain open. No LDLQ or BlockLDLQ was used.
+
+## 2026-09-04: Decision 22 — relaxed joint-policy gate did not transfer to KLD
+
+- **Decision before KLD:** demote the noisy 8-window routed-NMSE interval to a
+  control and advance the frozen 24.05%-better three-state policy. Require at
+  least 5% mean KLD improvement for development promotion; preserve the
+  paired interval and all domains.
+- **Outcome:** mean KLD improved only `0.8104%` versus matched decoded GPTQ
+  NVFP4 (`0.0528992` versus `0.0533314`), with 16/32 wins and BCa
+  `[-0.0024595,+0.0012695]`. This fails development promotion and the strict
+  quality claim gate.
+- **Consequence:** Shapley may still allocate transformations, but it must use
+  KLD-aware marginal values; local routed-output NMSE cannot be assumed to
+  cover the mismatch. No LDLQ or BlockLDLQ was used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

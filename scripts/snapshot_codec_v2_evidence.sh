@@ -55,6 +55,8 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-mcg-projection-alpha-v1" p8-mcg-projection
 copy_json_tree "$CAMPAIGN/codec-v2/p8-device-closure-v1" p8-device-closure
 copy_json_tree "$CAMPAIGN/codec-v2/p8-split-device-closure-v1" p8-split-device-closure
 copy_json_tree "$CAMPAIGN/codec-v2/p8-split-determinism-v1" p8-split-determinism
+copy_json_tree "$CAMPAIGN/codec-v2/p8-e288-small-m-cluster-diagnostic-v1" p8-e288-small-m-cluster-diagnostic
+copy_json_tree "$CAMPAIGN/codec-v2/p8-native-kld-closure-v2" p8-native-kld-closure-v2
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
@@ -67,6 +69,8 @@ done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-p8-layer22-*.json' -o \
   -name 'run-p8-scaled-mcg-l3-*.json' -o \
   -name 'run-p8-boundary-policy-l3-*.json' -o \
+  -name 'run-p8-identity-mcg-l3-native-*.json' -o \
+  -name 'run-p8-joint-fc1-policy-*.json' -o \
   -name 'run-v5-powered-downh16-*.json' \
 \) | sort)
 

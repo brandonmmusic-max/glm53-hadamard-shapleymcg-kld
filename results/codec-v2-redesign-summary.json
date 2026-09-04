@@ -216,5 +216,36 @@
     "decision": "fail-atomic-scatter-nondeterministic",
     "next": "exercise deterministic route-output plus fixed top-k reduction specialization"
   },
-  "kernel_status": "W6A8 control failed but no longer blocks developmental P8 work; procedural-MCG K3/K4 arithmetic passed with zero table bytes, including the actual full-size layer-3 K4 payload; physical layer-3 end-to-end KLD closed within the relaxed engineering margin but did not establish a quality win; native small-M decode, deterministic specialization, speed, and strict NVFP4 comparison remain pending; P4 exact-E2M1 encoder failed its numerical screen"
+  "p8_e288_dual_scale_plane_and_determinism": {
+    "cluster_hypothesis": "falsified; MAC 4, 64, and 188 produced the identical non-finite hash before the scale-plane repair",
+    "root_cause": "monolithic scaled trellis received a one-byte sentinel instead of the logical UE8M0 scale plane",
+    "monolithic_cosine": [0.9995787143707275, 0.9996932148933411],
+    "monolithic_relative_l2": [0.029103606939315796, 0.02478102594614029],
+    "deterministic_modes": ["monolithic", "split-materialized"],
+    "runs_per_cell": 5,
+    "bitwise_cells_passed": 4,
+    "decision": "pass-arithmetic-and-determinism"
+  },
+  "p8_deterministic_kernel_kld_closure": {
+    "windows": 32,
+    "kernel_mean_kld": 0.05496508510762163,
+    "pseudoquant_mean_kld": 0.053587928070957414,
+    "mean_delta_kld": 0.0013771570366642204,
+    "delta_ci95_bca": [-0.0005542253107147826, 0.003972117275323567],
+    "decision": "pass-relaxed-engineering-closure",
+    "versus_decoded_gptq_relative_improvement": -0.030632366079662576,
+    "strict_quality_win": false
+  },
+  "p8_joint_fc1_policy_relaxed_kld": {
+    "prior_routed_nmse_improvement": 0.2404911168639713,
+    "windows": 32,
+    "candidate_mean_kld": 0.0528992076589619,
+    "decoded_gptq_mean_kld": 0.05333141760014658,
+    "relative_improvement": 0.008104227501042227,
+    "mean_delta_kld": -0.00043220994118467774,
+    "delta_ci95_bca": [-0.002459540043738377, 0.001269467846531882],
+    "window_wins": 16,
+    "decision": "fail-5-percent-development-promotion-and-strict-claim"
+  },
+  "kernel_status": "P8 K4 procedural-MCG arithmetic, E=288 monolithic/split execution, and five-run deterministic route reduction are closed. Deterministic layer-3 device KLD passes only the relaxed closure margin and is a null versus matched decoded GPTQ. The relaxed three-state joint policy transfers only 0.81% of its 24.05% routed-NMSE gain to end-to-end KLD, so KLD-aware rather than routed-NMSE Shapley is required. Speed, a strict NVFP4 quality win, full-checkpoint P8, and P4 remain open; P4 exact-E2M1 previously failed its numerical screen."
 }
