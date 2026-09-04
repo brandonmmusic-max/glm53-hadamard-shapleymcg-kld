@@ -73,8 +73,10 @@ if [ -f "$MODEL_DIR/OVERLAY.json" ] && [ "$LOAD_FORMAT" != instanttensor ]; then
   exit 2
 fi
 
-REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
+REPO=${GLM53_REPO:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53}
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
+RUNTIME_PATCH_ROOT=${GLM53_RUNTIME_PATCH_ROOT:-$REPO/runtime_patch}
+[ -d "$RUNTIME_PATCH_ROOT" ] || { echo "runtime patch root is missing: $RUNTIME_PATCH_ROOT" >&2; exit 2; }
 ROLES=${GLM53_ROLES:-$CAMPAIGN/roles/roles-v3.json}
 IMAGE=${GLM53_RUNTIME_IMAGE:-klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate}
 IMAGE_ID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
@@ -98,7 +100,7 @@ mkdir -p "$CAPTURES" "$SESSION" "$CAMPAIGN/kld-v3/records" "$CACHE_DIR"
 cd "$REPO"
 RUNTIME_PATCH_MANIFEST=${GLM53_RUNTIME_PATCH_MANIFEST:-$CAMPAIGN/codec-v2/e0-corrections/runtime-patch-manifest.json}
 PYTHONPATH=. python3 -m glm53_nvfp4.hash_tree \
-  --root runtime_patch \
+  --root "$RUNTIME_PATCH_ROOT" \
   --output "$RUNTIME_PATCH_MANIFEST" \
   --verify
 
@@ -117,12 +119,12 @@ if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
   if [ "$ROTATION" = had16 ]; then
     rotation_env+=( -e GLM53_MXFP6_H16_ALL=1 )
   fi
-  rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
 fi
 if [ "$ROTATION" != identity ]; then
   rotation_env+=( -e PYTHONPATH=/runtime-patch/b12x_h16:/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x -e GLM53_ROUTED_ROTATION="$ROTATION" -e GLM53_ROTATED_LAYERS="$LAYERS" -e GLM53_ROTATION_SCOPE="$ROTATION_SCOPE" -e GLM53_ROTATION_PLACEMENT="$ROTATION_PLACEMENT" )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
 fi
 if [ "${GLM53_RUNTIME_NEGATE_W13:-0}" = 1 ]; then
@@ -136,7 +138,7 @@ if [ "$HUMMING_ACT" = nvfp4 ]; then
     -e 'VLLM_HUMMING_INPUT_QUANT_CONFIG={"dtype":"float4e2m1","group_size":16}'
   )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
 fi
 if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
@@ -145,7 +147,7 @@ if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
     -e GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH=1
   )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
 fi
 if [ -n "$P8_PSEUDOQUANT" ]; then
@@ -158,12 +160,12 @@ if [ -n "$P8_PSEUDOQUANT" ]; then
   )
   [ -z "$P8_POLICY" ] || rotation_env+=( -e GLM53_P8_POLICY="$P8_POLICY" )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
 fi
 if [ -n "$P8_NATIVE" ]; then
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
   rotation_env+=(
     -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
@@ -179,7 +181,7 @@ if [ -n "$P8_NATIVE" ]; then
 fi
 if [ -n "$P4_NATIVE" ]; then
   if [ ${#rotation_mount[@]} -eq 0 ]; then
-    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+    rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
   P4_NATIVE_SIDECAR_DIR=$(readlink -f "$P4_NATIVE_SIDECAR_DIR")
   P4_NATIVE_DESIGN=$(readlink -f "$P4_NATIVE_DESIGN")
