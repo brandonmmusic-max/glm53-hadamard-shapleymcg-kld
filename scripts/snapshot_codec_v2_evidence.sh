@@ -44,6 +44,9 @@ copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/p8-bf16-candidate" l
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/gptq-bf16-control" layer22-control-overlay
 copy_json_tree "$CAMPAIGN/codec-v2/w6a8-diagnosis/sealed" w6a8-diagnosis
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/scaled-mcg-layer3-kld-v1" p8-h128-scaled-mcg-layer3-kld
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/all-experts-v1" p8-h128-all-experts
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/identity-mcg-layer3-v1/receipts" p8-identity-mcg-layer3-build-receipts
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/boundary-policy-v1" p8-boundary-policy
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
@@ -55,6 +58,7 @@ done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-codec-p8-*.json' -o \
   -name 'run-p8-layer22-*.json' -o \
   -name 'run-p8-scaled-mcg-l3-*.json' -o \
+  -name 'run-p8-boundary-policy-l3-*.json' -o \
   -name 'run-v5-powered-downh16-*.json' \
 \) | sort)
 

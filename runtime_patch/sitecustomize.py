@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import hashlib
+from pathlib import Path
 
 
 MODE = os.environ.get("GLM53_ROUTED_ROTATION", "").strip().lower()
@@ -37,7 +38,7 @@ if P8_PSEUDOQUANT:
 
     _P8_LAYER_SPEC = os.environ.get("GLM53_P8_LAYERS", "3").strip()
     _P8_ARM = os.environ.get("GLM53_P8_PSEUDOQUANT_ARM", "candidate").strip().lower()
-    if _P8_ARM not in {"candidate", "control"}:
+    if _P8_ARM not in {"candidate", "control", "hybrid"}:
         raise RuntimeError(f"invalid GLM53_P8_PSEUDOQUANT_ARM={_P8_ARM!r}")
     _P8_LAYERS = frozenset(int(value) for value in _P8_LAYER_SPEC.split(",") if value)
     if not _P8_LAYERS or not _P8_LAYERS.issubset(set(range(3, 45))):
@@ -48,6 +49,27 @@ if P8_PSEUDOQUANT:
     ]
     if not _P8_BOUNDARY_PATHS:
         raise RuntimeError("GLM53_P8_PSEUDOQUANT requires GLM53_P8_BOUNDARY_FILES")
+    _P8_H128_EXPERTS = frozenset(range(288)) if _P8_ARM == "candidate" else frozenset()
+    _P8_POLICY_SHA256 = "none"
+    if _P8_ARM == "hybrid":
+        import json as _p8_json
+
+        _p8_policy_path = os.environ.get("GLM53_P8_POLICY", "").strip()
+        if not _p8_policy_path:
+            raise RuntimeError("hybrid P8 pseudoquant requires GLM53_P8_POLICY")
+        _p8_policy_bytes = Path(_p8_policy_path).read_bytes()
+        _p8_policy = _p8_json.loads(_p8_policy_bytes)
+        if (
+            _p8_policy.get("schema") != "glm53-p8-identity-h128-boundary-policy.v1"
+            or _p8_policy.get("phase") != "selection"
+            or _p8_policy.get("policy_bytes") != 39
+            or _p8_policy.get("ldlq_used") is not False
+        ):
+            raise RuntimeError("invalid P8 boundary policy")
+        _P8_H128_EXPERTS = frozenset(int(value) for value in _p8_policy["h128_experts"])
+        if len(_P8_H128_EXPERTS) != int(_p8_policy["h128_count"]):
+            raise RuntimeError("P8 boundary policy expert count mismatch")
+        _P8_POLICY_SHA256 = hashlib.sha256(_p8_policy_bytes).hexdigest()
 
     _p8_parts = []
     _p8_next = 0
@@ -128,7 +150,8 @@ if P8_PSEUDOQUANT:
             expert_input = carrier.index_select(0, token_index)
             gate = _p8_F.linear(expert_input, layer.w13_weight[expert, :intermediate])
             up = _p8_F.linear(expert_input, layer.w13_weight[expert, intermediate:])
-            if _P8_ARM == "candidate":
+            use_h128 = expert in _P8_H128_EXPERTS
+            if use_h128:
                 gate = _p8_hadamard128_last(gate).clamp(max=10.0)
                 up = _p8_hadamard128_last(up).clamp(-10.0, 10.0)
                 middle = _p8_F.silu(gate) * up * diagonal[expert]
@@ -151,8 +174,8 @@ if P8_PSEUDOQUANT:
                 "GLM53_P8_PSEUDOQUANT_FORWARD "
                 f"layer={layer._glm53_p8_layer} rank={rank} "
                 f"active_experts={len(active)} carrier=E4M3_K32 arm={_P8_ARM} "
-                f"boundary={'H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity'} "
-                "ldlq=false",
+                f"boundary={'hybrid_98_h128' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity')} "
+                f"policy_sha256={_P8_POLICY_SHA256} ldlq=false",
                 flush=True,
             )
             layer._glm53_p8_forward_logged = True
@@ -218,7 +241,8 @@ if P8_PSEUDOQUANT:
     print(
         "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE "
         f"layers={_P8_LAYER_SPEC} experts={_P8_DOWN_DIAGONAL.shape[0]} "
-        f"intermediate={_P8_DOWN_DIAGONAL.shape[1]} arm={_P8_ARM} ldlq=false",
+        f"intermediate={_P8_DOWN_DIAGONAL.shape[1]} arm={_P8_ARM} "
+        f"h128_experts={len(_P8_H128_EXPERTS)} policy_sha256={_P8_POLICY_SHA256} ldlq=false",
         flush=True,
     )
 

@@ -352,6 +352,58 @@ confirmation, and final roles remained unopened for this redesign branch.
   of these 32 windows is adaptive tuning evidence only and cannot qualify a
   redesigned candidate.
 
+## 2026-09-04: Decision 8 — all-expert identity/H128 attribution
+
+- **Decision before result:** evaluate the physical K4 procedural-MCG P8
+  identity and scaled-H128 encoders on all 288 layer-3 experts using disjoint,
+  domain-balanced REAP fit calibration and evaluation slices. Advance only if
+  H128 improves full routed-output geometric-mean NMSE by at least 5%, wins at
+  least 173 experts, and the paired expert-bootstrap interval excludes zero.
+- **Outcome:** pass for policy construction. Full routed-output NMSE improved
+  by 28.0315% with 252/288 wins and mean-log-ratio BCa 95% CI
+  `[-0.367496,-0.293519]`. Gate and up weight NMSE improved by 18.8058% and
+  19.2387% with 288/288 wins each; down weight NMSE worsened by 0.9386% with
+  116/288 wins. The preregistered 5% rule made 242 experts eligible and kept
+  the expert policy at 39 bytes. Analysis SHA-256:
+  `70c9313ace09bd9810ea83bff574eddcdaf5015466e51b4ae5fe3526c4743e50`.
+  Protected roles remained closed. No LDLQ or BlockLDLQ was used.
+
+## 2026-09-04: Decision 9 — disjoint fit validation of 39-byte policy
+
+- **Decision before result:** on one fit-only selection slice choose H128 only
+  for earlier-eligible experts where it beats the newly built identity P8 by
+  at least 2%; then evaluate that frozen mask on a disjoint fit-only
+  validation slice. Advance to adaptive KLD only for at least 10% improvement
+  versus GPTQ NVFP4, at least 173/288 wins, and a paired BCa upper bound below
+  zero.
+- **Outcome:** pass to adaptive linkage only. The frozen mask assigns H128 to
+  98 experts and identity to 190. Validation geometric-mean routed-output NMSE
+  was `0.0048759244` for the hybrid versus `0.0056111689` for GPTQ NVFP4, a
+  13.1032% improvement with 201/288 wins and mean-log-ratio BCa 95% CI
+  `[-0.187872,-0.097337]`. Policy SHA-256:
+  `04e65ecd95a3bc04130de35e5a268150a5d685fa383a4df5cdeb7c406e56acc3`;
+  validation SHA-256:
+  `0ee36449eed9fcbc6a7640794955cfc503dbe0dc14514733171828cdae72da96`.
+  This is fit evidence, not end-to-end qualification. No LDLQ was used.
+
+## 2026-09-04: Decision 10 — adaptive end-to-end policy linkage
+
+- **Decision before result:** reuse the exact 32 already-opened
+  conditional-fit windows once, with no exclusions or rerolls, comparing the
+  4.250443-bpw masked P8 codec against the existing matched decoded GPTQ
+  NVFP4 control. Treat the result as developmental regardless of outcome.
+  Numerical signal requires mean delta at most `-0.0014` nats and paired BCa
+  upper bound below zero. Plan SHA-256:
+  `8383c3b69eb4356d297a1859caa4a40594d1e212b223a1a83def0ec162d2e3fa`.
+- **Outcome:** adaptive null/fail. Candidate mean KLD was `0.0527762731`
+  versus `0.0533314176`; delta `-0.0005551445`, a 1.0409% improvement, with
+  paired BCa 95% CI `[-0.0024023246,+0.0011452178]` and 19/32 wins. Code
+  improved by `-0.00382252` nats while legal regressed by `+0.00377694`.
+  Analysis SHA-256:
+  `3feb4a8ddeffa047ea780b6ba1d6fc6f14bc40133648950fb54152bf141e40cb`.
+  The protected 28 confirmation logits remain unopened. No LDLQ or BlockLDLQ
+  was used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
