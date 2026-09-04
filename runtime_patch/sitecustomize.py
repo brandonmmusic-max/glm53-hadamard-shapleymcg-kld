@@ -31,13 +31,15 @@ if P4_NATIVE:
     try:
         from p4_glm_serving import install as _install_p4_glm_serving
         _install_p4_glm_serving()
-    except Exception:
+    except BaseException:
         # Python normally reports and SWALLOWS sitecustomize exceptions. That
         # would quietly serve the carrier after a bad P4 identity or import.
         # P4 activation is explicit, so installation failure terminates startup.
-        import traceback
-        traceback.print_exc()
-        os._exit(78)
+        try:
+            import traceback
+            traceback.print_exc()
+        finally:
+            os._exit(78)
 
 
 if P8_NATIVE and P8_PSEUDOQUANT:

@@ -20,7 +20,8 @@ BF16 directly into a native E2M1/E4M3/16 activation prepass. FC2 quantizes the
 FP32 SwiGLU output once. All N8 tiles reuse those packed activation operands.
 This is a pair of fused trellis projections plus activation/reduction kernels,
 not one machine instruction or a single-kernel entire MoE. Activation scratch
-and stable-sort outputs are reused per shape and CUDA stream; returned model
+and stable-sort outputs are reused per model owner, shape, CUDA stream and
+capture sequence; returned model
 outputs have independent storage.
 
 The kernel's integer MCG law reproduces the two IEEE-half components and

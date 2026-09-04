@@ -7,12 +7,15 @@ import ast
 import contextlib
 import copy
 import ctypes
+import gc
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import weakref
 from types import MethodType, SimpleNamespace
 
 import numpy as np
@@ -20,11 +23,14 @@ import pytest
 import torch
 
 from runtime_patch.p4_glm_serving import P4ServingConfig, _P4ServingMethod, install
-from runtime_patch.p4_native_kernel import P4NativeTPMoE, SOURCE, _verify_file, max_route_tiles
+from runtime_patch.p4_native_kernel import (
+    P4NativeTPMoE, P4WorkspaceOwner, SOURCE, _CAPTURE_PINS, _verify_file, max_route_tiles,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VLLM = Path(os.environ.get("GLM53_VLLM_SOURCE", "/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/vllm"))
+LAUNCHER = Path(os.environ.get("GLM53_KLD_LAUNCHER", "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/scripts/run_kld_v3.sh"))
 
 
 def digest(raw):
@@ -75,6 +81,7 @@ class ModelOptCarrier(Carrier):
 
 class Backend:
     backend_name = "b12x-p4-trellis-mxf4nvf4"
+    new_workspace_owner = staticmethod(P4NativeTPMoE.new_workspace_owner)
 
     def __init__(self, path, **kwargs):
         self.path, self.kwargs = path, kwargs
@@ -206,6 +213,96 @@ def test_sitecustomize_aborts_instead_of_silently_serving_stock():
     assert "GLM53_P4_NATIVE must be explicitly enabled" in process.stderr
 
 
+@pytest.mark.parametrize("failure", ["import", "config", "system_exit", "reporting"])
+def test_exact_sitecustomize_install_failure_is_never_swallowed(tmp_path, failure):
+    # Execute the exact P4 sitecustomize block in an actual Python process,
+    # using a synthetic import only to provoke each failure mode. -S prevents
+    # startup from running a different copy before the test executes this one.
+    module = tmp_path / "p4_glm_serving.py"
+    if failure == "import":
+        module.write_text("raise ImportError('P4_IMPORT_FAILURE')\n")
+    else:
+        error = "SystemExit(0)" if failure == "system_exit" else "ValueError('P4_CONFIG_FAILURE')"
+        module.write_text(f"def install():\n    raise {error}\n")
+    if failure == "reporting":
+        (tmp_path / "traceback.py").write_text("def print_exc():\n    raise RuntimeError('BROKEN_REPORTING')\n")
+    tree = ast.parse((ROOT / "runtime_patch/sitecustomize.py").read_text())
+    block = next(node for node in tree.body if isinstance(node, ast.If)
+                 and isinstance(node.test, ast.Name) and node.test.id == "P4_NATIVE")
+    code = "import os\nP4_NATIVE = '1'\n" + ast.unparse(block) + "\nprint('REACHED_APPLICATION')"
+    process = subprocess.run([sys.executable, "-S", "-c", code], cwd=tmp_path,
+                             env=dict(os.environ, PYTHONPATH=str(tmp_path), CUDA_VISIBLE_DEVICES=""),
+                             capture_output=True, text=True)
+    assert process.returncode == 78 and "REACHED_APPLICATION" not in process.stdout
+
+
+@pytest.mark.parametrize("layers", ["03", " 3", "3 ", "4,3", "3,03", "3, 4", "3,4,4"])
+def test_readiness_rejects_noncanonical_layer_syntax(environment, layers):
+    environment["GLM53_P4_NATIVE_LAYERS"] = layers
+    with pytest.raises(ValueError, match="layers"):
+        P4ServingConfig.from_env(environment)
+
+
+def add_manifest_layer(environment, layer):
+    def add(manifest):
+        manifest["layers"].append(layer)
+        for entry in list(manifest["entries"][:4]):
+            path = Path(environment["GLM53_P4_NATIVE_SIDECAR_DIR"]) / f"p4-layer-{layer:03d}-tp4-rank-{entry['rank']}.safetensors"
+            path.write_bytes((Path(environment["GLM53_P4_NATIVE_SIDECAR_DIR"]) / entry["path"]).read_bytes())
+            manifest["entries"].append(dict(entry, layer=layer, path=path.name))
+    mutate_manifest(environment, add)
+
+
+@pytest.mark.skipif(not LAUNCHER.is_file(), reason="exact parent launcher absent; readiness contract NOT verified")
+@pytest.mark.parametrize("layers", ["3", "3,4", "3,4,44"])
+def test_readiness_matches_exact_parent_launcher_grep(environment, layers, tmp_path, capsys):
+    for layer in map(int, layers.split(",")[1:]):
+        add_manifest_layer(environment, layer)
+    environment["GLM53_P4_NATIVE_LAYERS"] = layers
+    install(environment, components=(model_for(runner()), (Carrier,), Backend))
+    log = capsys.readouterr().out
+    (tmp_path / "server-ready.log").write_text(log)
+    source = LAUNCHER.read_text()
+    gate = next(line for line in source.splitlines() if 'grep -q "GLM53_P4_NATIVE_PATCH_ACTIVE' in line)
+    # Run the actual shell expression, not a separately maintained regex.
+    env = dict(os.environ, P4_NATIVE="1", P4_NATIVE_LAYERS=layers, SESSION=str(tmp_path))
+    process = subprocess.run(["bash", "-eu", "-c", gate], env=env, capture_output=True, text=True)
+    assert process.returncode == 0, process.stderr
+    (tmp_path / "server-ready.log").write_text(log.replace("ldlq=false", "ldlq=true"))
+    assert subprocess.run(["bash", "-eu", "-c", gate], env=env).returncode != 0
+    print("launcher_sha256", digest(LAUNCHER.read_bytes()))
+
+
+def test_model_owner_is_shared_only_by_same_namespace_and_rank(environment):
+    add_manifest_layer(environment, 4)
+    environment["GLM53_P4_NATIVE_LAYERS"] = "3,4"
+    model = SimpleNamespace(FusedMoEFactory=lambda *args, **kwargs: runner(rank=kwargs.get("test_rank", 0)))
+    install(environment, components=(model, (Carrier,), Backend))
+    def owner(prefix, rank=0):
+        layer = model.FusedMoEFactory(prefix=prefix, test_rank=rank).routed_experts
+        method = layer.quant_method
+        method.process_weights_after_loading(layer)
+        assert layer._glm53_p4_runtime.kwargs["workspace_owner"] is method._glm53_p4_workspace_owner
+        return method._glm53_p4_workspace_owner
+    first = owner("first.layers.3.mlp.experts")
+    assert first is owner("first.layers.4.mlp.experts")
+    assert first is not owner("second.layers.3.mlp.experts")
+    assert first is not owner("first.layers.3.mlp.experts", 1)
+    with pytest.raises(RuntimeError, match="duplicate model namespace"):
+        owner("first.layers.3.mlp.experts")
+
+
+@pytest.mark.parametrize("dbo,ubatching", [(True, True), (False, True)])
+def test_real_parallel_dbo_or_microbatching_rejected_before_factory(environment, dbo, ubatching):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("carrier allocated before unsafe parallelism rejection")
+    model = SimpleNamespace(FusedMoEFactory=forbidden)
+    install(environment, components=(model, (Carrier,), Backend),
+            parallel_config_getter=lambda: SimpleNamespace(enable_dbo=dbo, use_ubatching=ubatching))
+    with pytest.raises(ValueError, match="DBO and microbatching disabled"):
+        model.FusedMoEFactory(prefix="model.layers.3.mlp.experts")
+
+
 def test_cold_compile_and_prepare_are_forbidden_inside_capture(monkeypatch):
     runtime = P4NativeTPMoE.__new__(P4NativeTPMoE)
     runtime.lib, runtime.prepared, runtime.device = None, False, torch.device("cuda:0")
@@ -217,17 +314,105 @@ def test_cold_compile_and_prepare_are_forbidden_inside_capture(monkeypatch):
         runtime.prepare()
 
 
-def test_graph_address_reuse_is_shape_and_stream_scoped_and_activation_only():
+def cpu_runtime(owner=None):
     runtime = P4NativeTPMoE.__new__(P4NativeTPMoE)
     runtime.device, runtime.experts, runtime.hidden, runtime.intermediate, runtime.topk = torch.device("cpu"), 3, 128, 64, 2
+    runtime.workspace_owner = owner if owner is not None else P4WorkspaceOwner()
+    return runtime
+
+
+def test_graph_address_reuse_is_model_shape_stream_capture_scoped_and_activation_only():
+    runtime = cpu_runtime()
     work = runtime.workspace(17, 101)
     assert work is runtime.workspace(17, 101)
     assert work is not runtime.workspace(17, 102) and work is not runtime.workspace(33, 101)
+    assert work is cpu_runtime(runtime.workspace_owner).workspace(17, 101)
+    assert work is not cpu_runtime().workspace(17, 101)
+    captured = runtime.workspace(17, 101, 0)
+    assert captured is not work and captured is runtime.workspace(17, 101, 0)
+    assert captured is not runtime.workspace(17, 101, 1)
     assert not any("weight" in name or "trellis" in name for name in work)
     assert work["a1"].dtype == torch.int32 and work["sfa1"].dtype == torch.uint8
     assert work["a1"].numel() * 8 == 17 * 128
     assert work["sfa1"].numel() * 16 == 17 * 128
     assert len({value.data_ptr() for value in work.values()}) == len(work)
+
+
+def test_capture_pins_external_weights_inputs_and_scratch_after_wrapper_is_gone():
+    runtime = cpu_runtime()
+    owner = runtime.workspace_owner
+    runtime.tensors = {"physical_stream": torch.arange(16, dtype=torch.int16)}
+    weight_ref = weakref.ref(runtime.tensors["physical_stream"])
+    work = runtime.workspace(2, 101, 17)
+    address, scratch_ref = work["output"].data_ptr(), weakref.ref(work["output"])
+    activation, weights = torch.zeros(2), torch.zeros(3)
+    activation_ref, weights_ref = weakref.ref(activation), weakref.ref(weights)
+    runtime._pin_capture(17, activation, weights)
+    runtime_ref = weakref.ref(runtime)
+    del runtime, work, activation, weights
+    gc.collect()
+    assert runtime_ref() is not None and weight_ref() is not None
+    assert scratch_ref().data_ptr() == address
+    assert activation_ref() is not None and weights_ref() is not None
+    assert runtime_ref() in _CAPTURE_PINS[(owner, 17)]["runtimes"].values()
+
+
+def test_eager_owner_can_be_reclaimed_without_graph_pins():
+    runtime = cpu_runtime()
+    work = runtime.workspace(2, 101)
+    owner_ref, scratch_ref = weakref.ref(runtime.workspace_owner), weakref.ref(work["output"])
+    del runtime, work
+    gc.collect()
+    assert owner_ref() is None and scratch_ref() is None
+
+
+def test_host_owner_guard_rejects_real_thread_overlap_and_recovers_from_error():
+    owner = P4WorkspaceOwner()
+    errors = []
+    def conflicting_call():
+        try:
+            with owner.dispatch():
+                raise AssertionError("concurrent owner entered critical region")
+        except RuntimeError as error:
+            errors.append(str(error))
+    with owner.dispatch():
+        thread = threading.Thread(target=conflicting_call)
+        thread.start()
+        thread.join(timeout=2)
+        assert not thread.is_alive() and errors and "concurrent/reentrant" in errors[0]
+        with pytest.raises(RuntimeError, match="concurrent/reentrant"):
+            with owner.dispatch():
+                pass
+        with P4WorkspaceOwner().dispatch():
+            pass  # independent model remains independent
+    with pytest.raises(ValueError):
+        with owner.dispatch():
+            raise ValueError("intentional host failure")
+    with owner.dispatch():
+        pass
+
+
+@pytest.mark.parametrize("active,sequence,expected", [(0, 0, None), (1, 0, 0), (1, 1234, 1234)])
+def test_capture_id_host_abi_distinguishes_eager_and_valid_zero(active, sequence, expected):
+    runtime = cpu_runtime()
+    def query(stream, active_pointer, id_pointer):
+        assert stream == 4321
+        ctypes.cast(active_pointer, ctypes.POINTER(ctypes.c_int))[0] = active
+        ctypes.cast(id_pointer, ctypes.POINTER(ctypes.c_ulonglong))[0] = sequence
+        return 0
+    runtime.lib = SimpleNamespace(p4_capture_state=query)
+    assert runtime.capture_id(4321) == expected
+
+
+@pytest.mark.parametrize("status,active", [(901, 0), (0, -1)])
+def test_capture_query_error_fails_closed(status, active):
+    runtime = cpu_runtime()
+    def query(stream, active_pointer, id_pointer):
+        ctypes.cast(active_pointer, ctypes.POINTER(ctypes.c_int))[0] = active
+        return status
+    runtime.lib = SimpleNamespace(p4_capture_state=query)
+    with pytest.raises(RuntimeError):
+        runtime.capture_id(4321)
 
 
 def test_sparse_launch_bound_is_exact_for_exhaustive_count_partitions():
@@ -262,16 +447,22 @@ def test_exactly_two_A_quantizers_with_both_weight_decodes_in_native_prologue():
     assert "result = output.to(torch.bfloat16)" in runtime_source  # caller owns returned storage
 
 
-def test_real_hotpath_C_ABI_order_routes_and_stream_without_CUDA(monkeypatch):
+@pytest.mark.parametrize("capture_id", [None, 0, 42])
+def test_real_hotpath_C_ABI_order_routes_and_stream_without_CUDA(monkeypatch, capture_id):
     from glm53_nvfp4.p4_reference import synthetic_payload
-    runtime = P4NativeTPMoE.__new__(P4NativeTPMoE)
-    runtime.device, runtime.experts, runtime.hidden, runtime.intermediate, runtime.topk = torch.device("cpu"), 3, 128, 64, 2
+    runtime = cpu_runtime()
     runtime.limit, runtime.tensors = 10.0, synthetic_payload()[0]
     runtime.prepared = True
     calls = []
     stream = SimpleNamespace(cuda_stream=4321)
 
     class Library:
+        def p4_capture_state(self, stream_id, active_pointer, id_pointer):
+            assert stream_id == 4321
+            ctypes.cast(active_pointer, ctypes.POINTER(ctypes.c_int))[0] = int(capture_id is not None)
+            ctypes.cast(id_pointer, ctypes.POINTER(ctypes.c_ulonglong))[0] = capture_id or 0
+            return 0
+
         def p4_quantize(self, inp, packed, scales, rows, k, bf16, stream_id):
             assert stream_id == 4321
             calls.append(("quantize", rows, k, bf16))
@@ -314,7 +505,11 @@ def test_real_hotpath_C_ABI_order_routes_and_stream_without_CUDA(monkeypatch):
     assert torch.equal(output, torch.full_like(x, 7))
     assert calls == [("quantize", 17, 128, 1), ("w13", 64, 128, 2, 2), ("swiglu",),
                      ("quantize", 34, 64, 0), ("w2", 128, 64, 1, 1), ("sum",)]
-    assert output.data_ptr() != runtime.workspace(17, 4321)["output"].data_ptr()
+    assert output.data_ptr() != runtime.workspace(17, 4321, capture_id)["output"].data_ptr()
+    with runtime.workspace_owner.dispatch():
+        with pytest.raises(RuntimeError, match="concurrent/reentrant"):
+            runtime(x, weights, ids)
+    assert len(calls) == 6  # the rejected call did not enqueue any stage
 
 
 def extract_method(relative, class_name, name):
@@ -366,6 +561,7 @@ def test_exact_vllm_factory_loader_and_runner_ownership_contract(capsys):
         "runner": "model_executor/layers/fused_moe/runner/moe_runner.py",
         "loader": "model_executor/model_loader/utils.py",
         "config": "model_executor/layers/fused_moe/config.py",
+        "parallel": "config/parallel.py",
     }
     text = {name: (VLLM / "vllm" / path).read_text() for name, path in sources.items()}
     assert "self.experts = FusedMoEFactory(" in text["model"]
@@ -377,5 +573,26 @@ def test_exact_vllm_factory_loader_and_runner_ownership_contract(capsys):
     assert "self._quant_method.mk_can_overlap_shared_experts" in text["runner"]
     assert "tensor_model_parallel_all_reduce(" in text["runner"]
     assert "return self.moe_parallel_config.tp_rank" in text["config"]
+    assert "enable_dbo=vllm_config.parallel_config.enable_dbo" in text["factory"]
+    assert "self.enable_dbo = enable_dbo" in text["runner"]
+    use_ubatching = extract_method("config/parallel.py", "ParallelConfig", "use_ubatching")
+    assert not use_ubatching(SimpleNamespace(enable_dbo=False, ubatch_size=1))
+    assert use_ubatching(SimpleNamespace(enable_dbo=False, ubatch_size=2))
+    assert use_ubatching(SimpleNamespace(enable_dbo=True, ubatch_size=0))
     for path in sources.values():
         print("vllm_source_sha256", path, digest((VLLM / "vllm" / path).read_bytes()))
+
+
+def test_capture_query_uses_cuda_sequence_and_invalidated_capture_fails_closed(capsys):
+    source = SOURCE.read_text()
+    query = source[source.index('extern "C" int p4_capture_state'):source.index('extern "C" int p4_prepare')]
+    assert "cudaStreamGetCaptureInfo(stream, &capture, &id)" in query
+    assert "cudaStreamCaptureStatusInvalidated" in query
+    assert "cudaErrorStreamCaptureInvalidated" in query
+    assert "cudaStreamCaptureStatusActive" in query and "cudaStreamCaptureStatusNone" in query
+    header = Path("/usr/local/cuda-13.2/include/cuda_runtime_api.h")
+    if header.is_file():
+        actual = header.read_text()
+        assert "unique over the lifetime of the process" in actual
+        assert "cudaStreamGetCaptureInfo(cudaStream_t stream," in actual
+        print("cuda_runtime_header_sha256", digest(header.read_bytes()))
