@@ -311,6 +311,30 @@ def analyze(
     full_id = design["permutations"][0]["coalition_ids"][-1]
     empty_values = np.asarray([runs[empty_id][wid] for wid in expected_ids])
     full_values = np.asarray([runs[full_id][wid] for wid in expected_ids])
+    coalition_comparisons = []
+    for cid, layers in design["coalitions"].items():
+        candidate = np.asarray([runs[cid][wid] for wid in expected_ids])
+        delta = candidate - empty_values
+        ci = bca_mean_interval(delta, delta[choices].mean(axis=1))
+        coalition_comparisons.append(
+            {
+                "coalition_id": cid,
+                "layers": layers,
+                "mean_kld": float(candidate.mean()),
+                "mean_delta_kld_vs_empty": float(delta.mean()),
+                "relative_arithmetic_mean_improvement_vs_empty": float(
+                    1.0 - candidate.mean() / empty_values.mean()
+                ),
+                "delta_ci95_bca": [float(ci[0]), float(ci[1])],
+                "window_wins_vs_empty": int((delta < 0).sum()),
+            }
+        )
+    coalition_comparisons.sort(
+        key=lambda row: (row["mean_kld"], row["coalition_id"])
+    )
+    observed_best = next(
+        row for row in coalition_comparisons if row["coalition_id"] != empty_id
+    )
     return {
         "schema": "glm53-p8.direct-kld-native-shapley-analysis.v1",
         "design": str(design_path.resolve()),
@@ -321,6 +345,11 @@ def analyze(
         "baseline_empty_mean_kld": float(empty_values.mean()),
         "full_upgrade_mean_kld": float(full_values.mean()),
         "full_game_mean_kld_reduction": float((empty_values - full_values).mean()),
+        "observed_coalition_comparisons": coalition_comparisons,
+        "observed_best_nonempty_coalition": {
+            **observed_best,
+            "claim_boundary": "adaptive opened-role diagnostic; not qualification",
+        },
         "per_layer": rows,
         "selected_upgrade_layers": selected,
         "selected_base_layers": sorted(set(design["layers"]) - set(selected)),
