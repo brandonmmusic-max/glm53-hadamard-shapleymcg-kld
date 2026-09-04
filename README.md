@@ -181,6 +181,8 @@ These two building blocks are not yet interoperable: the matrix contract uses
 ties-to-even and one-matrix containers, while the kernel commit uses the legacy
 ties-to-lower-magnitude law and a six-tensor TP-rank container. A versioned
 bridge and exhaustive cross-check are required before any device-closure run.
+The independent findings and required gates are preserved in
+[docs/P4_RECONCILIATION_AUDIT.md](docs/P4_RECONCILIATION_AUDIT.md).
 
 The first version-2 non-layer-3 artifact now closes this contract at layer 20.
 All 288 experts were encoded from the pinned BF16 source and domain-balanced

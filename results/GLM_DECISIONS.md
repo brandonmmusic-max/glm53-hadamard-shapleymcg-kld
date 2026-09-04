@@ -615,6 +615,28 @@ confirmation, and final roles remained unopened for this redesign branch.
   preserved in
   `evidence/opened/codec-v2/native6-v2/all42-thermal-amendment-v1.json`.
 
+## 2026-09-04: Decision 24 — P4 must close inside GLM serving
+
+- **Hard product gate:** a standalone CUDA launch seam is not a P4 product.
+  P4 must be selected by the actual B12X GLM MoE runtime for both gate/up FC1
+  and down FC2, preserve routed top-k and TP4 behavior, and consume the physical
+  codec sidecars without a dense BF16/FP16 weight materialization or matmul.
+- The independent CPU codec commit uses alpha-1 procedural MCG projected to
+  E2M1 with native round-to-nearest-even and signed-zero preservation. The
+  first kernel commit instead retained the legacy ties-to-lower-magnitude,
+  zero-canonicalizing law. An exhaustive census found `5,477 / 65,536` nibble
+  mismatches: `45` numerical midpoint choices plus `5,432` signed-zero choices.
+  These commits are preserved as structural building blocks but are not an
+  interoperable ABI and must not be used for device or KLD closure as-is.
+- Freeze one new versioned RNE ABI, add the missing one-matrix-to-TP4 sidecar
+  bridge, and require exhaustive state, packed-byte, scale-address, FC1/FC2,
+  dispatch, and fail-closed tests before a GPU run. Static SASS containing
+  `mxf4nvf4 m16n8k64` proves instruction selection only; it does not prove
+  device arithmetic, integrated serving, KLD, graph safety, or speed.
+- Protected evaluation roles remain unopened, and no LDLQ or BlockLDLQ is
+  introduced. Device closure waits for a reconciled serving commit and an
+  available GPU boundary that does not corrupt the all-layer P8 build.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
