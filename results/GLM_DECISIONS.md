@@ -577,6 +577,30 @@ confirmation, and final roles remained unopened for this redesign branch.
   KLD-aware marginal values; local routed-output NMSE cannot be assumed to
   cover the mismatch. No LDLQ or BlockLDLQ was used.
 
+## 2026-09-04: Decision 23 — uniform P8 product gate before native6 allocation
+
+- **Decision before result:** do not execute the 84-coalition native6-v2 game.
+  First encode and install K4 procedural-MCG P8 on every routed layer 3–44,
+  using the pinned domain-balanced REAP fit capture, GPTQ-style output-error
+  feedback with static within-group activation order, jointly refitted
+  UE8M0/32 scales, and no LDLQ or BlockLDLQ. Require every TP4 sidecar to bind
+  to the corrected native6-v2 design hash and to carry exactly 4.25 payload
+  bpw.
+- Measure full-model teacher KLD on the already-opened, domain-balanced 32
+  conditional-fit windows. This is developmental evidence; no selection,
+  confirmation, final, or reserved confirmation logits may be opened.
+- Then measure TP4 prefill and single-request decode tokens/s against the exact
+  locally served EXL3 checkpoint and runtime, with matched request shapes,
+  attention/KV settings, CUDA-graph mode, and five cold runs per arm. P8 must
+  be strictly faster than EXL3 on both median prefill and median decode to
+  advance. Any tie or regression stops the allocation game.
+- If P8 passes, estimate the necessary game size from the existing pilot's
+  observed main effects and pair interactions and preregister that power-based
+  design. The superseded fixed 84-endpoint count is not an execution target.
+- **ISA boundary:** P8 decodes directly to E4M3 plus physical UE8M0/32 scales
+  in the fused prologue and uses `mxf8f6f4`; it has twice the MMA issue count
+  of NVFP4. This gate does not claim the unfinished P4/`mxf4nvf4` product.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

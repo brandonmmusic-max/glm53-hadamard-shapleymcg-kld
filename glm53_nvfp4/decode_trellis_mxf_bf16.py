@@ -11,7 +11,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 
 from .shard_index import sha256_file
-from .trellis_mxf import decode_trellis_mxf
+from .trellis_mxf import decode_trellis_mxf, state_lut
 
 
 def main() -> None:
@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--expert-limit", type=int)
     args = parser.parse_args()
     for path in (args.output, args.receipt):
         if path.exists():
@@ -31,8 +32,30 @@ def main() -> None:
         metadata = source.metadata() or {}
         bits = int(metadata["bits"])
         block_size = int(metadata["block_size"])
-        codebook = source.get_tensor("codec.codebook_e4m3")
+        if "codec.codebook_e4m3" in source.keys():
+            codebook = source.get_tensor("codec.codebook_e4m3")
+            codebook_source = "stored tensor"
+        elif metadata.get("law") == "procedural-mcg-alpha2":
+            codebook = state_lut(
+                bits,
+                alphabet="e4m3",
+                law="mcg",
+                compander_scale=2.0,
+                device="cpu",
+            )
+            codebook_source = "procedural MCG alpha 2.0; zero stored table bytes"
+        else:
+            raise RuntimeError("codec has neither a stored nor procedural codebook")
         trellis_names = sorted(name for name in source.keys() if name.endswith(".trellis"))
+        if args.expert_limit is not None:
+            if args.expert_limit <= 0:
+                raise ValueError("expert limit must be positive")
+            trellis_names = [
+                name
+                for name in trellis_names
+                if int(name.split(".experts.", 1)[1].split(".", 1)[0])
+                < args.expert_limit
+            ]
         if not trellis_names:
             raise RuntimeError("codec contains no trellis tensors")
         for index, trellis_name in enumerate(trellis_names, start=1):
@@ -56,7 +79,11 @@ def main() -> None:
                 print(json.dumps({"decoded_tensors": index}), flush=True)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    save_file(decoded, str(args.output), metadata=metadata)
+    save_file(
+        decoded,
+        str(args.output),
+        metadata={**metadata, "role": "decoded-device-closure-reference"},
+    )
     receipt = {
         "schema": "glm53-p8.trellis-mxf-bf16-decode.v1",
         "codec": str(args.codec.resolve()),
@@ -65,6 +92,8 @@ def main() -> None:
         "output_sha256": sha256_file(args.output),
         "output_bytes": args.output.stat().st_size,
         "weight_tensors": len(decoded),
+        "expert_limit": args.expert_limit,
+        "codebook_source": codebook_source,
         "decode": "bit-exact procedural-MCG trellis plus E4M3 codebook and UE8M0/32 scales, then BF16 round",
         "elapsed_seconds": time.time() - started,
         "ldlq": False,

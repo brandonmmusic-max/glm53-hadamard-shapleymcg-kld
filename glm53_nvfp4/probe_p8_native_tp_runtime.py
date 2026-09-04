@@ -1,4 +1,4 @@
-"""Close the reusable TP4 P8 runtime against decoded layer-3 weights."""
+"""Close the reusable TP4 P8 runtime against decoded layer weights."""
 from __future__ import annotations
 
 import argparse
@@ -30,12 +30,12 @@ def qdq_e4m3_k32(values: torch.Tensor) -> torch.Tensor:
 
 
 def load_dense(
-    path: Path, *, rank: int, experts: int
+    path: Path, *, layer: int, rank: int, experts: int
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     gate, up, down = [], [], []
     with safe_open(path, framework="pt", device="cpu") as src:
         for expert in range(experts):
-            base = f"model.language_model.layers.3.mlp.experts.{expert}"
+            base = f"model.language_model.layers.{layer}.mlp.experts.{expert}"
             gate.append(src.get_tensor(f"{base}.gate_proj.weight")[rank * 512 : (rank + 1) * 512])
             up.append(src.get_tensor(f"{base}.up_proj.weight")[rank * 512 : (rank + 1) * 512])
             down.append(src.get_tensor(f"{base}.down_proj.weight")[:, rank * 512 : (rank + 1) * 512])
@@ -74,10 +74,12 @@ def reference(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-patch", type=Path, required=True)
+    parser.add_argument("--design", type=Path)
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--dense", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--rank", type=int, default=0)
+    parser.add_argument("--layer", type=int, default=3)
     parser.add_argument("--experts", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260957)
     parser.add_argument(
@@ -94,10 +96,13 @@ def main() -> None:
     from p8_native_kernel import P8NativeTPMoE
 
     torch.manual_seed(args.seed)
+    design_sha256 = sha256_file(args.design) if args.design is not None else None
     runtime = P8NativeTPMoE(
         args.sidecar,
         device=torch.device("cuda"),
         tp_rank=args.rank,
+        layer=args.layer,
+        expected_design_sha256=design_sha256,
         topk=8,
         hidden=4096,
         intermediate=512,
@@ -105,7 +110,9 @@ def main() -> None:
         mac_override=args.mac,
         deterministic_output=args.deterministic_output,
     )
-    gate, up, down = load_dense(args.dense, rank=args.rank, experts=args.experts)
+    gate, up, down = load_dense(
+        args.dense, layer=args.layer, rank=args.rank, experts=args.experts
+    )
     cells: list[dict[str, object]] = []
     for tokens in args.tokens:
         x = (torch.randn(tokens, 4096, device="cuda") * 0.01).to(torch.bfloat16)
@@ -154,6 +161,12 @@ def main() -> None:
         "sidecar": {"path": str(args.sidecar), "sha256": sha256_file(args.sidecar)},
         "dense": {"path": str(args.dense), "sha256": sha256_file(args.dense)},
         "rank": args.rank,
+        "layer": args.layer,
+        "design": (
+            {"path": str(args.design), "sha256": design_sha256}
+            if args.design is not None
+            else None
+        ),
         "mode": args.mode,
         "max_active_clusters": args.mac,
         "deterministic_output": args.deterministic_output,

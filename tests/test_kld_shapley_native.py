@@ -9,6 +9,7 @@ from glm53_nvfp4.kld_shapley_native import allocation_slots, analyze, build_desi
 def test_native6_rate_and_antithetic_design():
     design = build_design(17)
     assert design == build_design(17)
+    assert design["schema"] == "glm53-p8.direct-kld-native-shapley-design.v2"
     assert allocation_slots(42) == 18
     assert design["allocation"]["upgrade_slots"] == 18
     assert design["allocation"]["base_slots"] == 24
@@ -22,6 +23,13 @@ def test_native6_rate_and_antithetic_design():
         reversed(design["permutations"][0]["order"])
     )
     assert design["ldlq"] is False
+    assert design["physical_scale_abi"] == {
+        "encoding": "one UE8M0 byte per 32 weights",
+        "mma_consumption": "physical non-unit UE8M0/32 SFB plane",
+        "identity_sfb_forbidden": True,
+    }
+    assert "identity SFB" not in design["tiers"]["base"]["compute"]
+    assert design["encoder_contract"]["ldlq"] is False
 
 
 def test_direct_kld_analysis_recovers_additive_ranking(tmp_path: Path):

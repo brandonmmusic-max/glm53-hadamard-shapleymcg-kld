@@ -1,4 +1,4 @@
-"""Shard the physical layer-3 P8 stream for tensor-parallel serving."""
+"""Shard one physical P8 layer stream for tensor-parallel serving."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ def _expert_bases(layer: int, start: int, stop: int) -> list[str]:
 
 def _load_rank(
     chunks: list[Path], *, layer: int, rank: int, world_size: int
-) -> tuple[dict[str, torch.Tensor], list[dict[str, object]]]:
+) -> tuple[dict[str, torch.Tensor], list[dict[str, object]], str, str | None]:
     gate_payload: list[torch.Tensor] = []
     up_payload: list[torch.Tensor] = []
     down_payload: list[torch.Tensor] = []
@@ -29,16 +29,26 @@ def _load_rank(
     up_scales: list[torch.Tensor] = []
     down_scales: list[torch.Tensor] = []
     sources: list[dict[str, object]] = []
+    source_schemas: set[str] = set()
+    source_designs: set[str] = set()
     expected_start = 0
     for chunk in chunks:
         with safe_open(chunk, framework="pt", device="cpu") as src:
             metadata = src.metadata() or {}
+            schema = metadata.get("schema", "")
+            source_schemas.add(schema)
+            if metadata.get("design_sha256"):
+                source_designs.add(metadata["design_sha256"])
             if (
-                metadata.get("schema") != "glm53-p8-identity-mcg-layer-chunk.v1"
+                schema not in {
+                    "glm53-p8-identity-mcg-layer-chunk.v1",
+                    "glm53-hessian-trellis-p8-layer-chunk.v2",
+                }
                 or metadata.get("role") != "physical-codec"
                 or metadata.get("bits") != "4"
                 or metadata.get("alphabet") != "e4m3"
-                or metadata.get("scale") != "ue8m0"
+                or metadata.get("block_size") != "32"
+                or metadata.get("scale") not in {"ue8m0", "ue8m0-k32"}
                 or metadata.get("law") != "procedural-mcg-alpha2"
                 or metadata.get("boundary") != "identity"
                 or metadata.get("ldlq") != "false"
@@ -90,6 +100,19 @@ def _load_rank(
         )
     if expected_start != 288:
         raise RuntimeError(f"expected 288 experts, found {expected_start}")
+    if len(source_schemas) != 1:
+        raise RuntimeError(f"mixed P8 chunk schemas are forbidden: {sorted(source_schemas)}")
+    source_schema = next(iter(source_schemas))
+    if source_schema == "glm53-hessian-trellis-p8-layer-chunk.v2":
+        if len(source_designs) != 1:
+            raise RuntimeError(
+                f"v2 P8 chunks require one immutable design: {sorted(source_designs)}"
+            )
+        source_design = next(iter(source_designs))
+    else:
+        if source_designs:
+            raise RuntimeError("historical v1 chunks may not mix an unbound design field")
+        source_design = None
     tensors = {
         "w13_trellis": torch.stack(
             (torch.stack(gate_payload), torch.stack(up_payload)), dim=0
@@ -101,7 +124,7 @@ def _load_rank(
         ).contiguous(),
         "w2_scale_ue8m0": torch.stack(down_scales).contiguous(),
     }
-    return tensors, sources
+    return tensors, sources, source_schema, source_design
 
 
 def main() -> None:
@@ -115,7 +138,7 @@ def main() -> None:
         raise ValueError("this frozen product currently targets TP4")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     receipt: dict[str, object] = {
-        "schema": "glm53-p8-identity-mcg-tp4-sidecars.v1",
+        "schema": "glm53-p8-mcg-tp4-sidecars.v2",
         "layer": args.layer,
         "world_size": args.world_size,
         "bits": 4,
@@ -128,17 +151,29 @@ def main() -> None:
         "ranks": [],
     }
     for rank in range(args.world_size):
-        tensors, sources = _load_rank(
+        tensors, sources, source_schema, source_design = _load_rank(
             args.chunk, layer=args.layer, rank=rank, world_size=args.world_size
         )
         output = args.output_dir / f"p8-layer-{args.layer:03d}-tp4-rank-{rank}.safetensors"
         if output.exists():
             raise FileExistsError(f"refusing to overwrite {output}")
+        logical_elements = 32 * (
+            tensors["w13_scale_ue8m0"].numel()
+            + tensors["w2_scale_ue8m0"].numel()
+        )
+        payload_bytes = sum(
+            tensor.numel() * tensor.element_size() for tensor in tensors.values()
+        )
+        payload_bpw = payload_bytes * 8.0 / logical_elements
+        if payload_bpw != 4.25:
+            raise RuntimeError(f"rank {rank} payload is {payload_bpw} bpw, expected 4.25")
         save_file(
             tensors,
             output,
             metadata={
-                "schema": "glm53-p8-identity-mcg-tp4-rank.v1",
+                "schema": "glm53-p8-mcg-tp4-rank.v2",
+                "source_schema": source_schema,
+                "source_design_sha256": source_design or "historical-unbound-v1",
                 "layer": str(args.layer),
                 "rank": str(rank),
                 "world_size": str(args.world_size),
@@ -156,7 +191,13 @@ def main() -> None:
                 "path": str(output.resolve()),
                 "bytes": output.stat().st_size,
                 "sha256": sha256_file(output),
+                "logical_elements": logical_elements,
+                "payload_bytes": payload_bytes,
+                "payload_bpw": payload_bpw,
+                "file_bpw_including_container": output.stat().st_size * 8.0 / logical_elements,
                 "shapes": {name: list(value.shape) for name, value in tensors.items()},
+                "source_schema": source_schema,
+                "source_design_sha256": source_design,
                 "sources": sources,
             }
         )

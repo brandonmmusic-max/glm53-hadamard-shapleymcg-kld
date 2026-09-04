@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CAMPAIGN=${GLM53_CAMPAIGN_ROOT:-/media/brandonmusic/klcstore/bmxfp4-glm53}
+NATIVE6=${GLM53_NATIVE6_ROOT:-/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6}
 DEST=$ROOT/evidence/opened/codec-v2
 RUN_DEST=$ROOT/evidence/historical/kld-v3-runs
 
@@ -18,7 +19,7 @@ copy_json_tree() {
   while IFS= read -r source_file; do
     local relative=${source_file#"$source"/}
     mkdir -p "$DEST/$label/$(dirname "$relative")"
-    cp --reflink=auto --no-clobber "$source_file" "$DEST/$label/$relative"
+    cp --reflink=auto --update=none "$source_file" "$DEST/$label/$relative"
   done < <(find "$source" -type f -name '*.json' | sort)
 }
 
@@ -58,13 +59,14 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-split-determinism-v1" p8-split-determinism
 copy_json_tree "$CAMPAIGN/codec-v2/p8-e288-small-m-cluster-diagnostic-v1" p8-e288-small-m-cluster-diagnostic
 copy_json_tree "$CAMPAIGN/codec-v2/p8-native-kld-closure-v2" p8-native-kld-closure-v2
 copy_json_tree "$CAMPAIGN/codec-v2/kld-shapley-pilot-v1" p8-kld-shapley-pilot-v1
+copy_json_tree "$NATIVE6/p8" native6-v2/p8
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
 cp --reflink=auto "$CAMPAIGN/evidence/capture-layer-022-prefetch.json" "$DEST/capture-receipts/"
 
 while IFS= read -r run_file; do
-  cp --reflink=auto --no-clobber "$run_file" "$RUN_DEST/$(basename "$run_file")"
+  cp --reflink=auto --update=none "$run_file" "$RUN_DEST/$(basename "$run_file")"
 done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-codec-p8-*.json' -o \
   -name 'run-p8-layer22-*.json' -o \
