@@ -18,6 +18,7 @@ from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
 
 from b12x._lib.compiler import KernelCompileSpec, compile as b12x_compile
+from b12x._lib.utils import get_max_active_clusters
 from b12x.moe._shared.kernels.dynamic import MoEDynamicKernelBackend
 from b12x.moe.fused_moe._impl import (
     _DynamicMoEW4A8Launch,
@@ -112,15 +113,22 @@ class P8NativeTPMoE:
         self.w2_stream = w2.to(device=self.device).contiguous().view(torch.int32).reshape(-1)
         w13_scale = w13_scale.to(device=self.device).contiguous()
         w2_scale = w2_scale.to(device=self.device).contiguous()
+        # The monolithic kernel consumes the logical [E, N, K/32] UE8M0
+        # plane through the sfb_*_mx ABI slots.  The split materialized
+        # kernels consume a separately repacked copy through *_sfb_rp.
+        # Keep both representations: a one-byte sentinel in the logical slots
+        # is an out-of-bounds scale read, not an identity scale.
+        self.w13_scale_mx = w13_scale.reshape(-1)
+        self.w2_scale_mx = w2_scale.reshape(-1)
         self.w13_sfb = _e8m0_scale_to_w4a8_sfb_inplace(
-            w13_scale,
+            w13_scale.clone(),
             weight_E=experts,
             rows=2 * intermediate,
             k_dim=hidden,
             gated_half_rows=intermediate,
         ).reshape(-1)
         self.w2_sfb = _e8m0_scale_to_w4a8_sfb_inplace(
-            w2_scale,
+            w2_scale.clone(),
             weight_E=experts,
             rows=hidden,
             k_dim=intermediate,
@@ -146,7 +154,7 @@ class P8NativeTPMoE:
         mac = (
             self.mac_override
             if self.mac_override is not None
-            else (64 if materialized else 188)
+            else (64 if materialized else int(get_max_active_clusters(1)))
         )
         kernel = MoEDynamicKernelBackend(
             16,
@@ -327,8 +335,8 @@ class P8NativeTPMoE:
             _gptr(cutlass.Float8E4M3FN, self.sentinel),
             self.w2_dummy,
             _gptr(cutlass.Float8E4M3FN, self.sentinel),
-            _gptr(cutlass.Uint8, self.sentinel),
-            _gptr(cutlass.Uint8, self.sentinel),
+            _gptr(cutlass.Uint8, self.w13_scale_mx),
+            _gptr(cutlass.Uint8, self.w2_scale_mx),
             _gptr(cutlass.Uint8, self.sentinel),
             _gptr(cutlass.Uint8, self.sentinel),
             _gptr(cutlass.Uint32, self.w13_stream),

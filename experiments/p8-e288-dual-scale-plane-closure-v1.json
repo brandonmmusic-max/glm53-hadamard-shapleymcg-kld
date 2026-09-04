@@ -1,0 +1,28 @@
+{
+  "schema": "glm53-p8-e288-dual-scale-plane-closure-plan.v1",
+  "written_at": "2026-09-04T20:14:00-04:00",
+  "status": "preregistered-before-fixed-kernel-device-results",
+  "prior_result": {
+    "cluster_arms": [4, 64, 188],
+    "outcome": "all failed with identical non-finite output hash",
+    "conclusion": "resident-cluster underfill hypothesis falsified"
+  },
+  "static_abi_finding": "The scaled monolithic trellis branches read sfb_w13_mx and sfb_down_mx as logical [E,N,K/32] UE8M0 planes, but P8NativeTPMoE supplied a one-byte sentinel there. Only the split materialized branches read the separately repacked w13_sfb_rp/down_sfb_rp planes, explaining why split passed while monolithic failed.",
+  "fixed_change": "Retain the logical UE8M0 tensors and independently convert cloned tensors to the repacked split layout; pass both physical representations in their exact ABI slots.",
+  "fixed_inputs": {
+    "product": "P8 K4 procedural MCG to E4M3 with physical UE8M0/32 scales",
+    "layer": 3,
+    "tp_rank": 0,
+    "runtime_experts": 288,
+    "reference_experts": [0, 1, 2, 3, 4, 5, 6, 7],
+    "tokens": [3, 33],
+    "top_k": 8,
+    "seed": 20260957,
+    "tile": "M16N128",
+    "mode": "monolithic",
+    "max_active_clusters": 188,
+    "ldlq": false
+  },
+  "decision_rule": "Both M3 and M33 must have all-finite output, cosine above 0.995, and relative L2 below 0.12 against the same decoded-weight FP32 reference.",
+  "promotion_rule": "A pass promotes monolithic arithmetic to the determinism gate only. It is not a speed or KLD claim. Preserve every result and do not reroll."
+}
