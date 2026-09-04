@@ -29,6 +29,13 @@ P8_NATIVE=${GLM53_P8_NATIVE:-}
 P8_NATIVE_SIDECAR_DIR=${GLM53_P8_NATIVE_SIDECAR_DIR:-}
 P8_NATIVE_LAYERS=${GLM53_P8_NATIVE_LAYERS:-3}
 P8_NATIVE_DESIGN=${GLM53_P8_NATIVE_DESIGN:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/experiments/p8-kld-shapley-native6-v2.json}
+P4_NATIVE=${GLM53_P4_NATIVE:-}
+P4_NATIVE_SIDECAR_DIR=${GLM53_P4_NATIVE_SIDECAR_DIR:-}
+P4_NATIVE_LAYERS=${GLM53_P4_NATIVE_LAYERS:-3}
+P4_NATIVE_DESIGN=${GLM53_P4_NATIVE_DESIGN:-}
+P4_NATIVE_MANIFEST=${GLM53_P4_NATIVE_MANIFEST:-}
+P4_NATIVE_MANIFEST_SHA256=${GLM53_P4_NATIVE_MANIFEST_SHA256:-}
+P4_NATIVE_BUILD_DIR=${GLM53_P4_NATIVE_BUILD_DIR:-}
 DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
@@ -53,6 +60,14 @@ DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ -z "$P8_NATIVE" ] || [ -n "$P8_NATIVE_SIDECAR_DIR" ] || { echo "P8 native requires GLM53_P8_NATIVE_SIDECAR_DIR" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -f "$P8_NATIVE_DESIGN" ] || { echo "P8 native design is missing: $P8_NATIVE_DESIGN" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -z "$P8_PSEUDOQUANT" ] || { echo "P8 native and pseudoquant modes are mutually exclusive" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ "$DISABLE_EP" = 1 ] || { echo "P4 native requires GLM53_DISABLE_EP=1" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ "$ROTATION" = identity ] || { echo "P4 native v2 requires the identity boundary" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ -d "$P4_NATIVE_SIDECAR_DIR" ] || { echo "P4 native sidecar directory is missing: $P4_NATIVE_SIDECAR_DIR" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ -f "$P4_NATIVE_DESIGN" ] || { echo "P4 native design is missing: $P4_NATIVE_DESIGN" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ -f "$P4_NATIVE_MANIFEST" ] || { echo "P4 native manifest is missing: $P4_NATIVE_MANIFEST" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [[ "$P4_NATIVE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "P4 native requires a lowercase GLM53_P4_NATIVE_MANIFEST_SHA256" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || [ "$(sha256sum "$P4_NATIVE_MANIFEST" | cut -d' ' -f1)" = "$P4_NATIVE_MANIFEST_SHA256" ] || { echo "P4 native manifest hash mismatch" >&2; exit 2; }
+[ -z "$P4_NATIVE" ] || { [ -z "$P8_NATIVE" ] && [ -z "$P8_PSEUDOQUANT" ]; } || { echo "P4 native is mutually exclusive with P8 modes" >&2; exit 2; }
 if [ -f "$MODEL_DIR/OVERLAY.json" ] && [ "$LOAD_FORMAT" != instanttensor ]; then
   echo "sparse overlay checkpoints require GLM53_LOAD_FORMAT=instanttensor" >&2
   exit 2
@@ -71,6 +86,10 @@ TEST=glm53-nvfp4-v3-kld
 PORT=8016
 LOCK=/run/lock/klc/model-stack.lock
 CACHE_DIR=${GLM53_RUNTIME_CACHE_DIR:-/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/cache-dflash2-nvfp4-v77}
+if [ -n "$P4_NATIVE" ]; then
+  [ -n "$P4_NATIVE_BUILD_DIR" ] || P4_NATIVE_BUILD_DIR=$CACHE_DIR/p4-native
+  mkdir -p "$P4_NATIVE_BUILD_DIR"
+fi
 LEARNED_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large
 FULL_H16_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v9-large/had16-all
 CAPTURES=$CAMPAIGN/kld-v3/captures/$RUN_ID
@@ -158,6 +177,32 @@ if [ -n "$P8_NATIVE" ]; then
     -v "$P8_NATIVE_DESIGN:/p8-design/native6-v2.json:ro"
   )
 fi
+if [ -n "$P4_NATIVE" ]; then
+  if [ ${#rotation_mount[@]} -eq 0 ]; then
+    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  fi
+  P4_NATIVE_SIDECAR_DIR=$(readlink -f "$P4_NATIVE_SIDECAR_DIR")
+  P4_NATIVE_DESIGN=$(readlink -f "$P4_NATIVE_DESIGN")
+  P4_NATIVE_MANIFEST=$(readlink -f "$P4_NATIVE_MANIFEST")
+  P4_NATIVE_BUILD_DIR=$(readlink -f "$P4_NATIVE_BUILD_DIR")
+  rotation_env+=(
+    -e PYTHONPATH=/runtime-patch/b12x_h16:/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
+    -e GLM53_P4_NATIVE="$P4_NATIVE"
+    -e GLM53_P4_NATIVE_SIDECAR_DIR=/p4-sidecars
+    -e GLM53_P4_NATIVE_LAYERS="$P4_NATIVE_LAYERS"
+    -e GLM53_P4_NATIVE_DESIGN=/p4-design/p4-native-v2.json
+    -e GLM53_P4_NATIVE_MANIFEST=/p4-design/p4-tp4-manifest.json
+    -e GLM53_P4_NATIVE_MANIFEST_SHA256="$P4_NATIVE_MANIFEST_SHA256"
+    -e GLM53_P4_NATIVE_BUILD_DIR=/p4-build
+  )
+  rotation_mount+=(
+    -v "$P4_NATIVE_SIDECAR_DIR:/p4-sidecars:ro"
+    -v "$P4_NATIVE_DESIGN:/p4-design/p4-native-v2.json:ro"
+    -v "$P4_NATIVE_MANIFEST:/p4-design/p4-tp4-manifest.json:ro"
+    -v "$P4_NATIVE_BUILD_DIR:/p4-build:rw"
+  )
+  ENDPOINT_TAG=p4-native
+fi
 [ -z "${GLM53_B12X_FAST_MATH:-}" ] || rotation_env+=( -e B12X_FAST_MATH="$GLM53_B12X_FAST_MATH" )
 [ -z "${GLM53_B12X_DYNAMIC_DOWN_SCALE:-}" ] || rotation_env+=( -e B12X_ENABLE_DYNAMIC_DOWN_SCALE="$GLM53_B12X_DYNAMIC_DOWN_SCALE" )
 [ -z "${GLM53_B12X_DETERMINISTIC_OUTPUT:-}" ] || rotation_env+=( -e B12X_DYNAMIC_DETERMINISTIC_OUTPUT="$GLM53_B12X_DETERMINISTIC_OUTPUT" )
@@ -229,6 +274,7 @@ docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
 [ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
 [ -z "$P8_NATIVE" ] || grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=$P8_NATIVE_LAYERS tp=4 .*K4 procedural_mcg E4M3 UE8M0_K32 identity deterministic_route_topk_sum physical_bpw=4.25 ldlq=false" "$SESSION/server-ready.log"
+[ -z "$P4_NATIVE" ] || grep -q "GLM53_P4_NATIVE_PATCH_ACTIVE layers=$P4_NATIVE_LAYERS tp=4 .*schema=glm53-p4-mcg-tp-rank.v2 .*mma=mxf4nvf4 .*physical_bpw=4.5 .*ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"
 [ "$MOE_BACKEND" != humming ] || grep -qi 'humming moe' "$SESSION/server-ready.log"
 if [ "$HUMMING_ACT" = nvfp4 ]; then
