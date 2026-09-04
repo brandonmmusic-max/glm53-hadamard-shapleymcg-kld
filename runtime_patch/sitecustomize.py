@@ -18,6 +18,270 @@ MIXED_MXFP6 = os.environ.get("GLM53_MIXED_MXFP6", "").strip().lower()
 HUMMING_FP4_BUFFER_PATCH = os.environ.get(
     "GLM53_HUMMING_FP4_BUFFER_PATCH", ""
 ).strip().lower()
+ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
+    "GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH", ""
+).strip().lower()
+P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
+
+
+if P8_PSEUDOQUANT:
+    if P8_PSEUDOQUANT not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(f"invalid GLM53_P8_PSEUDOQUANT={P8_PSEUDOQUANT!r}")
+    import torch as _p8_torch
+    import torch.nn.functional as _p8_F
+    from safetensors import safe_open as _p8_safe_open
+    import vllm.models.glm5next.nvidia.model as _p8_glm_model
+    from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
+        UnquantizedFusedMoEMethod as _P8UnquantizedFusedMoEMethod,
+    )
+
+    _P8_LAYER_SPEC = os.environ.get("GLM53_P8_LAYERS", "3").strip()
+    _P8_ARM = os.environ.get("GLM53_P8_PSEUDOQUANT_ARM", "candidate").strip().lower()
+    if _P8_ARM not in {"candidate", "control"}:
+        raise RuntimeError(f"invalid GLM53_P8_PSEUDOQUANT_ARM={_P8_ARM!r}")
+    _P8_LAYERS = frozenset(int(value) for value in _P8_LAYER_SPEC.split(",") if value)
+    if not _P8_LAYERS or not _P8_LAYERS.issubset(set(range(3, 45))):
+        raise RuntimeError(f"invalid GLM53_P8_LAYERS={_P8_LAYER_SPEC!r}")
+    _P8_LAYER_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
+    _P8_BOUNDARY_PATHS = [
+        value for value in os.environ.get("GLM53_P8_BOUNDARY_FILES", "").split(":") if value
+    ]
+    if not _P8_BOUNDARY_PATHS:
+        raise RuntimeError("GLM53_P8_PSEUDOQUANT requires GLM53_P8_BOUNDARY_FILES")
+
+    _p8_parts = []
+    _p8_next = 0
+    for _p8_path in _P8_BOUNDARY_PATHS:
+        with _p8_safe_open(_p8_path, framework="pt", device="cpu") as _p8_handle:
+            _p8_meta = _p8_handle.metadata() or {}
+            if (
+                _p8_meta.get("schema") != "glm53-p8-scaled-h128-mcg-layer-chunk.v1"
+                or _p8_meta.get("role") != "runtime-boundary"
+                or _p8_meta.get("ldlq") != "false"
+            ):
+                raise RuntimeError(f"invalid P8 boundary artifact: {_p8_path}")
+            _p8_start = int(_p8_meta["expert_start"])
+            if _p8_start != _p8_next:
+                raise RuntimeError(
+                    f"non-contiguous P8 boundary artifacts: expected {_p8_next}, got {_p8_start}"
+                )
+            _p8_part = _p8_handle.get_tensor("down_diagonal").float()
+            _p8_parts.append(_p8_part)
+            _p8_next += int(_p8_part.shape[0])
+    _P8_DOWN_DIAGONAL = _p8_torch.cat(_p8_parts, dim=0).contiguous()
+    if _P8_DOWN_DIAGONAL.ndim != 2 or not _p8_torch.isfinite(_P8_DOWN_DIAGONAL).all():
+        raise RuntimeError("P8 boundary diagonal is invalid")
+    if not (_P8_DOWN_DIAGONAL > 0).all():
+        raise RuntimeError("P8 boundary diagonal must be positive")
+
+    def _p8_hadamard128_last(values: _p8_torch.Tensor) -> _p8_torch.Tensor:
+        if values.shape[-1] % 128:
+            raise RuntimeError("P8 H128 width is not divisible by 128")
+        original_shape = values.shape
+        work = values.float().reshape(-1, 128).clone()
+        width = 1
+        while width < 128:
+            view = work.reshape(-1, 128 // (2 * width), 2, width)
+            left = view[:, :, 0, :].clone()
+            right = view[:, :, 1, :].clone()
+            view[:, :, 0, :] = left + right
+            view[:, :, 1, :] = left - right
+            width *= 2
+        return work.mul_(128**-0.5).reshape(original_shape)
+
+    def _p8_qdq_e4m3_k32(values: _p8_torch.Tensor) -> _p8_torch.Tensor:
+        if values.shape[-1] % 32:
+            raise RuntimeError("P8 E4M3 carrier width is not divisible by 32")
+        blocks = values.float().reshape(*values.shape[:-1], values.shape[-1] // 32, 32)
+        maximum = blocks.abs().amax(-1)
+        exponent = _p8_torch.ceil(
+            _p8_torch.log2((maximum / 448.0).clamp(min=2.0**-127))
+        ).clamp(-127, 128)
+        scale = _p8_torch.exp2(exponent)
+        scale = _p8_torch.where(maximum == 0, _p8_torch.zeros_like(scale), scale)
+        inverse = _p8_torch.where(scale == 0, _p8_torch.zeros_like(scale), 1.0 / scale)
+        quantized = (blocks * inverse[..., None]).clamp(-448.0, 448.0)
+        quantized = quantized.to(_p8_torch.float8_e4m3fn).float()
+        return (quantized * scale[..., None]).reshape_as(values).to(_p8_torch.bfloat16)
+
+    def _p8_forward(
+        layer,
+        x: _p8_torch.Tensor,
+        topk_weights: _p8_torch.Tensor,
+        topk_ids: _p8_torch.Tensor,
+    ) -> _p8_torch.Tensor:
+        carrier = _p8_qdq_e4m3_k32(x)
+        output = _p8_torch.zeros_like(x)
+        flat_ids = topk_ids.reshape(-1)
+        active = _p8_torch.unique(flat_ids, sorted=True).tolist()
+        diagonal = layer._glm53_p8_down_diagonal
+        if diagonal.device != x.device:
+            diagonal = diagonal.to(device=x.device)
+            layer._glm53_p8_down_diagonal = diagonal
+        intermediate = layer.w2_weight.shape[-1]
+        if layer.w13_weight.shape[1] != 2 * intermediate:
+            raise RuntimeError("P8 pseudoquant requires contiguous [gate;up] W13")
+        for expert in active:
+            locations = (topk_ids == expert).nonzero(as_tuple=False)
+            token_index = locations[:, 0]
+            slot_index = locations[:, 1]
+            expert_input = carrier.index_select(0, token_index)
+            gate = _p8_F.linear(expert_input, layer.w13_weight[expert, :intermediate])
+            up = _p8_F.linear(expert_input, layer.w13_weight[expert, intermediate:])
+            if _P8_ARM == "candidate":
+                gate = _p8_hadamard128_last(gate).clamp(max=10.0)
+                up = _p8_hadamard128_last(up).clamp(-10.0, 10.0)
+                middle = _p8_F.silu(gate) * up * diagonal[expert]
+                middle = _p8_hadamard128_last(middle)
+            else:
+                gate = gate.clamp(max=10.0)
+                up = up.clamp(-10.0, 10.0)
+                middle = _p8_F.silu(gate) * up
+            middle = _p8_qdq_e4m3_k32(middle)
+            partial = _p8_F.linear(middle, layer.w2_weight[expert])
+            partial = partial * topk_weights[token_index, slot_index, None]
+            output.index_add_(0, token_index, partial.to(output.dtype))
+        if not getattr(layer, "_glm53_p8_forward_logged", False):
+            rank = (
+                str(_p8_torch.distributed.get_rank())
+                if _p8_torch.distributed.is_available() and _p8_torch.distributed.is_initialized()
+                else os.environ.get("LOCAL_RANK", "unknown")
+            )
+            print(
+                "GLM53_P8_PSEUDOQUANT_FORWARD "
+                f"layer={layer._glm53_p8_layer} rank={rank} "
+                f"active_experts={len(active)} carrier=E4M3_K32 arm={_P8_ARM} "
+                f"boundary={'H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity'} "
+                "ldlq=false",
+                flush=True,
+            )
+            layer._glm53_p8_forward_logged = True
+        return output
+
+    _P8_ORIGINAL_PROCESS = _P8UnquantizedFusedMoEMethod.process_weights_after_loading
+    _P8_ORIGINAL_FORWARD_NATIVE = _P8UnquantizedFusedMoEMethod.forward_native
+
+    def _p8_process_weights_after_loading(self, layer):
+        if getattr(layer, "_glm53_p8_pseudoquant", False):
+            # Preserve checkpoint-order [gate;up] BF16 parameters.  Backend
+            # conversion can transpose/interleave them and would invalidate
+            # the explicit reference evaluator below.
+            self.moe_kernel = None
+            print(
+                "GLM53_P8_PSEUDOQUANT_WEIGHTS_READY "
+                f"layer={layer._glm53_p8_layer} w13={tuple(layer.w13_weight.shape)} "
+                f"w2={tuple(layer.w2_weight.shape)}",
+                flush=True,
+            )
+            return
+        return _P8_ORIGINAL_PROCESS(self, layer)
+
+    def _p8_forward_native(self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input):
+        if getattr(layer, "_glm53_p8_pseudoquant", False):
+            return _p8_forward(layer, x, topk_weights, topk_ids)
+        return _P8_ORIGINAL_FORWARD_NATIVE(
+            self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
+        )
+
+    _P8UnquantizedFusedMoEMethod.process_weights_after_loading = _p8_process_weights_after_loading
+    _P8UnquantizedFusedMoEMethod.forward_native = _p8_forward_native
+    _P8_ORIGINAL_FACTORY = _p8_glm_model.FusedMoEFactory
+
+    def _p8_factory(*args, **kwargs):
+        prefix = kwargs.get("prefix", "")
+        match = _P8_LAYER_RE.search(prefix)
+        runner = _P8_ORIGINAL_FACTORY(*args, **kwargs)
+        if match is None or int(match.group(1)) not in _P8_LAYERS:
+            return runner
+        layer_number = int(match.group(1))
+        routed = runner.routed_experts
+        if not isinstance(routed.quant_method, _P8UnquantizedFusedMoEMethod):
+            raise RuntimeError(
+                f"P8 layer {layer_number} did not select the unquantized BF16 carrier"
+            )
+        tp_size = int(routed.moe_config.moe_parallel_config.tp_size)
+        tp_rank = int(routed.moe_config.tp_rank)
+        full_width = int(_P8_DOWN_DIAGONAL.shape[1])
+        if full_width % tp_size:
+            raise RuntimeError("P8 boundary width is not divisible by TP size")
+        local_width = full_width // tp_size
+        local = _P8_DOWN_DIAGONAL[:, tp_rank * local_width : (tp_rank + 1) * local_width]
+        routed.register_buffer(
+            "_glm53_p8_down_diagonal", local.to(_p8_torch.float32), persistent=False
+        )
+        routed._glm53_p8_pseudoquant = True
+        routed._glm53_p8_layer = layer_number
+        routed._glm53_p8_forward_logged = False
+        return runner
+
+    _p8_glm_model.FusedMoEFactory = _p8_factory
+    print(
+        "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE "
+        f"layers={_P8_LAYER_SPEC} experts={_P8_DOWN_DIAGONAL.shape[0]} "
+        f"intermediate={_P8_DOWN_DIAGONAL.shape[1]} arm={_P8_ARM} ldlq=false",
+        flush=True,
+    )
+
+
+if ROUTED_EXPERTS_SPARSE_MLA_PATCH:
+    if ROUTED_EXPERTS_SPARSE_MLA_PATCH not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(
+            "invalid GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH="
+            f"{ROUTED_EXPERTS_SPARSE_MLA_PATCH!r}"
+        )
+
+    # GLM-5.3's sparse-MLA KV layout deliberately combines every MLA and
+    # kpool-indexer layer into one UniformTypeKVCacheSpecs group.  vLLM's
+    # routed-expert recorder only recognizes a bare FullAttentionSpec and
+    # therefore rejects this otherwise attention-equivalent wrapper.  Unwrap
+    # only a homogeneous all-full-attention group, require exactly one match,
+    # and leave KpoolTailSpec/MambaSpec groups ineligible.
+    from vllm.model_executor.layers.fused_moe import (
+        routed_experts_capturer as _routed_experts_capturer,
+    )
+    from vllm.v1.kv_cache_interface import (
+        FullAttentionSpec as _FullAttentionSpec,
+        UniformTypeKVCacheSpecs as _UniformTypeKVCacheSpecs,
+    )
+
+    def _glm53_get_routed_experts_attn_gid(kv_cache_config):
+        matches = []
+        descriptions = []
+        for gid, group in enumerate(kv_cache_config.kv_cache_groups):
+            spec = group.kv_cache_spec
+            if isinstance(spec, _FullAttentionSpec):
+                eligible = True
+                inner_types = [type(spec).__name__]
+            elif isinstance(spec, _UniformTypeKVCacheSpecs):
+                inner = list(spec.kv_cache_specs.values())
+                eligible = bool(inner) and all(
+                    isinstance(item, _FullAttentionSpec) for item in inner
+                )
+                inner_types = sorted({type(item).__name__ for item in inner})
+            else:
+                eligible = False
+                inner_types = [type(spec).__name__]
+            descriptions.append(
+                f"gid={gid}:outer={type(spec).__name__}:"
+                f"inner={','.join(inner_types)}:eligible={eligible}"
+            )
+            if eligible:
+                matches.append(gid)
+        if len(matches) != 1:
+            raise ValueError(
+                "GLM53 routed-expert capture requires exactly one full-attention "
+                f"KV cache group, got {matches}; groups={';'.join(descriptions)}"
+            )
+        print(
+            "GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE "
+            f"attn_gid={matches[0]} groups={';'.join(descriptions)}",
+            flush=True,
+        )
+        return matches[0]
+
+    _routed_experts_capturer.get_routed_experts_attn_gid = (
+        _glm53_get_routed_experts_attn_gid
+    )
 
 
 if HUMMING_FP4_BUFFER_PATCH:

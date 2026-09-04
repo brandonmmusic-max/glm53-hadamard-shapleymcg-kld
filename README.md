@@ -45,6 +45,18 @@ delta `+0.0004160443`, or a **1.074% regression**, with paired BCa 95% CI
 `[-0.000249,+0.001168]`. This directly shows that the large local causal-NMSE
 gain is not a reliable end-to-end selection surrogate for this codec.
 
+The subsequent scaled-H128 procedural-MCG build also failed its frozen
+layer-3 gate. Its physical payload is 4.251302 bpw and its 16-expert screen
+improved causal routed-output NMSE by 26.189%, but on all 32 conditional-fit
+windows its matched pseudoquant mean KLD was `0.0534951744` versus
+`0.0533314176` for decoded GPTQ NVFP4: delta `+0.0001637568`, or a **0.307%
+regression**, with paired BCa 95% CI `[-0.002134,+0.005994]`. It improved
+22/32 windows and three of four domain means; the legal domain regressed by
+`+0.0058845`, dominated by `conditional-fit-0074` at `+0.0487102`. This is a
+developmental null/fail, not evidence that the physical codec is worse on a
+protected holdout. Confirmation logits remain unopened, and neither LDLQ nor
+BlockLDLQ was used.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 The P4/P8 kernel closure gates remain blocked. P8 first failed E4M3 activation

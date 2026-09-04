@@ -329,6 +329,29 @@ confirmation, and final roles remained unopened for this redesign branch.
   `9a45010679c68e3b9f02ea601b2a8ca1d05fe58582cb0d35f8a7707e958344f4`.
   Protected roles remain closed. No LDLQ is used.
 
+## 2026-09-04: Decision 7 — scaled-H128 MCG layer-3 pseudoquant KLD
+
+- **Decision before result:** compare one scaled-H128 procedural-MCG K4 P8
+  layer-3 build with one decoded full-Hessian GPTQ NVFP4 control on the exact
+  32 conditional-fit windows. Both arms use the same InstantTensor BF16
+  loader and dynamic E4M3-per-K32 input/post-SwiGLU carrier. Pass only if
+  candidate minus control mean KLD is at most `-0.0014` nats and the paired
+  BCa 95% upper bound is below zero. No exclusions, substitutions, or rerolls.
+  Execution-manifest SHA-256:
+  `a4ed3de32a8adbeb6716441ffcd87aece984600f8a20da4b327c8751e4ac1c0c`.
+- **Outcome:** failed/null. Candidate mean KLD was `0.0534951744` versus
+  `0.0533314176`; delta `+0.0001637568`, relative change `-0.3071%`, paired
+  BCa 95% CI `[-0.0021343931,+0.0059936601]`, with 22/32 window wins. Three
+  domain means improved, but the legal mean regressed by `+0.0058844981` and
+  `conditional-fit-0074` regressed by `+0.0487102441`. Analysis SHA-256:
+  `e4e19f9f73763b48cd73439c7114cd21291ae51938d457c2a4da2af3a3f198e2`.
+  This is decoded-weight pseudoquant evidence, not native P8 closure.
+  Confirmation logits remain unopened. No LDLQ or BlockLDLQ was used.
+- **Next frozen direction:** use disjoint fit routes to estimate effects over
+  all 288 experts and test a sub-4-KiB per-expert identity/H128 policy. Reuse
+  of these 32 windows is adaptive tuning evidence only and cannot qualify a
+  redesigned candidate.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

@@ -43,6 +43,7 @@ copy_json_tree "$CAMPAIGN/codec-v2/output-aware/dense-gptq-control-3-19-20/recei
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/p8-bf16-candidate" layer22-candidate-overlay
 copy_json_tree "$CAMPAIGN/codec-v2/output-aware/layer22-kld/gptq-bf16-control" layer22-control-overlay
 copy_json_tree "$CAMPAIGN/codec-v2/w6a8-diagnosis/sealed" w6a8-diagnosis
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/scaled-mcg-layer3-kld-v1" p8-h128-scaled-mcg-layer3-kld
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
@@ -53,6 +54,7 @@ while IFS= read -r run_file; do
 done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-codec-p8-*.json' -o \
   -name 'run-p8-layer22-*.json' -o \
+  -name 'run-p8-scaled-mcg-l3-*.json' -o \
   -name 'run-v5-powered-downh16-*.json' \
 \) | sort)
 
