@@ -176,16 +176,27 @@ python3 -m glm53_nvfp4.build_p4_tp4_sidecars --matrix-manifest MATRIX_DIR/matric
 The design schema is `glm53-p4-viterbi-rne-encoder-design.v1`, with `law`,
 `ldlq=false`, `objective=viterbi-with-full-hessian-gptq-feedback`,
 `source_precision=BF16`, `source_index_sha256`, `source_file_sha256` mapping,
-`fit_roles_sha256`, `capture_manifest_sha256`, `capture_files`, `data_role=fit`,
+`fit_roles_sha256`, `capture_manifest_sha256`, `capture_files_by_layer`, `data_role=fit`,
 `sampling_strategy=domain-balanced`, `samples`, `layers`, `experts=288`,
 `hidden`, `intermediate`, `scale_refinement_iterations`, `search_grid`,
 `tailbite_context` in 1..128, `percdamp` and `column_block`. All paths in this
 example are placeholders; no calibrated GPU build is included in this receipt.
 
-`capture_files` has exactly `hidden_bf16`, `topk_ids_u16le`, and
-`topk_weights_f32le`, each containing `path` (resolved absolute filename),
-`bytes` (integer) and `sha256` (lowercase hex). These pins describe the local
-materialized files supplied to this encoder invocation.
+`capture_files_by_layer` is keyed by canonical decimal layer strings, e.g.
+`"3"`, `"4"`, through `"44"`, and must cover **exactly every declared layer**.
+Each layer contains exactly `hidden_bf16`, `topk_ids_u16le`, and
+`topk_weights_f32le`, each with `path` (resolved absolute filename), `bytes`
+(positive integer) and `sha256` (lowercase hex). This permits one immutable
+design to cover the entire 42-layer build while binding every layer to its
+own local materialized capture files. Missing/extra layers, noncanonical keys
+such as `"03"`, malformed pins and wrong-layer path substitutions fail closed.
+The selector validates all declared pin structures but hashes/reads only the
+requested layer's files.
+
+For compatibility, the previous top-level `capture_files` form is accepted
+only when `layers` is exactly the single requested layer. The two forms may
+never coexist, even if their contents agree. A multi-layer design may not
+reuse the old unkeyed form.
 
 ## Attribution
 
