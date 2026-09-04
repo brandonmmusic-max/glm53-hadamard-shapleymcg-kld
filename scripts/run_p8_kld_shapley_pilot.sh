@@ -45,6 +45,7 @@ for ROW in "${ROWS[@]}"; do
   GLM53_ROLES="$CAMPAIGN/roles/roles-codec-conditional-fit32-v1.json" \
   GLM53_RUNTIME_IMAGE=klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate \
   GLM53_RUNTIME_IMAGE_ID=sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe \
+  GLM53_RUNTIME_PATCH_MANIFEST="$CAMPAIGN/codec-v2/p8-joint-policy-runtime-manifest-v1.json" \
     "$REPO/scripts/run_kld_v3.sh" conditional-fit "$RUN_ID" "$MODEL" \
     "glm53-$RUN_ID" identity 3-44
 done
