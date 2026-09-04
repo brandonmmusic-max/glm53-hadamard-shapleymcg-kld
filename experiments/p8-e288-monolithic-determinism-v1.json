@@ -1,0 +1,25 @@
+{
+  "schema": "glm53-p8-e288-monolithic-determinism-plan.v1",
+  "written_at": "2026-09-04T20:19:00-04:00",
+  "status": "preregistered-before-device-results",
+  "prior_arithmetic_receipt_sha256": "68a27e45d9258ec41e69f075b26357723f7ef71967edc4e8a1df000e9e9396a7",
+  "implementation": "Set deterministic_output on the existing monolithic trellis kernel so each route writes its own [M,topk,K] BF16 row, then invoke B12X's fixed-order top-k sum kernel. No atomic output scatter is used.",
+  "fixed_inputs": {
+    "product": "P8 K4 procedural MCG to E4M3 with physical UE8M0/32 scales",
+    "layer": 3,
+    "tp_rank": 0,
+    "runtime_experts": 288,
+    "reference_experts": [0, 1, 2, 3, 4, 5, 6, 7],
+    "tokens": [3, 33],
+    "top_k": 8,
+    "seed": 20260957,
+    "tile": "M16N128",
+    "mode": "monolithic",
+    "max_active_clusters": 188,
+    "runs": 5,
+    "ldlq": false
+  },
+  "decision_rule": "For both M3 and M33, all five outputs must be bitwise identical; the first output must be finite, cosine above 0.995, and relative L2 below 0.12 against the same decoded-weight FP32 reference.",
+  "failure_rule": "Any differing hash, non-finite result, threshold miss, crash, or missing run fails without reroll.",
+  "scope": "Determinism plus arithmetic closure only; no speed or end-to-end KLD claim."
+}
