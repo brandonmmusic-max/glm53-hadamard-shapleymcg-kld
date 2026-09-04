@@ -366,3 +366,57 @@ def test_materialized_capture_path_substitution_incomplete_pins_and_truncation(t
     paths["topk_weights_f32le"].write_bytes(b"short")
     with pytest.raises(ValueError, match="byte count mismatch"):
         verify_capture_files(paths, pins)
+
+
+def test_capture_files_by_layer_selects_exact_binding_and_rejects_wrong_layer(tmp_path):
+    from glm53_nvfp4.quantize_p4_layer import capture_pins_for_layer, verify_capture_files
+    layer3, layer4 = tmp_path / "layer-003", tmp_path / "layer-004"
+    layer3.mkdir()
+    layer4.mkdir()
+    paths3, pins3 = _capture_pins(layer3)
+    paths4, pins4 = _capture_pins(layer4)
+    design = {"layers": [3, 4], "capture_files_by_layer": {"3": pins3, "4": pins4}}
+    assert verify_capture_files(paths3, capture_pins_for_layer(design, 3)) == pins3
+    assert verify_capture_files(paths4, capture_pins_for_layer(design, 4)) == pins4
+    # The fixture's contents/hashes are identical across layers; exact paths
+    # must still detect a wrong-layer substitution.
+    wrong = {"layers": [3, 4], "capture_files_by_layer": {"3": pins3, "4": pins3}}
+    with pytest.raises(ValueError, match="exact capture path"):
+        verify_capture_files(paths4, capture_pins_for_layer(wrong, 4))
+    # Pin selection itself opens no files belonging to another layer.
+    paths4["hidden_bf16"].unlink()
+    assert capture_pins_for_layer(design, 3) == pins3
+    assert verify_capture_files(paths3, capture_pins_for_layer(design, 3)) == pins3
+
+
+@pytest.mark.parametrize("keys", [("3",), ("3", "04"), ("3", "4", "5"), (3, 4)])
+def test_capture_files_by_layer_requires_exact_canonical_layer_inventory(tmp_path, keys):
+    from glm53_nvfp4.quantize_p4_layer import capture_pins_for_layer
+    _, pins = _capture_pins(tmp_path)
+    design = {"layers": [3, 4], "capture_files_by_layer": {key: pins for key in keys}}
+    with pytest.raises(ValueError, match="exactly cover declared layers"):
+        capture_pins_for_layer(design, 3)
+
+
+def test_capture_legacy_form_is_single_layer_only_and_never_ambiguous(tmp_path):
+    from glm53_nvfp4.quantize_p4_layer import capture_pins_for_layer
+    _, pins = _capture_pins(tmp_path)
+    assert capture_pins_for_layer({"layers": [3], "capture_files": pins}, 3) == pins
+    assert capture_pins_for_layer({"layers": [3], "capture_files_by_layer": {"3": pins}}, 3) == pins
+    with pytest.raises(ValueError, match="one unambiguous"):
+        capture_pins_for_layer({"layers": [3, 4], "capture_files": pins}, 3)
+    with pytest.raises(ValueError, match="may not coexist"):
+        capture_pins_for_layer({"layers": [3], "capture_files": pins,
+                                "capture_files_by_layer": {"3": pins}}, 3)
+    with pytest.raises(ValueError, match="requested layer"):
+        capture_pins_for_layer({"layers": [3], "capture_files": pins}, 4)
+    with pytest.raises(ValueError, match="unique declared"):
+        capture_pins_for_layer({"layers": [3, 3], "capture_files_by_layer": {"3": pins}}, 3)
+
+
+def test_all_declared_layer_pin_structures_must_be_complete(tmp_path):
+    from glm53_nvfp4.quantize_p4_layer import capture_pins_for_layer
+    _, pins = _capture_pins(tmp_path)
+    with pytest.raises(ValueError, match="layer 4 requires all three"):
+        capture_pins_for_layer({"layers": [3, 4], "capture_files_by_layer": {
+            "3": pins, "4": {key: value for key, value in pins.items() if key != "hidden_bf16"}}}, 3)

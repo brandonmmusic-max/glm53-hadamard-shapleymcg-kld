@@ -23,6 +23,45 @@ from .p4_serving_codec import LAW, MATRIX_MANIFEST_SCHEMA, PROJECTIONS, file_sha
 from .shard_index import IndexedCheckpoint
 
 
+def capture_pins_for_layer(design: dict, layer: int) -> dict:
+    """Select an exact layer binding without opening any capture files.
+
+    The new mapping must cover every declared layer with canonical decimal
+    keys. Historical capture_files is accepted only for one declared layer
+    and may never coexist with the per-layer mapping.
+    """
+    layers = design.get("layers")
+    if (not isinstance(layers, list) or not layers
+            or any(type(value) is not int or not 3 <= value <= 44 for value in layers)
+            or len(set(layers)) != len(layers)
+            or type(layer) is not int or layer not in layers):
+        raise ValueError("P4 capture pins require unique declared GLM layers and the requested layer")
+    if "capture_files_by_layer" in design:
+        if "capture_files" in design:
+            raise ValueError("ambiguous P4 capture pin forms may not coexist")
+        by_layer = design["capture_files_by_layer"]
+        if not isinstance(by_layer, dict) or set(by_layer) != {str(value) for value in layers}:
+            raise ValueError("capture_files_by_layer must exactly cover declared layers using canonical decimal keys")
+    else:
+        if layers != [layer] or "capture_files" not in design:
+            raise ValueError("legacy capture_files is allowed only for one unambiguous declared layer")
+        by_layer = {str(layer): design["capture_files"]}
+    names = {"hidden_bf16", "topk_ids_u16le", "topk_weights_f32le"}
+    # Validate the shape of every declared layer binding, but do not read the
+    # other layers' datasets while preparing the selected layer.
+    for key, pins in by_layer.items():
+        if not isinstance(pins, dict) or set(pins) != names:
+            raise ValueError(f"layer {key} requires all three materialized capture file pins")
+        for name, pin in pins.items():
+            if (not isinstance(pin, dict) or set(pin) != {"path", "bytes", "sha256"}
+                    or not isinstance(pin["path"], str) or not Path(pin["path"]).is_absolute()
+                    or type(pin["bytes"]) is not int or pin["bytes"] <= 0
+                    or not isinstance(pin["sha256"], str) or len(pin["sha256"]) != 64
+                    or any(c not in "0123456789abcdef" for c in pin["sha256"])):
+                raise ValueError(f"invalid layer {key} capture path/byte/hash pin: {name}")
+    return by_layer[str(layer)]
+
+
 def verify_capture_files(paths: dict[str, Path], expected: dict) -> dict:
     """Verify the exact materialized fit files, not just their manifest/length.
 
@@ -82,6 +121,7 @@ def main():
         raise ValueError("invalid GLM layer/expert range")
     if hidden % 64 or intermediate % 256:
         raise ValueError("GLM dimensions cannot reach TP4 P4 K64")
+    capture_pins = capture_pins_for_layer(design, args.layer)
     design_sha = file_sha256(args.design)
     source = IndexedCheckpoint(args.source, args.source_index)
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -99,7 +139,7 @@ def main():
                            data_role="fit", sampling_strategy="domain-balanced")
     capture_files = verify_capture_files({"hidden_bf16": capture.hidden_path,
         "topk_ids_u16le": capture.ids_path, "topk_weights_f32le": capture.weights_path},
-        design.get("capture_files", {}))
+        capture_pins)
     started = time.perf_counter()
     for expert in range(args.expert_start, args.expert_end):
         base = source.expert_prefix(args.layer, expert)
