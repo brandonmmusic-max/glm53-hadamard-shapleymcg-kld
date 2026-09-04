@@ -69,7 +69,7 @@ class P8NativeTPMoE:
         swiglu_limit: float = 10.0,
         force_materialized: bool | None = None,
         mac_override: int | None = None,
-        deterministic_output: bool = False,
+        deterministic_output: bool = True,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -272,12 +272,13 @@ class P8NativeTPMoE:
         m = int(x.shape[0])
         if tuple(topk_ids.shape) != (m, self.topk) or tuple(topk_weights.shape) != (m, self.topk):
             raise RuntimeError("P8 native routing shape mismatch")
-        # The E=288 small-M monolithic specialization is not numerically
-        # closed yet (the first M3 diagnostic emitted non-finite values).
-        # Use the independently closed materialized path for the KLD gate;
-        # decode specialization remains a separate speed task.
+        # Match the W4A8 planner's measured M16-to-M64 transition: sparse
+        # decode and ordinary prefill stay monolithic; only dense routed
+        # batches pay for the split materialized phase kernels.
         materialized = (
-            True if self.force_materialized is None else self.force_materialized
+            m * self.topk >= 36 * self.experts
+            if self.force_materialized is None
+            else self.force_materialized
         )
         arm = self._compile(materialized)
         tile_m = arm.tile_m

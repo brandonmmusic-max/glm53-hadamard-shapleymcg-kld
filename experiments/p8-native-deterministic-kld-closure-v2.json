@@ -1,0 +1,17 @@
+{
+  "schema": "glm53-p8-native-deterministic-kld-closure-plan.v2",
+  "written_at": "2026-09-04T20:28:00-04:00",
+  "status": "preregistered-before-end-to-end-run",
+  "role": "opened conditional-fit n=32 developmental device closure",
+  "candidate": "physical TP4 layer-3 P8 K4 procedural MCG, logical and repacked UE8M0/32 scale planes, monolithic M16 below 36 routed rows per expert, split M64 otherwise, deterministic per-route output plus fixed-order top-k sum",
+  "control": "the already completed exact decoded-pseudoquant P8 run p8-identity-mcg-l3-pseudoquant-cf32-v1 on the identical windows",
+  "run_id": "p8-identity-mcg-l3-native-deterministic-cf32-v2",
+  "estimand": "paired mean KLD(native deterministic kernel) minus KLD(decoded pseudoquant)",
+  "bootstrap": {"method": "paired BCa", "replicates": 50000, "seed": 20260964, "unit": "window"},
+  "engineering_decision_rule": "Pass device closure if the paired BCa interval includes zero and absolute mean delta is at most 0.0014 nats; preserve domain deltas and every window.",
+  "strict_quality_rule": "A comparison to matched decoded GPTQ NVFP4 remains a separate diagnostic and cannot claim a win unless the paired BCa upper bound is below zero.",
+  "stopping_rule": "One complete native run, no excluded windows, no reroll.",
+  "protected_boundary": "Do not open selection, confirmation, final, or the 28 confirmation logits.",
+  "ldlq": false,
+  "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4; P8 is the quality product, not the NVFP4 speed product."
+}
