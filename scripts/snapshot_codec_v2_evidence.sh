@@ -18,7 +18,7 @@ copy_json_tree() {
   while IFS= read -r source_file; do
     local relative=${source_file#"$source"/}
     mkdir -p "$DEST/$label/$(dirname "$relative")"
-    cp --reflink=auto "$source_file" "$DEST/$label/$relative"
+    cp --reflink=auto --no-clobber "$source_file" "$DEST/$label/$relative"
   done < <(find "$source" -type f -name '*.json' | sort)
 }
 
@@ -57,13 +57,14 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-split-device-closure-v1" p8-split-device-c
 copy_json_tree "$CAMPAIGN/codec-v2/p8-split-determinism-v1" p8-split-determinism
 copy_json_tree "$CAMPAIGN/codec-v2/p8-e288-small-m-cluster-diagnostic-v1" p8-e288-small-m-cluster-diagnostic
 copy_json_tree "$CAMPAIGN/codec-v2/p8-native-kld-closure-v2" p8-native-kld-closure-v2
+copy_json_tree "$CAMPAIGN/codec-v2/kld-shapley-pilot-v1" p8-kld-shapley-pilot-v1
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
 cp --reflink=auto "$CAMPAIGN/evidence/capture-layer-022-prefetch.json" "$DEST/capture-receipts/"
 
 while IFS= read -r run_file; do
-  cp --reflink=auto "$run_file" "$RUN_DEST/$(basename "$run_file")"
+  cp --reflink=auto --no-clobber "$run_file" "$RUN_DEST/$(basename "$run_file")"
 done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-codec-p8-*.json' -o \
   -name 'run-p8-layer22-*.json' -o \
@@ -71,6 +72,7 @@ done < <(find "$CAMPAIGN/kld-v3" -maxdepth 1 -type f \( \
   -name 'run-p8-boundary-policy-l3-*.json' -o \
   -name 'run-p8-identity-mcg-l3-native-*.json' -o \
   -name 'run-p8-joint-fc1-policy-*.json' -o \
+  -name 'run-p8-kld-shapley-pilot-v1-*.json' -o \
   -name 'run-v5-powered-downh16-*.json' \
 \) | sort)
 

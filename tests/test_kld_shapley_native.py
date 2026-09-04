@@ -86,6 +86,15 @@ def test_direct_kld_analysis_recovers_additive_ranking(tmp_path: Path):
         for row in result["path_efficiency"]
     )
     assert result["ldlq_used"] is False
+    best = result["observed_best_nonempty_coalition"]
+    assert best["layers"] == [3, 19, 20, 22]
+    assert np.isclose(best["relative_arithmetic_mean_improvement_vs_empty"], 7 / 45)
+    empty = next(
+        row
+        for row in result["observed_coalition_comparisons"]
+        if not row["layers"]
+    )
+    assert np.isclose(empty["mean_delta_kld_vs_empty"], 0.0)
 
 
 def test_direct_kld_analysis_rejects_window_mismatch(tmp_path: Path):

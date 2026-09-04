@@ -90,6 +90,20 @@ was unusually close to BF16. Code won 8/8; reasoning won only 3/8. This is the
 first replicated 10–30% local effect in the GLM codec work, but it is not an
 end-to-end KLD win and does not authorize a native kernel claim.
 
+The first direct-KLD Shapley interaction pilot has now completed all eight
+pre-frozen coalitions over layers 3/19/20/22, with 32 matched conditional-fit
+windows per endpoint and exact window-level path efficiency. The all-P8
+four-layer coalition was **2.270% worse** than decoded GPTQ, but the best
+observed nonempty coalition, layers 3/20/22, was **3.097% better** (`0.0376359`
+versus `0.0388389`) and won 20/32 windows. Its post-hoc paired BCa interval for
+candidate minus control was `[-0.003523,+0.000498]`, so this is a promising
+adaptive diagnostic rather than a qualified win. Excluding layer 19 from the
+all-four context improved KLD by **5.248%**, while layer 19's two measured
+contextual effects changed sign. The pilot therefore validates the need for
+interaction-aware allocation, but two antithetic permutations are not enough
+to claim a stable four-layer ranking and this BF16-overlay pilot is not a
+native-kernel result.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 P8 device arithmetic closure now passes for the procedural-MCG K3/K4 decoder
