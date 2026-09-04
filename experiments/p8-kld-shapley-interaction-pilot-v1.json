@@ -1,0 +1,118 @@
+{
+  "allocation": {
+    "base_slots": 0,
+    "budget_bpw": 4.5,
+    "final_gate": "pilot only; no 6-bpw allocation or physical-rate claim is authorized",
+    "headroom_bpw_for_boundary_metadata": 0.25,
+    "realized_weight_bpw_before_boundary_metadata": 4.25,
+    "upgrade_slots": 4
+  },
+  "coalitions": {
+    "kld-c-0a643dc5dc31b4b0": [
+      3,
+      19,
+      20,
+      22
+    ],
+    "kld-c-0e760153c920e73a": [
+      20,
+      22
+    ],
+    "kld-c-15797e5c9a679cec": [
+      3,
+      19
+    ],
+    "kld-c-65909a69d60745f8": [
+      3,
+      20,
+      22
+    ],
+    "kld-c-785f3ec7eb32f30b": [
+      22
+    ],
+    "kld-c-9400f1b21cb527d7": [
+      19
+    ],
+    "kld-c-b1a72923860f1d10": [
+      3,
+      19,
+      20
+    ],
+    "kld-c-e3b0c44298fc1c14": []
+  },
+  "development_gate": "window and domain intervals are reported controls; ranking uses preregistered mean direct KLD marginal",
+  "estimator": "one seeded permutation and its antithetic reverse",
+  "game": "matched-gptq-to-p8-interaction-pilot",
+  "isa_cost_statement": "This pilot estimates interaction in matched BF16 overlays and makes no kernel-speed claim; the physical P8 endpoint uses mxf8f6f4 at twice NVFP4 MMA issue count.",
+  "layers": [
+    3,
+    19,
+    20,
+    22
+  ],
+  "ldlq": false,
+  "next_gate": "use the interaction result to validate or reject the estimator, then measure the native P8-to-MXFP8 6-bpw game",
+  "permutations": [
+    {
+      "coalition_ids": [
+        "kld-c-e3b0c44298fc1c14",
+        "kld-c-785f3ec7eb32f30b",
+        "kld-c-0e760153c920e73a",
+        "kld-c-65909a69d60745f8",
+        "kld-c-0a643dc5dc31b4b0"
+      ],
+      "order": [
+        22,
+        20,
+        3,
+        19
+      ],
+      "permutation_index": 0
+    },
+    {
+      "coalition_ids": [
+        "kld-c-e3b0c44298fc1c14",
+        "kld-c-9400f1b21cb527d7",
+        "kld-c-15797e5c9a679cec",
+        "kld-c-b1a72923860f1d10",
+        "kld-c-0a643dc5dc31b4b0"
+      ],
+      "order": [
+        19,
+        3,
+        20,
+        22
+      ],
+      "permutation_index": 1
+    }
+  ],
+  "protected_boundary": "design and adaptive execution must not open selection, confirmation, final, or the reserved 28 confirmation logits",
+  "role": "conditional-fit",
+  "roles": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+  "roles_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+  "schema": "glm53-p8.direct-kld-native-shapley-design.v1",
+  "seed": 20260967,
+  "strict_claim_gate": "a final endpoint beats its matched control only if mean paired KLD delta is negative and the paired BCa upper bound is below zero",
+  "tiers": {
+    "base": {
+      "compute": "BF16 overlay pilot only",
+      "name": "decoded full-Hessian GPTQ NVFP4 control",
+      "stored_bpw": 4.5,
+      "weights": "exact decoded reconstruction of the matched 4.5-bpw NVFP4 control"
+    },
+    "upgrade": {
+      "compute": "BF16 overlay pilot only",
+      "name": "decoded K4 procedural-MCG P8 candidate",
+      "stored_bpw": 4.25,
+      "weights": "exact decoded reconstruction of the 4.25-bpw P8 stream"
+    }
+  },
+  "unique_coalitions": 8,
+  "unit": "whole routed MoE layer",
+  "value": "equal-window end-to-end teacher-KLD reduction when the layer is upgraded in its measured coalition context",
+  "value_exclusions": [
+    "routed-output NMSE is not an allocation value",
+    "weight NMSE is not an allocation value",
+    "LDLQ and BlockLDLQ are not used"
+  ]
+}
