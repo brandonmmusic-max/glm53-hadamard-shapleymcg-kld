@@ -24,6 +24,13 @@ and software. Those components are not relicensed by the ShapleyMCG License.
   QSRT SQG-XOR-Cheb-T12 decoder. Reuse of its pipeline, lane mapping, or T12
   table must be described as a port and retain the KQuant/QSRT attribution and
   unverified-license notice above.
+- The separate `runtime_patch/p4/` endpoint ports the ExLlamaV3 cyclic K4
+  stream, MCG constants, and tensor-core tile convention through this
+  repository's KQuant/QSRT codec. Its producer/consumer organization follows
+  the vendored B12X `w4a8_trellis` design. The integer P4 decoder, CUDA C launch
+  ABI, and E2M1/E4M3/16 staging are new; no T12 table or P8 K32 operand
+  permutation is used. `glm53_nvfp4/p4_reference.py` independently implements
+  the same frozen law/layout for CPU verification. Retain all notices above.
 
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be
