@@ -181,6 +181,20 @@ __global__ void p4_decode_probe_kernel(const uint32_t* stream, uint32_t* packed,
 }  // namespace
 
 // C ABI keeps offline compilation independent of Torch/CuTe and its driver.
+extern "C" int p4_capture_state(cudaStream_t stream, int* active, unsigned long long* sequence) {
+    if (!active || !sequence) return int(cudaErrorInvalidValue);
+    cudaStreamCaptureStatus capture;
+    unsigned long long id = 0;
+    cudaError_t status = cudaStreamGetCaptureInfo(stream, &capture, &id);
+    if (status != cudaSuccess) return int(status);
+    if (capture == cudaStreamCaptureStatusInvalidated) return int(cudaErrorStreamCaptureInvalidated);
+    if (capture != cudaStreamCaptureStatusActive && capture != cudaStreamCaptureStatusNone)
+        return int(cudaErrorInvalidValue);
+    *active = capture == cudaStreamCaptureStatusActive;
+    *sequence = *active ? id : 0;
+    return int(cudaSuccess);
+}
+
 extern "C" int p4_prepare() {
     // Force module/function loading during GLM weight initialization. Lazy
     // loading from the first ctypes launch inside capture is not permitted.

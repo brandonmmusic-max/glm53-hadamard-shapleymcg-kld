@@ -246,7 +246,7 @@ def test_offline_full_launch_library_links_without_loading_or_gpu(offline_cuda):
     path = compile_library(directory / "library")
     assert path.is_file()
     symbols = subprocess.check_output(["nm", "-D", str(path)], text=True)
-    for symbol in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare"):
+    for symbol in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare", "p4_capture_state"):
         assert re.search(r" T " + symbol + r"$", symbols, re.M)
     nvcc = shutil.which("nvcc") or "/usr/local/cuda-13.2/bin/nvcc"
     sass = subprocess.check_output([str(Path(nvcc).with_name("cuobjdump")), "--dump-sass", str(path)], text=True)

@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import threading
 
 import torch
 
@@ -61,13 +62,15 @@ class P4ServingConfig:
         sidecar_dir = Path(values["SIDECAR_DIR"]).resolve(strict=True)
         if not sidecar_dir.is_dir():
             raise ValueError("P4 sidecar root must be a directory")
-        specification = env.get("GLM53_P4_NATIVE_LAYERS", "3").strip()
+        specification = env.get("GLM53_P4_NATIVE_LAYERS", "3")
         if not re.fullmatch(r"\d+(?:,\d+)*", specification):
             raise ValueError("P4 layers must be a comma-separated list")
         parsed = [int(value) for value in specification.split(",")]
         layers = frozenset(parsed)
         if len(layers) != len(parsed) or not layers.issubset(range(3, 45)):
             raise ValueError("P4 layers must be unique GLM routed layers 3..44")
+        if specification != ",".join(map(str, sorted(layers))):
+            raise ValueError("P4 layers must use canonical ascending decimal syntax, without padding or whitespace")
         design_sha256 = hashlib.sha256(Path(values["DESIGN"]).read_bytes()).hexdigest()
         raw = Path(values["MANIFEST"]).read_bytes()
         manifest_sha256 = hashlib.sha256(raw).hexdigest()
@@ -192,7 +195,8 @@ class _P4ServingMethod:
         runtime = self._glm53_p4_backend(sidecar, device=layer.w13_weight.device,
                     tp_rank=rank, layer=layer_id, expected_design_sha256=config.design_sha256,
                     expected_file_sha256=entry["sha256"], expected_file_bytes=entry["bytes"],
-                    topk=layer.top_k, swiglu_limit=layer.swiglu_limit, build_dir=config.build_dir)
+                    topk=layer.top_k, swiglu_limit=layer.swiglu_limit, build_dir=config.build_dir,
+                    workspace_owner=self._glm53_p4_workspace_owner)
         layer._glm53_p4_runtime = runtime
         self.moe_kernel = None
         released = _release_carriers(layer)
@@ -222,11 +226,12 @@ class _P4ServingMethod:
         raise RuntimeError("P4 requires the GLM modular routing path")
 
 
-def install(env=None, *, components=None):
+def install(env=None, *, components=None, parallel_config_getter=None):
     env = os.environ if env is None else env
     config = P4ServingConfig.from_env(env)
     if components is None:
         import vllm.models.glm5next.nvidia.model as model
+        from vllm.config import get_current_vllm_config
         from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import UnquantizedFusedMoEMethod
         from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4FusedMoE
         try:
@@ -237,6 +242,7 @@ def install(env=None, *, components=None):
             from runtime_patch.b12x_h16.b12x.moe._shared.kernels.p4_native import P4TrellisMoEBackend
         method_types = (UnquantizedFusedMoEMethod, ModelOptNvFp4FusedMoE)
         backend = P4TrellisMoEBackend
+        parallel_config_getter = lambda: get_current_vllm_config().parallel_config
     else:
         # Exact host integration seam. The tests execute these same factory
         # and method bodies with inert model/backend objects; no CUDA access.
@@ -244,17 +250,38 @@ def install(env=None, *, components=None):
     original = model.FusedMoEFactory
     if getattr(original, "_glm53_p4_installed", False):
         raise RuntimeError("P4 factory already installed")
+    owners, claimed_layers = {}, set()
+    ownership_lock = threading.Lock()
 
     def factory(*args, **kwargs):
-        match = LAYER_RE.search(kwargs.get("prefix", ""))
+        prefix = kwargs.get("prefix", "")
+        match = LAYER_RE.search(prefix)
+        selected = match is not None and int(match.group(1)) in config.layers
+        if selected and parallel_config_getter is not None:
+            parallel = parallel_config_getter()
+            if parallel.enable_dbo or parallel.use_ubatching:
+                raise ValueError("P4 requires DBO and microbatching disabled")
         runner = original(*args, **kwargs)
-        if match is None or int(match.group(1)) not in config.layers:
+        if not selected:
             return runner
         validate_layer(runner, kwargs)
         layer = runner.routed_experts
         method = layer.quant_method
         if type(method) not in method_types:
             raise RuntimeError("P4 requires a BF16 or ModelOpt NVFP4 carrier method")
+        identity = (int(match.group(1)), int(layer.moe_config.tp_rank))
+        # A namespace identifies one model construction in this worker. A
+        # second instance with the same namespace must use a fresh worker;
+        # silently treating it as another layer could alias captured storage.
+        model_key = (prefix[:match.start()], identity[1])
+        with ownership_lock:
+            claim = (*model_key, identity[0])
+            if claim in claimed_layers:
+                raise RuntimeError("P4 duplicate model namespace/layer/rank; reload requires a fresh worker")
+            claimed_layers.add(claim)
+            if model_key not in owners:
+                owners[model_key] = backend.new_workspace_owner()
+            workspace_owner = owners[model_key]
         base = type(method)
         if base not in _METHOD_CLASSES:
             _METHOD_CLASSES[base] = type("GLM53P4" + base.__name__, (_P4ServingMethod, base), {})
@@ -262,8 +289,9 @@ def install(env=None, *, components=None):
         # tensors until the ordinary post-load hook consumes the pinned sidecar.
         method.__class__ = _METHOD_CLASSES[base]
         method._glm53_p4_config = config
-        method._glm53_p4_identity = (int(match.group(1)), int(layer.moe_config.tp_rank))
+        method._glm53_p4_identity = identity
         method._glm53_p4_backend = backend
+        method._glm53_p4_workspace_owner = workspace_owner
         method.moe_kernel = None
         method.moe_quant_config = None
         return runner

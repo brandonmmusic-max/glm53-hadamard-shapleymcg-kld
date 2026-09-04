@@ -1,0 +1,26 @@
+{
+  "schema": "glm53-p4-serving-scratch-audit.v2",
+  "base_commit": "af7691109edb8c7a48084f92fdc7637324ed8cb4",
+  "decision_before_tests": "Add explicit model/TP-rank ownership, capture-sequence keying and process-lifetime capture pins; reject overlapping host dispatch, duplicate model namespaces, DBO and microbatching before any P4 forward. Preserve sequential-layer activation reuse within one owner and one stream/capture/shape.",
+  "found_by_static_audit": [
+    "The old process-global scratch key did not include a model owner or CUDA capture identity.",
+    "External ctypes launches cannot rely on Torch operators to retain sidecar tensors for graph replay.",
+    "vLLM use_ubatching may be true with enable_dbo false when ubatch_size exceeds one.",
+    "Sorting the readiness layer list could differ from the launcher's literal unsorted environment string."
+  ],
+  "required_checks": [
+    "Same-model sequential layers reuse storage; independent model owners cannot share it.",
+    "Eager, different capture IDs, different streams and different shapes use disjoint storage.",
+    "Captured sidecar and scratch references survive loss of the layer wrapper; no implicit eviction API exists.",
+    "A concurrent/reentrant host dispatch on one owner fails before writing scratch and releases its guard on exception.",
+    "Actual local vLLM DBO and microbatch configuration source contract is checked.",
+    "Startup import/config failures exit 78 before application code, even if error reporting itself fails.",
+    "The emitted readiness line satisfies the exact parent run_kld_v3.sh grep for every accepted layer-list syntax.",
+    "Offline compilation preserves the native E2M1 K64 instruction, shared-memory and spill constraints."
+  ],
+  "failure_policy": "Preserve numbered test attempts and amend only host/static implementation defects; do not infer device or quality evidence.",
+  "no_gpu_launch": true,
+  "protected_roles_opened": [],
+  "ldlq": false,
+  "claim_limit": "Host/static and offline compilation only. Graph replay, concurrency, device closure, KLD and speed remain unqualified. Captured resources are deliberately retained until worker exit pending explicit graph-lifecycle integration."
+}

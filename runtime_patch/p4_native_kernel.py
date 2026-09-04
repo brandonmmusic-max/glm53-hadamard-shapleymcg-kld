@@ -9,6 +9,7 @@ and B12X w4a8_trellis producer/consumer design; see THIRD_PARTY_NOTICES.md.
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import math
@@ -17,6 +18,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 
 import torch
 
@@ -24,7 +26,29 @@ import torch
 SOURCE = Path(__file__).resolve().parent / "p4" / "p4_moe.cu"
 MMA = "mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.block_scale.scale_vec::4X.f32.e2m1.e2m1.f32.ue4m3"
 _LIBRARIES = {}
-_WORKSPACES = {}
+# A graph stores raw addresses for these external ctypes launches. The adapter
+# has no graph-destruction callback, so captured resources intentionally remain
+# live until worker exit. Eager-only owners can be reclaimed with their model.
+_CAPTURE_PINS = {}
+
+
+class P4WorkspaceOwner:
+    """One model namespace/TP rank; sequential layers may share its scratch."""
+
+    def __init__(self):
+        self.workspaces = {}
+        self._dispatch_lock = threading.Lock()
+
+    @contextmanager
+    def dispatch(self):
+        # Torch and ctypes can release the GIL mid-enqueue. A shared stream
+        # orders GPU work, but does not prevent two host calls interleaving.
+        if not self._dispatch_lock.acquire(blocking=False):
+            raise RuntimeError("P4 concurrent/reentrant host dispatch is unsupported; DBO must be disabled")
+        try:
+            yield
+        finally:
+            self._dispatch_lock.release()
 
 
 def max_route_tiles(routes: int, experts: int) -> int:
@@ -132,7 +156,7 @@ def compile_library(build_dir: Path, *, nvcc: str | None = None) -> Path:
 class P4NativeTPMoE:
     """Two fused trellis projections with FP32 activation scratch and fixed-order top-k sum.
 
-    Stable route sorting uses reusable, shape/stream-keyed activation scratch.
+    Stable route sorting uses model/shape/stream/capture-keyed activation scratch.
     CUDA graph parity and throughput remain unqualified. Serving calls
     prepare() during weight loading, before vLLM may capture CUDA graphs.
     """
@@ -141,7 +165,8 @@ class P4NativeTPMoE:
                  expected_design_sha256: str, topk: int = 8, swiglu_limit: float = 10.0,
                  build_dir: Path | None = None, expected_file_sha256: str | None = None,
                  expected_file_bytes: int | None = None,
-                 expected_geometry: tuple[int, int, int] | None = None):
+                 expected_geometry: tuple[int, int, int] | None = None,
+                 workspace_owner: P4WorkspaceOwner | None = None):
         from safetensors import safe_open
 
         if expected_file_sha256 is not None:
@@ -154,7 +179,7 @@ class P4NativeTPMoE:
         self._initialize(tensors, metadata, device=device, tp_rank=tp_rank, layer=layer,
                          expected_design_sha256=expected_design_sha256, topk=topk,
                          swiglu_limit=swiglu_limit, build_dir=build_dir,
-                         expected_geometry=expected_geometry)
+                         expected_geometry=expected_geometry, workspace_owner=workspace_owner)
 
     @classmethod
     def from_tensors(cls, tensors, metadata, **kwargs):
@@ -165,7 +190,7 @@ class P4NativeTPMoE:
 
     def _initialize(self, tensors, metadata, *, device, tp_rank, layer,
                     expected_design_sha256, topk=8, swiglu_limit=10.0, build_dir=None,
-                    expected_geometry=None):
+                    expected_geometry=None, workspace_owner=None):
         self.experts, self.hidden, self.intermediate = validate_payload(
             tensors, metadata, layer=layer, tp_rank=tp_rank,
             expected_design_sha256=expected_design_sha256)
@@ -176,6 +201,9 @@ class P4NativeTPMoE:
             raise ValueError("P4 topk must be an integer in 1..experts")
         if not math.isfinite(swiglu_limit) or swiglu_limit <= 0:
             raise ValueError("P4 SwiGLU limit must be positive and finite")
+        if workspace_owner is not None and not isinstance(workspace_owner, P4WorkspaceOwner):
+            raise TypeError("P4 workspace requires an explicit P4WorkspaceOwner")
+        self.workspace_owner = workspace_owner if workspace_owner is not None else self.new_workspace_owner()
         self.device = torch.device(device)
         if self.device.type != "cuda":
             raise ValueError("P4 runtime requires CUDA; use p4_reference for CPU validation")
@@ -187,6 +215,10 @@ class P4NativeTPMoE:
         self.build_dir = build_dir or SOURCE.parents[2] / "build" / "p4-native"
         self.lib = None
         self.prepared = False
+
+    @staticmethod
+    def new_workspace_owner():
+        return P4WorkspaceOwner()
 
     def compile(self):
         if self.lib is None:
@@ -205,7 +237,9 @@ class P4NativeTPMoE:
             self.lib.p4_sum.argtypes = [ptr] * 3 + [integer] * 3 + [ptr]
             self.lib.p4_decode_probe.argtypes = [ptr, ptr] + [integer] * 3 + [ptr]
             self.lib.p4_prepare.argtypes = []
-            for name in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare"):
+            self.lib.p4_capture_state.argtypes = [ptr, ctypes.POINTER(integer), ctypes.POINTER(ctypes.c_ulonglong)]
+            for name in ("p4_project", "p4_quantize", "p4_swiglu", "p4_sum", "p4_decode_probe", "p4_prepare",
+                         "p4_capture_state"):
                 getattr(self.lib, name).restype = integer
             _LIBRARIES[key] = self.lib
         return self.lib
@@ -225,18 +259,35 @@ class P4NativeTPMoE:
         if status:
             raise RuntimeError(f"P4 CUDA launch failed with status {status}")
 
-    def workspace(self, rows, stream):
+    def capture_id(self, stream):
+        """None for eager, otherwise CUDA's unique process-lifetime sequence ID."""
+        active, sequence = ctypes.c_int(-1), ctypes.c_ulonglong()
+        self._check(self.lib.p4_capture_state(stream, ctypes.byref(active), ctypes.byref(sequence)))
+        if active.value not in (0, 1):
+            raise RuntimeError("P4 invalid CUDA capture-state response")
+        # Do not assume a valid capture ID is nonzero.
+        return sequence.value if active.value else None
+
+    def _pin_capture(self, capture_id, *inputs):
+        if capture_id is not None:
+            pins = _CAPTURE_PINS.setdefault((self.workspace_owner, capture_id), {"runtimes": {}, "inputs": {}})
+            pins["runtimes"][id(self)] = self  # sidecars, compiled module and owner scratch
+            for tensor in inputs:
+                pins["inputs"][id(tensor)] = tensor
+
+    def workspace(self, rows, stream, capture_id=None):
         """Activation/routing scratch only; never decoded weight matrices.
 
-        Reuse across sequential GLM layers on one stream avoids retaining an
-        entire activation workspace per layer. Distinct streams and shapes
-        have distinct storage; graph captures retain stable addresses. DBO
-        and sequence/expert parallelism are rejected by the serving adapter.
-        Returned model outputs never alias this reusable pool.
+        Only layers with the same explicit model owner may reuse storage.
+        Eager and distinct captures use disjoint storage even on one stream;
+        different streams/shapes also remain disjoint. Captured resources
+        are pinned until worker exit. No tensor here is a decoded weight.
+        Returned model outputs never alias this pool.
         """
-        key = (str(self.device), rows, int(stream), self.experts, self.hidden,
+        key = (str(self.device), rows, int(stream), capture_id, self.experts, self.hidden,
                self.intermediate, self.topk)
-        if key not in _WORKSPACES:
+        workspaces = self.workspace_owner.workspaces
+        if key not in workspaces:
             routes = rows * self.topk
             def empty(shape, dtype):
                 return torch.empty(shape, dtype=dtype, device=self.device)
@@ -256,8 +307,9 @@ class P4NativeTPMoE:
                 "routed": empty((routes, self.hidden), torch.float32),
                 "output": empty((rows, self.hidden), torch.float32),
             })
-            _WORKSPACES[key] = work
-        return _WORKSPACES[key]
+            workspaces[key] = work
+        self._pin_capture(capture_id)
+        return workspaces[key]
 
     @torch.inference_mode()
     def __call__(self, x, topk_weights, topk_ids, *, return_intermediates=False):
@@ -279,12 +331,13 @@ class P4NativeTPMoE:
         routes = m * self.topk
         if max_route_tiles(routes, self.experts) > 65535:
             raise ValueError("P4 route tile count exceeds the initial launch grid")
-        with torch.cuda.device(self.device):
+        with self.workspace_owner.dispatch(), torch.cuda.device(self.device):
             self.prepare()
             lib = self.lib
             current_stream = torch.cuda.current_stream(self.device)
             cuda_stream = current_stream.cuda_stream
-            work = self.workspace(m, cuda_stream)
+            capture_id = self.capture_id(cuda_stream)
+            work = self.workspace(m, cuda_stream, capture_id)
             ids = work["ids"]
             ids.view(m, self.topk).copy_(topk_ids)
             torch._assert_async(((ids >= 0) & (ids < self.experts)).all(), "P4 expert ID outside payload")
@@ -303,6 +356,7 @@ class P4NativeTPMoE:
             torch.cumsum(work["tile_counts"], 0, out=tiles[1:])
             activation = x.contiguous()
             weights = topk_weights.contiguous()
+            self._pin_capture(capture_id, activation, weights)
             gu, mid, routed, output = (work[name] for name in ("gu", "mid", "routed", "output"))
             t = self.tensors
 

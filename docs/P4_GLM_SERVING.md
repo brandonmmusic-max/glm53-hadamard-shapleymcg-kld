@@ -30,7 +30,7 @@ The router's original expert IDs, routing weights, normalization and scaling
 reach P4 unchanged. The P4 method is modular, reports no internal shared
 expert overlap, and leaves the enclosing runner's shared-expert scheduling
 and final reduction intact. Stock method classes and unselected layers are
-unchanged. Unsupported EP, DP, sequence parallelism, EPLB, DBO, bias, LoRA,
+unchanged. Unsupported EP, DP, sequence parallelism, EPLB, DBO/microbatching, bias, LoRA,
 input route weighting, different activation/clamp, or rotated boundaries fail
 closed. The current served geometry is GLM E288/H4096/I512-per-TP-rank,
 top-k 8, TP4 and SwiGLU clamp 10.
@@ -57,6 +57,10 @@ GLM53_P4_NATIVE_MANIFEST_SHA256=<exact manifest file hash>
 GLM53_P4_NATIVE_BUILD_DIR=/cache/p4-native
 ```
 
+Layer lists must be ascending, unpadded decimal lists without whitespace, such
+as `3,4,44`. Other spellings fail before installation. This keeps the readiness
+line identical to the launcher's literal `GLM53_P4_NATIVE_LAYERS` value.
+
 The manifest uses `glm53-p4-mcg-tp4-manifest.v1`, identifies the v2 codec and
 the exact source design, and contains all four rank files per listed layer.
 Each entry binds `layer`, `rank`, basename `path`, exact `bytes`, and `sha256`.
@@ -67,7 +71,8 @@ before CUDA allocation. File hashes are checked before and after loading.
 Successfully loaded sidecars replace the now-unused carrier parameters.
 
 Python normally swallows exceptions raised by `sitecustomize`. An explicitly
-requested P4 installation failure instead exits with status 78, so a bad
+requested P4 installation failure instead exits with status 78, including an
+import-time `SystemExit` or a failure while reporting the traceback. A bad
 sidecar or import cannot quietly serve the carrier as a supposed P4 result.
 The readiness and first-forward receipts name both projections and the exact
 codec/MMA path. Those logs are necessary dispatch evidence; they do not prove
@@ -81,8 +86,10 @@ arithmetic correctness by themselves.
 - A tight, exhaustively host-checked route bound avoids launching hundreds of
   idle expert tiles for single-token decode: E288/top-k8 has Y=8 versus Y=289.
 - Stable sorting writes into reusable outputs. Routing and activation scratch
-  is keyed by shape and CUDA stream and shared by sequential layers, avoiding
-  one retained workspace per layer. Returned model outputs own fresh storage.
+  is owned by one model namespace/TP rank and keyed by shape, CUDA stream and
+  capture sequence. Sequential layers within that owner can reuse it; separate
+  models, streams, eager execution and independent captures cannot. Returned
+  model outputs own fresh storage.
 - The shared library is cached by source/build identity. `cudaFuncGetAttributes`
   loads all functions before capture without a kernel launch. Cold compile or
   preparation during graph capture is rejected. All C launches use the
@@ -99,6 +106,42 @@ P4 uses `mxf4nvf4 m16n8k64`, NVFP4's native issue class. P8 uses
 product; P4 is the intended speed product. Neither instruction selection nor
 this structural integration establishes a speed improvement.
 
+## Focused scratch audit and lifetime restrictions
+
+The initial `af76911` implementation keyed a process-global scratch pool only
+by stream and shape. That was insufficient to establish independence between
+models or captured graphs. The follow-up replaces it with explicit model
+ownership, CUDA's capture-sequence identifier, and a nonblocking host-enqueue
+guard. CUDA documents the sequence identifier as unique for the process
+lifetime; the implementation distinguishes eager execution from capture ID
+zero without assuming IDs begin at one. An invalidated capture or a failed
+query is an error, never an eager fallback. The exact CUDA 13.2 header contract
+and offline compilation are checked in the receipt. [CUDA stream API](https://docs.nvidia.com/cuda/archive/11.8.0/cuda-runtime-api/group__CUDART__STREAM.html)
+
+Captures replay stored addresses, and custom CUDA launches are outside Torch's
+operator-level input-liveness tracking. Therefore each capture retains the
+runtime, physical sidecars, scratch, and external-launch input references.
+There is deliberately no eviction/reset operation: these pins remain until
+worker exit. The GLM adapter rejects a second construction of the same model
+namespace/layer/rank; reloading requires a new worker. Distinct model namespaces
+receive independent owners. DBO and `use_ubatching` are rejected using the
+actual vLLM parallel configuration before the stock carrier factory runs.
+[PyTorch graph memory semantics](https://docs.pytorch.org/docs/main/notes/cuda.html),
+[custom-launch liveness caveat](https://docs.pytorch.org/docs/stable/generated/torch.cuda.graph.html).
+
+Tradeoffs: each eager/stream/shape or capture-specific workspace consumes
+additional activation memory, and repeated recapture retains additional
+resources until worker exit. One capture-state query and a host guard are
+added per eager/capture forward; replay bypasses this Python path. Multiple
+host calls into one owner's P4 projection cannot overlap; separate stream
+buffers prevent GPU scratch aliasing, but concurrency itself is not qualified.
+Warm-up/capture memory accounting and graph replay tests are required before
+production use. Do not describe static pointer ownership as device closure.
+
+The replayable audit decision, numbered attempts, exact source hashes,
+readiness-grep command and source-contract checks are under
+`evidence/opened/codec-v2/p4-serving/scratch-audit-v2/`.
+
 ## Remaining device gates
 
 After the P8 build releases the GPUs, test exact packed decode bytes,
@@ -106,6 +149,9 @@ FC1/SwiGLU/FC2/output arithmetic, eager-versus-graph outputs, then coherent
 GLM generation and same-window pseudoquant/kernel KLD. Preserve five-run
 determinism and exact TP4 prefill/decode benchmark conditions. Keep the
 28 confirmation logits unopened. No LDLQ or BlockLDLQ was implemented.
+Also exercise multiple capture IDs, graph replay on alternate streams, model
+teardown, repeated capture and peak retained-memory accounting. The host
+ownership audit cannot replace any of these device gates.
 
 The procedural constants, stream and lane conventions are ports from
 ExLlamaV3 through KQuant/QSRT. Producer/MMA organization follows the vendored
