@@ -23,6 +23,108 @@ ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
     "GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH", ""
 ).strip().lower()
 P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
+P8_NATIVE = os.environ.get("GLM53_P8_NATIVE", "").strip().lower()
+
+
+if P8_NATIVE and P8_PSEUDOQUANT:
+    raise RuntimeError("GLM53_P8_NATIVE and GLM53_P8_PSEUDOQUANT are mutually exclusive")
+
+
+if P8_NATIVE:
+    if P8_NATIVE not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(f"invalid GLM53_P8_NATIVE={P8_NATIVE!r}")
+    import torch as _p8n_torch
+    import vllm.models.glm5next.nvidia.model as _p8n_glm_model
+    from p8_native_kernel import P8NativeTPMoE as _P8NativeTPMoE
+    from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
+        UnquantizedFusedMoEMethod as _P8NativeUnquantizedFusedMoEMethod,
+    )
+
+    _P8N_SIDECAR_TEXT = os.environ.get("GLM53_P8_NATIVE_SIDECAR_DIR", "").strip()
+    if not _P8N_SIDECAR_TEXT:
+        raise RuntimeError("GLM53_P8_NATIVE requires GLM53_P8_NATIVE_SIDECAR_DIR")
+    _P8N_SIDECAR_DIR = Path(_P8N_SIDECAR_TEXT)
+    _P8N_LAYER_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
+    _P8N_ORIGINAL_PROCESS = _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
+    _P8N_ORIGINAL_FORWARD = _P8NativeUnquantizedFusedMoEMethod.forward_native
+
+    def _p8n_process_weights_after_loading(self, layer):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_PROCESS(self, layer)
+        self.moe_kernel = None
+        rank = int(layer._glm53_p8_tp_rank)
+        sidecar = _P8N_SIDECAR_DIR / f"p8-layer-003-tp4-rank-{rank}.safetensors"
+        layer._glm53_p8_native_runtime = _P8NativeTPMoE(
+            sidecar,
+            device=layer.w13_weight.device,
+            tp_rank=rank,
+            topk=8,
+            hidden=4096,
+            intermediate=512,
+            swiglu_limit=10.0,
+        )
+        print(
+            "GLM53_P8_NATIVE_WEIGHTS_READY "
+            f"layer=3 rank={rank} sidecar={sidecar} stream=K4 law=mcg "
+            "alphabet=E4M3 scale=UE8M0_K32 boundary=identity ldlq=false",
+            flush=True,
+        )
+
+    def _p8n_forward_native(
+        self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
+    ):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_FORWARD(
+                self,
+                layer,
+                x,
+                topk_weights,
+                topk_ids,
+                shared_experts,
+                shared_experts_input,
+            )
+        output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
+        if not getattr(layer, "_glm53_p8_native_forward_logged", False):
+            print(
+                "GLM53_P8_NATIVE_FORWARD "
+                f"layer=3 rank={layer._glm53_p8_tp_rank} stream=K4 "
+                "mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
+                "law=procedural_mcg boundary=identity physical_bpw=4.25 ldlq=false",
+                flush=True,
+            )
+            layer._glm53_p8_native_forward_logged = True
+        return output
+
+    _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading = (
+        _p8n_process_weights_after_loading
+    )
+    _P8NativeUnquantizedFusedMoEMethod.forward_native = _p8n_forward_native
+    _P8N_ORIGINAL_FACTORY = _p8n_glm_model.FusedMoEFactory
+
+    def _p8n_factory(*args, **kwargs):
+        prefix = kwargs.get("prefix", "")
+        match = _P8N_LAYER_RE.search(prefix)
+        runner = _P8N_ORIGINAL_FACTORY(*args, **kwargs)
+        if match is None or int(match.group(1)) != 3:
+            return runner
+        routed = runner.routed_experts
+        if not isinstance(routed.quant_method, _P8NativeUnquantizedFusedMoEMethod):
+            raise RuntimeError("P8 native layer 3 requires the BF16 carrier method")
+        tp_size = int(routed.moe_config.moe_parallel_config.tp_size)
+        tp_rank = int(routed.moe_config.tp_rank)
+        if tp_size != 4 or not 0 <= tp_rank < 4:
+            raise RuntimeError(f"P8 native requires TP4, got size={tp_size} rank={tp_rank}")
+        routed._glm53_p8_native = True
+        routed._glm53_p8_tp_rank = tp_rank
+        routed._glm53_p8_native_forward_logged = False
+        return runner
+
+    _p8n_glm_model.FusedMoEFactory = _p8n_factory
+    print(
+        "GLM53_P8_NATIVE_PATCH_ACTIVE layers=3 tp=4 K4 procedural_mcg "
+        "E4M3 UE8M0_K32 identity physical_bpw=4.25 ldlq=false",
+        flush=True,
+    )
 
 
 if P8_PSEUDOQUANT:

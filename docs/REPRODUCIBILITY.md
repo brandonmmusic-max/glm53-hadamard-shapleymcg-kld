@@ -145,7 +145,13 @@ history.
   synthetic payloads and for the actual full-size K4 layer-3 payload at M33 and
   M64 (real-payload cosine 0.998940–0.998948). The former failure was an
   omitted mandatory K32 MMA lane permutation in one materialization branch;
-  it remains preserved. Integrated end-to-end kernel KLD is not yet measured.
+  it remains preserved. The physical TP4 kernel subsequently closed against
+  decoded pseudoquant on all 32 opened conditional-fit windows: mean delta
+  `+0.0003952`, BCa 95% CI `[-0.0018896,+0.0029882]`, passing the relaxed
+  absolute-mean engineering margin of `0.0014`. This is an end-to-end device
+  closure, not evidence that P8 beats NVFP4. The current correctness run uses
+  the materialized dynamic arm for small M because the first E=288 small-M
+  diagnostic emitted non-finite values.
   Independently, the
   strongest new layer-22 candidate improved causal
   full-expert NMSE by 17.07% but regressed matched-path end-to-end KLD by

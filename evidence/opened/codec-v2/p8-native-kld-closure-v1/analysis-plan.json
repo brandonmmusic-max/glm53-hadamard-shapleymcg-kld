@@ -1,0 +1,65 @@
+{
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 20260958,
+    "unit": "window"
+  },
+  "codec": {
+    "alphabet": "E4M3",
+    "bits": 4,
+    "boundary": "identity",
+    "encoder": "Viterbi plus full-Hessian GPTQ-style error feedback; no LDLQ",
+    "law": "procedural MCG alpha 2.0",
+    "physical_bpw": 4.25,
+    "scale": "physical UE8M0/32"
+  },
+  "created_at": "2026-09-04T19:42:54.122555+00:00",
+  "decision_rule": "engineering closure passes when absolute mean delta is at most 0.0014 nats; paired BCa CI, domain deltas, window wins, and detectable-effect limit remain reported nonblocking development controls under decision 12",
+  "estimand": "paired equal-window mean KLD(kernel) minus KLD(decoded pseudoquant)",
+  "inputs": {
+    "launcher": "1922a1a2cc80a523e9815094c2272995aea30cbb11a60fa4e38f3ad358e574f8",
+    "native_runtime": "7ce647d99adac2aaf557150ea7aa50cb9d7e7d101b601a188ea0e74d01178ab6",
+    "overlay_receipt": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/identity-mcg-layer3-v1/candidate-bf16-pseudoquant/BF16_LAYER_RECEIPT.json",
+      "sha256": "ec9eae6b5041c2a3f5b4a86ac541453a721301543023c91b39ee21a8c1e9ea12"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    },
+    "sidecar_receipt": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-native-tp4-sidecars-v1/receipt.json",
+      "sha256": "18aac47b7c8fb6b6925d1adda0b791f8b3e5d27ad90225d27274a05f498fab81"
+    },
+    "sitecustomize": "7003a3bc91f8bca27a3b63c93d434ec02ae05058be43ada44699166e458d3d6d"
+  },
+  "ldlq": false,
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "opened conditional-fit n=32, developmental closure only",
+  "run_ids": {
+    "kernel": "p8-identity-mcg-l3-native-kernel-cf32-v1",
+    "pseudoquant": "p8-identity-mcg-l3-pseudoquant-cf32-v1"
+  },
+  "run_order": [
+    "pseudoquant",
+    "kernel"
+  ],
+  "runtime": {
+    "compute": "mxf8f6f4 m16n8k32",
+    "cuda_graph": false,
+    "current_kernel_scope": "materialized dynamic arm for both prefill and decode correctness",
+    "dcp": 1,
+    "ep": 1,
+    "image": {
+      "id": "sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8",
+      "tag": "klc/glm53-flash-nvfp4:p8-mcg-identity-v14"
+    },
+    "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
+    "tp": 4
+  },
+  "schema": "glm53-p8-kernel-pseudoquant-kld-closure-plan.v1",
+  "status": "frozen-before-run",
+  "stopping_rule": "one complete run per arm; preserve all windows with no exclusions or rerolls",
+  "strict_quality_claim_gate": "unchanged: no claim of beating NVFP4 unless a matched teacher-KLD BCa upper bound is below zero on an eligible role"
+}

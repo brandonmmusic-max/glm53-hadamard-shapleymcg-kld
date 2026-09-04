@@ -103,6 +103,17 @@ This clears device arithmetic only: integrated end-to-end kernel KLD, speed,
 and five-run determinism remain unqualified. The earlier W6A8 activation
 failure remains a negative control, and neither the uniform nor expert-masked
 encoder has passed the strict matched-path end-to-end KLD claim gate.
+
+The physical layer-3 kernel has now also completed its first end-to-end
+teacher-KLD closure. On the same opened, balanced 32-window conditional-fit
+role it measured `0.0539830851` versus `0.0535879281` for the exact decoded
+pseudoquant carrier: delta `+0.0003951571` (`+0.7374%`), paired BCa 95% CI
+`[-0.001890,+0.002988]`, with 13/32 window wins. This passes the relaxed
+engineering margin (`|delta| <= 0.0014`) and proves the physical fused path is
+close enough to continue. It does **not** prove that the codec beats NVFP4.
+The current correctness run uses the materialized dynamic arm even at small M;
+the first E=288 small-M specialization emitted non-finite values and remains a
+preserved diagnostic, so decode speed is not yet qualified.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.
