@@ -24,6 +24,9 @@ if sha(design_path) != plan["inputs"]["design"]["sha256"]:
     raise SystemExit("pilot design hash mismatch")
 if sha(manifest_path) != plan["inputs"]["overlay_manifest"]["sha256"]:
     raise SystemExit("overlay manifest hash mismatch")
+addendum = plan_path.parent.parent / plan["inputs"]["preflight_addendum"]["path"]
+if sha(addendum) != plan["inputs"]["preflight_addendum"]["sha256"]:
+    raise SystemExit("preflight addendum hash mismatch")
 if manifest["design_sha256"] != sha(design_path):
     raise SystemExit("overlay/design identity mismatch")
 models = {row["coalition_id"]: row["model"] for row in manifest["coalitions"]}
