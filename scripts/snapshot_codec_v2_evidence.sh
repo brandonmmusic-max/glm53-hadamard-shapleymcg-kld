@@ -47,6 +47,9 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/scaled-mcg-layer3-kld-v1" p8-h128-sca
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/all-experts-v1" p8-h128-all-experts
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/identity-mcg-layer3-v1/receipts" p8-identity-mcg-layer3-build-receipts
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/boundary-policy-v1" p8-boundary-policy
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/joint-route-policy-v1" p8-joint-route-policy
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/joint-route-fc1-policy-v2" p8-joint-route-fc1-policy
+copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/fc1-powered-validation-v1" p8-fc1-powered-validation
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
