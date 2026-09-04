@@ -88,6 +88,7 @@ def build_design(
             }
         )
     realized_bpw = base_bpw + slots / len(units) * (upgrade_bpw - base_bpw)
+    native_physical_game = game == "p8-k4-to-scalar-mxfp8"
     if game == "matched-gptq-to-p8-interaction-pilot":
         tiers = {
             "base": {
@@ -112,20 +113,24 @@ def build_design(
                 "name": "K4 procedural-MCG P8",
                 "stored_bpw": base_bpw,
                 "weights": "four trellis edge bits per weight plus one UE8M0 byte per K32",
-                "compute": "decode to fully-scaled E4M3 in the MMA warp; identity SFB; mxf8f6f4",
+                "compute": "decode E4M3 codes in the MMA warp; consume physical UE8M0/32 SFB; mxf8f6f4",
             },
             "upgrade": {
                 "name": "scalar MXFP8 E4M3",
                 "stored_bpw": upgrade_bpw,
                 "weights": "one E4M3 byte per weight plus one UE8M0 byte per K32",
-                "compute": "native E4M3 mxf8f6f4",
+                "compute": "native E4M3 with physical UE8M0/32 SFB; mxf8f6f4",
             },
         }
         isa = "P8 and scalar MXFP8 use mxf8f6f4 at twice the MMA issue count of NVFP4; this is the quality product, not the P4 speed product."
         next_gate = "build and measure the selected allocation as one endpoint; Shapley values alone are not a quality claim"
         final_rate_gate = "exact physical receipt, including every boundary/policy byte, must be <= 6.0 bpw"
     return {
-        "schema": "glm53-p8.direct-kld-native-shapley-design.v1",
+        "schema": (
+            "glm53-p8.direct-kld-native-shapley-design.v2"
+            if native_physical_game
+            else "glm53-p8.direct-kld-native-shapley-design.v1"
+        ),
         "seed": seed,
         "game": game,
         "role": role,
@@ -142,6 +147,19 @@ def build_design(
             "LDLQ and BlockLDLQ are not used",
         ],
         "tiers": tiers,
+        "physical_scale_abi": {
+            "encoding": "one UE8M0 byte per 32 weights",
+            "mma_consumption": "physical non-unit UE8M0/32 SFB plane",
+            "identity_sfb_forbidden": native_physical_game,
+        },
+        "encoder_contract": {
+            "objective": "output-aware Viterbi with full-Hessian GPTQ-style inter-group error feedback",
+            "sampling": "domain-balanced REAP fit role",
+            "activation_order": "static within each native 16-column trellis group",
+            "scale_refit": "joint with trellis codes for two iterations",
+            "law": "checkpoint-family procedural MCG alpha 2.0",
+            "ldlq": False,
+        },
         "allocation": {
             "budget_bpw": budget_bpw,
             "upgrade_slots": slots,
@@ -186,7 +204,10 @@ def analyze(
     bootstrap_seed: int = 20260966,
 ) -> dict:
     design = json.loads(design_path.read_text())
-    if design.get("schema") != "glm53-p8.direct-kld-native-shapley-design.v1":
+    if design.get("schema") not in {
+        "glm53-p8.direct-kld-native-shapley-design.v1",
+        "glm53-p8.direct-kld-native-shapley-design.v2",
+    }:
         raise RuntimeError("unsupported direct-KLD Shapley design")
     if design.get("ldlq") is not False:
         raise RuntimeError("design does not preserve the no-LDLQ boundary")

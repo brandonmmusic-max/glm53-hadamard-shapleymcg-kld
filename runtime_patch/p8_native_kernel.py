@@ -2,8 +2,8 @@
 
 This is a direct device path: the K4 trellis stream is decoded to E4M3 inside
 the MMA kernel and physical UE8M0/32 scales are consumed by the tensor core.
-It intentionally implements only the frozen TP4, layer-3, identity-boundary
-development contract used by the kernel-versus-pseudoquant KLD gate.
+It implements the frozen TP4 identity-boundary P8 contract for any GLM routed
+layer whose sidecar carries the matching immutable layer identity.
 """
 from __future__ import annotations
 
@@ -63,6 +63,8 @@ class P8NativeTPMoE:
         *,
         device: torch.device,
         tp_rank: int,
+        layer: int = 3,
+        expected_design_sha256: str | None = None,
         topk: int = 8,
         hidden: int = 4096,
         intermediate: int = 512,
@@ -73,6 +75,9 @@ class P8NativeTPMoE:
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
+        self.layer = int(layer)
+        if not 3 <= self.layer <= 44:
+            raise ValueError("P8 native layer must be in GLM routed layers 3..44")
         self.topk = int(topk)
         self.hidden = int(hidden)
         self.intermediate = int(intermediate)
@@ -84,9 +89,10 @@ class P8NativeTPMoE:
             raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
             metadata = src.metadata() or {}
+            schema = metadata.get("schema")
+            source_design_sha256 = metadata.get("source_design_sha256")
             required = {
-                "schema": "glm53-p8-identity-mcg-tp4-rank.v1",
-                "layer": "3",
+                "layer": str(self.layer),
                 "rank": str(self.tp_rank),
                 "world_size": "4",
                 "bits": "4",
@@ -96,12 +102,33 @@ class P8NativeTPMoE:
                 "boundary": "identity",
                 "ldlq": "false",
             }
-            if any(metadata.get(key) != value for key, value in required.items()):
+            if (
+                schema not in {
+                    "glm53-p8-identity-mcg-tp4-rank.v1",
+                    "glm53-p8-mcg-tp4-rank.v2",
+                }
+                or any(metadata.get(key) != value for key, value in required.items())
+            ):
                 raise RuntimeError(f"invalid P8 native sidecar metadata: {metadata}")
+            if schema == "glm53-p8-mcg-tp4-rank.v2":
+                if (
+                    not isinstance(source_design_sha256, str)
+                    or len(source_design_sha256) != 64
+                    or any(char not in "0123456789abcdef" for char in source_design_sha256)
+                ):
+                    raise RuntimeError("v2 P8 sidecar lacks a valid source design hash")
+                if (
+                    expected_design_sha256 is not None
+                    and source_design_sha256 != expected_design_sha256
+                ):
+                    raise RuntimeError("P8 sidecar does not match the expected design")
+            elif expected_design_sha256 is not None:
+                raise RuntimeError("historical P8 sidecars cannot satisfy a v2 design pin")
             w13 = src.get_tensor("w13_trellis")
             w2 = src.get_tensor("w2_trellis")
             w13_scale = src.get_tensor("w13_scale_ue8m0")
             w2_scale = src.get_tensor("w2_scale_ue8m0")
+        self.source_design_sha256 = source_design_sha256
         experts = int(w13.shape[1])
         if tuple(w13.shape) != (2, experts, hidden // 16, intermediate // 16, 64):
             raise RuntimeError(f"unexpected W13 trellis shape {tuple(w13.shape)}")

@@ -104,6 +104,16 @@ interaction-aware allocation, but two antithetic permutations are not enough
 to claim a stable four-layer ranking and this BF16-overlay pilot is not a
 native-kernel result.
 
+The all-42 native6 execution contract is frozen in
+`experiments/p8-kld-shapley-native6-v2.json`. Version 2 supersedes the
+unexecuted version-1 compute statement before any native6 coalition run: the
+P8 MMA consumes the physical non-unit UE8M0/32 scale plane; identity SFB is
+forbidden. The design allocates 18 whole routed layers to scalar MXFP8 and 24
+to 4.25-bpw P8 for 5.964286 payload bpw before container and policy metadata.
+It retains 0.035714 bpw of headroom and excludes LDLQ and BlockLDLQ. The
+amendment and both immutable design hashes are recorded in
+`experiments/p8-kld-shapley-native6-v2-amendment.json`.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 P8 device arithmetic closure now passes for the procedural-MCG K3/K4 decoder
@@ -135,6 +145,33 @@ loss—but it does not pass the strict quality gate.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.
+
+### Native product boundary
+
+The physical layer-3 **P8** endpoint has achieved the intended fused path:
+the K4 procedural-MCG stream is decoded per element in the kernel prologue,
+the resulting E4M3 codes use the physical UE8M0/32 weight-scale plane, and the
+matrix products execute through `mxf8f6f4`. There is no dense BF16 weight
+materialization or BF16 weight matmul in that endpoint. This is one fused
+kernel path, not one machine instruction; `mxf8f6f4` has twice the MMA issue
+count of NVFP4 for the same logical K span.
+
+The **P4** endpoint has not yet achieved this status. P4 still requires a
+bit-exact prologue that emits packed E2M1 nibbles plus E4M3/16 scales into
+`mxf4nvf4`. Therefore the current evidence supports a native Tensor Core P8
+codec for one physical layer, not an all-layer native codec and not yet an
+NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
+BF16 overlays and must not be cited as native-kernel execution.
+
+The first version-2 non-layer-3 artifact now closes this contract at layer 20.
+All 288 experts were encoded from the pinned BF16 source and domain-balanced
+REAP fit capture into four codec-only chunks, then sharded into TP4 sidecars.
+Each rank is exactly 4.25 payload bpw and 4.2500032142 bpw including its
+safetensors container. On rank 0, eight experts passed the materialized fused
+kernel at M=3 and M=33 with cosine `0.999913` and `0.999857`, relative L2
+`0.013157` and `0.016887`, finite outputs, and bitwise-identical hashes across
+five runs. This demonstrates reusable, layer-parameterized P8 device arithmetic;
+it remains a TP-local closure result rather than full-model KLD or speed.
 
 | Endpoint | Mean KLD | Change vs same-loader stock | Paired BCa 95% CI for candidate minus stock | Status |
 |---|---:|---:|---:|---|
