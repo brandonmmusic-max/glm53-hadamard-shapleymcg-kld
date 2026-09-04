@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-09-04T18:11:34.014882+00:00",
+  "decision_question": "Do table-free procedural MCG K3/K4 weights execute through both split FC1 and FC2 mxf8f6f4 kernels at M33 and M64 within tolerance?",
+  "encoder_contract": "Viterbi plus full-Hessian GPTQ-style feedback; no LDLQ; native ties-to-even E4M3",
+  "image": {
+    "id": "sha256:d12ac6860315edee26a17108091efd8fa5e79f91e9d7cafb584fcdfed51c9cf5",
+    "tag": "klc/glm53-flash-nvfp4:p8-mcg-split-v1"
+  },
+  "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4; P8 is quality-oriented",
+  "observation": "One unsealed M33/M64 K3/K4 bring-up passed; this new-seed repeat is the decision-bearing result.",
+  "required_cells": [
+    {
+      "bits": 3,
+      "tokens": 33
+    },
+    {
+      "bits": 3,
+      "tokens": 64
+    },
+    {
+      "bits": 4,
+      "tokens": 33
+    },
+    {
+      "bits": 4,
+      "tokens": 64
+    }
+  ],
+  "role": "developmental split-prefill arithmetic closure; no teacher logits or protected roles",
+  "schema": "glm53-p8-mcg-split-closure-plan.v1",
+  "seed": 20260943,
+  "sources": {
+    "b12x_reference": "757621e70414d34554954574c9344daad0b3a0bd6c49a95fb089ff8ad7bb52f8",
+    "b12x_test_oracle": "691225bec738cbdb6b7af3d6438864e211718e23f7dd19e9316c8e831c638613",
+    "mcg_decode": "8b1e90d3189231ff77b4e3a44aa8d51d4383d565d5e43a7e73faa40cec65b17f",
+    "probe": "ce52e0097a3d7ab5d8ddd91bcce3fa407e7b036c9265a9a2d0325ab6cf0ef60c",
+    "runtime_dynamic": "f4b6390b111abc7e69bef250ebf2be60d2a08e6d4abdd8fa989f8e68e4ee5d29",
+    "split_transformer": "56a50ce9106f47e75f09274613394eb171bc4bdade0d80541dcde6fc924e825d"
+  },
+  "status": "frozen-before-repeat",
+  "stopping_rule": "one fresh-seed four-cell repeat; preserve any failure without reroll",
+  "table_bytes": 0,
+  "thresholds": {
+    "cosine_min_exclusive": 0.995,
+    "finite": true,
+    "relative_l2_max_exclusive": 0.12
+  }
+}

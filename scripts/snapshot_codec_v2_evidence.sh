@@ -53,6 +53,8 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/fc1-powered-validation-v1" p8-fc1-pow
 copy_json_tree "$CAMPAIGN/codec-v2/p8-scalar16-hybrid-v1" p8-scalar16-hybrid
 copy_json_tree "$CAMPAIGN/codec-v2/p8-mcg-projection-alpha-v1" p8-mcg-projection-alpha
 copy_json_tree "$CAMPAIGN/codec-v2/p8-device-closure-v1" p8-device-closure
+copy_json_tree "$CAMPAIGN/codec-v2/p8-split-device-closure-v1" p8-split-device-closure
+copy_json_tree "$CAMPAIGN/codec-v2/p8-split-determinism-v1" p8-split-determinism
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
