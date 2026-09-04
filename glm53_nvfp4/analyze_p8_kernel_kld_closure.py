@@ -43,7 +43,16 @@ def main() -> None:
     for key, value in zip(expected, delta, strict=True):
         by_domain[domain[key]].append(float(value))
     mean_delta = float(delta.mean())
-    passed = abs(mean_delta) <= 0.0014
+    require_zero_in_ci = plan.get("schema") == (
+        "glm53-p8-native-deterministic-kld-closure-plan.v2"
+    )
+    zero_in_ci = bool(interval[0] <= 0.0 <= interval[1])
+    passed = abs(mean_delta) <= 0.0014 and (
+        zero_in_ci if require_zero_in_ci else True
+    )
+    decision_rule = plan.get(
+        "decision_rule", plan.get("engineering_decision_rule", "")
+    )
     payload = {
         "schema": "glm53-p8-kernel-pseudoquant-kld-closure-analysis.v1",
         "decision": "pass-engineering-kld-closure" if passed else "fail",
@@ -59,10 +68,11 @@ def main() -> None:
         "relative_change": float(k.mean() / p.mean() - 1.0),
         "absolute_mean_delta_limit": 0.0014,
         "delta_ci95_bca": [float(interval[0]), float(interval[1])],
+        "zero_in_delta_ci95_bca": zero_in_ci,
         "delta_ci95_percentile": [float(x) for x in np.quantile(bootstrap, (0.025, 0.975))],
         "window_wins_kernel": int((delta < 0).sum()),
         "domain_mean_delta_kld": {key: float(np.mean(value)) for key, value in sorted(by_domain.items())},
-        "decision_rule": plan["decision_rule"],
+        "decision_rule": decision_rule,
         "strict_quality_claim_gate_relaxed": False,
         "engineering_window_gate_relaxed": True,
         "confirmation_logits_opened": False,
