@@ -19,6 +19,12 @@ ROTATION_SCOPE=${11:-gate-up}
 ROTATION_PLACEMENT=${GLM53_ROTATION_PLACEMENT:-runner}
 LOAD_FORMAT=${GLM53_LOAD_FORMAT:-safetensors}
 HUMMING_ACT=${GLM53_HUMMING_ACT:-bf16}
+DCP_SIZE=${GLM53_DCP_SIZE:-4}
+ROUTE_CAPTURE_OUTPUT=${GLM53_ROUTE_CAPTURE_OUTPUT:-}
+P8_PSEUDOQUANT=${GLM53_P8_PSEUDOQUANT:-}
+P8_PSEUDOQUANT_ARM=${GLM53_P8_PSEUDOQUANT_ARM:-candidate}
+P8_BOUNDARY_FILES=${GLM53_P8_BOUNDARY_FILES:-}
+DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
@@ -32,6 +38,11 @@ HUMMING_ACT=${GLM53_HUMMING_ACT:-bf16}
 [ "$LOAD_FORMAT" = safetensors ] || [ "$LOAD_FORMAT" = instanttensor ] || { echo "invalid GLM53_LOAD_FORMAT" >&2; exit 2; }
 [ "$HUMMING_ACT" = bf16 ] || [ "$HUMMING_ACT" = nvfp4 ] || { echo "invalid GLM53_HUMMING_ACT" >&2; exit 2; }
 [ "$HUMMING_ACT" = bf16 ] || [ "$MOE_BACKEND" = humming ] || { echo "NVFP4 Humming activations require humming backend" >&2; exit 2; }
+[ "$DCP_SIZE" = 1 ] || [ "$DCP_SIZE" = 4 ] || { echo "GLM53_DCP_SIZE must be 1 or 4" >&2; exit 2; }
+[ -z "$ROUTE_CAPTURE_OUTPUT" ] || [ "$DCP_SIZE" = 1 ] || { echo "routed-expert return requires GLM53_DCP_SIZE=1" >&2; exit 2; }
+[ "$DISABLE_EP" = 0 ] || [ "$DISABLE_EP" = 1 ] || { echo "GLM53_DISABLE_EP must be 0 or 1" >&2; exit 2; }
+[ -z "$P8_PSEUDOQUANT" ] || [ "$DISABLE_EP" = 1 ] || { echo "P8 pseudoquant reference requires GLM53_DISABLE_EP=1" >&2; exit 2; }
+[ -z "$P8_PSEUDOQUANT" ] || [ -n "$P8_BOUNDARY_FILES" ] || { echo "P8 pseudoquant requires GLM53_P8_BOUNDARY_FILES" >&2; exit 2; }
 if [ -f "$MODEL_DIR/OVERLAY.json" ] && [ "$LOAD_FORMAT" != instanttensor ]; then
   echo "sparse overlay checkpoints require GLM53_LOAD_FORMAT=instanttensor" >&2
   exit 2
@@ -99,12 +110,37 @@ if [ "$HUMMING_ACT" = nvfp4 ]; then
     rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
   fi
 fi
+if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
+  rotation_env+=(
+    -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
+    -e GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH=1
+  )
+  if [ ${#rotation_mount[@]} -eq 0 ]; then
+    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  fi
+fi
+if [ -n "$P8_PSEUDOQUANT" ]; then
+  rotation_env+=(
+    -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
+    -e GLM53_P8_PSEUDOQUANT="$P8_PSEUDOQUANT"
+    -e GLM53_P8_PSEUDOQUANT_ARM="$P8_PSEUDOQUANT_ARM"
+    -e GLM53_P8_LAYERS=3
+    -e GLM53_P8_BOUNDARY_FILES="$P8_BOUNDARY_FILES"
+  )
+  if [ ${#rotation_mount[@]} -eq 0 ]; then
+    rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
+  fi
+fi
 [ -z "${GLM53_B12X_FAST_MATH:-}" ] || rotation_env+=( -e B12X_FAST_MATH="$GLM53_B12X_FAST_MATH" )
 [ -z "${GLM53_B12X_DYNAMIC_DOWN_SCALE:-}" ] || rotation_env+=( -e B12X_ENABLE_DYNAMIC_DOWN_SCALE="$GLM53_B12X_DYNAMIC_DOWN_SCALE" )
 [ -z "${GLM53_B12X_DETERMINISTIC_OUTPUT:-}" ] || rotation_env+=( -e B12X_DYNAMIC_DETERMINISTIC_OUTPUT="$GLM53_B12X_DETERMINISTIC_OUTPUT" )
 [ -z "${GLM53_W6A8_SWIGLU_LIMIT:-}" ] || rotation_env+=( -e GLM53_W6A8_SWIGLU_LIMIT="$GLM53_W6A8_SWIGLU_LIMIT" )
 moe_backend_arg=""
 [ "$MOE_BACKEND" = auto ] || moe_backend_arg="--moe-backend $MOE_BACKEND"
+route_server_arg=""
+[ -z "$ROUTE_CAPTURE_OUTPUT" ] || route_server_arg="--enable-return-routed-experts"
+enable_ep_arg="--enable-expert-parallel"
+[ "$DISABLE_EP" = 0 ] || enable_ep_arg=""
 if [ "$ROTATION" = learned ]; then
   ROTATION_FILE=$(readlink -f "$ROTATION_FILE")
   rotation_env+=( -e GLM53_ROTATION_FILE=/rotation/rotations.safetensors )
@@ -146,12 +182,12 @@ docker run -d --name "$TEST" --gpus all --network host --shm-size 32g --restart 
   -v "$CAMPAIGN:$CAMPAIGN:rw" -v "$CACHE_DIR:/cache:rw" -v "$CAPTURES:$CAPTURES:rw" "${rotation_mount[@]}" \
   "$IMAGE" -lc "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model \
     --served-model-name $MODEL_NAME --host 0.0.0.0 --port $PORT --language-model-only \
-    --tensor-parallel-size 4 --enable-expert-parallel --decode-context-parallel-size 4 \
+    --tensor-parallel-size 4 $enable_ep_arg --decode-context-parallel-size $DCP_SIZE \
     --dcp-comm-backend a2a --dtype bfloat16 --quantization modelopt --load-format $LOAD_FORMAT \
     --attention-backend FLASHINFER_MLA_SPARSE_SM120 --kv-cache-dtype fp8_ds_mla \
     --max-model-len 32768 --max-num-batched-tokens 2048 --max-num-seqs 1 --gpu-memory-utilization 0.94 \
     --enable-chunked-prefill --no-enable-prefix-caching --no-enable-flashinfer-autotune --generation-config /model \
-    --reasoning-parser glm45 --disable-custom-all-reduce --enforce-eager $moe_backend_arg" >/dev/null
+    --reasoning-parser glm45 --disable-custom-all-reduce --enforce-eager $route_server_arg $moe_backend_arg" >/dev/null
 
 deadline=$((SECONDS + 2400))
 until curl -fsS --max-time 5 "http://127.0.0.1:$PORT/v1/models" >"$SESSION/models.json" 2>/dev/null && grep -q "$MODEL_NAME" "$SESSION/models.json"; do
@@ -163,6 +199,8 @@ docker inspect "$TEST" >"$SESSION/container.json"
 docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 [ "$(docker inspect "$TEST" --format '{{.Image}}')" = "$IMAGE_ID" ]
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
+[ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
+[ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"
 [ "$MOE_BACKEND" != humming ] || grep -qi 'humming moe' "$SESSION/server-ready.log"
 if [ "$HUMMING_ACT" = nvfp4 ]; then
@@ -181,11 +219,20 @@ fi
 extra=()
 [ -z "$SELECTION_WAVE" ] || extra+=(--selection-wave "$SELECTION_WAVE")
 [ -z "$FREEZE_RECEIPT" ] || extra+=(--freeze-receipt "$(readlink -f "$FREEZE_RECEIPT")")
-python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$ROLES" \
-  --teacher-root "$CAMPAIGN/teacher" --run-root "$CAMPAIGN/kld-v3" --run-id "$RUN_ID" \
-  --config-id "$ENDPOINT_TAG-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-ep4-dcp4-eager-nomtp-kvfp8" \
-  --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
-  --capture-root "$CAPTURES" --container "$TEST" --resume "${extra[@]}" 2>&1 | tee "$SESSION/role-eval.log"
+CONFIG_ID="$ENDPOINT_TAG-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-ep4-dcp$DCP_SIZE-eager-nomtp-kvfp8"
+if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
+  [ "$ROLE" != confirmation ] || { echo "route-only diagnostics may not open confirmation" >&2; exit 2; }
+  python3 -m glm53_nvfp4.route_eval --role "$ROLE" --roles "$ROLES" \
+    --run-id "$RUN_ID" --config-id "$CONFIG_ID" \
+    --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
+    --output "$ROUTE_CAPTURE_OUTPUT" --resume 2>&1 | tee "$SESSION/route-eval.log"
+else
+  python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$ROLES" \
+    --teacher-root "$CAMPAIGN/teacher" --run-root "$CAMPAIGN/kld-v3" --run-id "$RUN_ID" \
+    --config-id "$CONFIG_ID" \
+    --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
+    --capture-root "$CAPTURES" --container "$TEST" --resume "${extra[@]}" 2>&1 | tee "$SESSION/role-eval.log"
+fi
 if [ "$ROTATION" != identity ]; then
   docker logs "$TEST" >"$SESSION/rotation-forward.log" 2>&1
   if grep -q '"quant_algo": "MXFP6"' "$MODEL_DIR/config.json"; then
@@ -202,4 +249,8 @@ if [ "$ROTATION" != identity ]; then
       --output "$SESSION/rotation-runtime-proof.json"
   fi
 fi
-log "$ROLE KLD run $RUN_ID complete"
+if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
+  log "$ROLE route capture $RUN_ID complete"
+else
+  log "$ROLE KLD run $RUN_ID complete"
+fi
