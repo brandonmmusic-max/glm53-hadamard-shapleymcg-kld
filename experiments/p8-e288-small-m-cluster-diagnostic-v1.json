@@ -1,0 +1,31 @@
+{
+  "schema": "glm53-p8-e288-small-m-cluster-diagnostic-plan.v1",
+  "written_at": "2026-09-04T20:08:00-04:00",
+  "status": "preregistered-before-device-results",
+  "hypothesis": "The non-finite E=288 M3 monolithic result was caused by launching only four resident clusters after confusing four MMA warps with the resident-cluster count.",
+  "fixed_inputs": {
+    "product": "P8 K4 procedural MCG to E4M3 with physical UE8M0/32 scales",
+    "layer": 3,
+    "tp_rank": 0,
+    "experts": 288,
+    "tokens": 3,
+    "top_k": 8,
+    "seed": 20260957,
+    "tile": "M16N128",
+    "mode": "monolithic",
+    "ldlq": false
+  },
+  "device_fact_observed_before_plan": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "sm_count": 188,
+    "max_active_clusters_cluster_size_1": 188
+  },
+  "arms_in_fixed_order": [
+    {"max_active_clusters": 4, "role": "preserved faulty setting"},
+    {"max_active_clusters": 64, "role": "intermediate diagnostic"},
+    {"max_active_clusters": 188, "role": "production-equivalent resident limit"}
+  ],
+  "per_arm_rule": "Pass only if every output is finite, cosine to the same decoded-weight FP32 reference exceeds 0.995, and relative L2 is below 0.12.",
+  "promotion_rule": "Adopt 188 for the monolithic arm only if it passes. The 4 and 64 arms are causal diagnostics and cannot be selected for quality. A passing arithmetic arm is not a speed, determinism, or end-to-end KLD claim.",
+  "preservation": "Write each arm to a new immutable result path; do not overwrite or reroll failures."
+}

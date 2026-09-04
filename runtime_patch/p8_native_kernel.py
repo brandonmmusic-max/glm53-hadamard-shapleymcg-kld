@@ -65,6 +65,8 @@ class P8NativeTPMoE:
         hidden: int = 4096,
         intermediate: int = 512,
         swiglu_limit: float = 10.0,
+        force_materialized: bool | None = None,
+        mac_override: int | None = None,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -72,6 +74,10 @@ class P8NativeTPMoE:
         self.hidden = int(hidden)
         self.intermediate = int(intermediate)
         self.swiglu_limit = float(swiglu_limit)
+        self.force_materialized = force_materialized
+        self.mac_override = None if mac_override is None else int(mac_override)
+        if self.mac_override is not None and self.mac_override <= 0:
+            raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
             metadata = src.metadata() or {}
             required = {
@@ -137,7 +143,11 @@ class P8NativeTPMoE:
         if cached is not None:
             return cached
         tile_m = 64 if materialized else 16
-        mac = 64 if materialized else 4
+        mac = (
+            self.mac_override
+            if self.mac_override is not None
+            else (64 if materialized else 188)
+        )
         kernel = MoEDynamicKernelBackend(
             16,
             (tile_m, 128),
@@ -253,7 +263,9 @@ class P8NativeTPMoE:
         # closed yet (the first M3 diagnostic emitted non-finite values).
         # Use the independently closed materialized path for the KLD gate;
         # decode specialization remains a separate speed task.
-        materialized = True
+        materialized = (
+            True if self.force_materialized is None else self.force_materialized
+        )
         arm = self._compile(materialized)
         tile_m = arm.tile_m
         x = x.contiguous()

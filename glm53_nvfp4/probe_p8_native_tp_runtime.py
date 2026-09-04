@@ -80,6 +80,11 @@ def main() -> None:
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--experts", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260957)
+    parser.add_argument(
+        "--mode", choices=("materialized", "monolithic"), default="materialized"
+    )
+    parser.add_argument("--mac", type=int)
+    parser.add_argument("--tokens", type=int, nargs="+", default=(3, 33))
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
@@ -94,10 +99,12 @@ def main() -> None:
         topk=8,
         hidden=4096,
         intermediate=512,
+        force_materialized=args.mode == "materialized",
+        mac_override=args.mac,
     )
     gate, up, down = load_dense(args.dense, rank=args.rank, experts=args.experts)
     cells: list[dict[str, object]] = []
-    for tokens in (3, 33):
+    for tokens in args.tokens:
         x = (torch.randn(tokens, 4096, device="cuda") * 0.01).to(torch.bfloat16)
         ids = torch.stack(
             [torch.randperm(args.experts, device="cuda")[:8] for _ in range(tokens)]
@@ -128,6 +135,8 @@ def main() -> None:
         "sidecar": {"path": str(args.sidecar), "sha256": sha256_file(args.sidecar)},
         "dense": {"path": str(args.dense), "sha256": sha256_file(args.dense)},
         "rank": args.rank,
+        "mode": args.mode,
+        "max_active_clusters": args.mac,
         "experts": list(range(args.experts)),
         "physical_bpw": 4.25,
         "compute": "mxf8f6f4 E4M3 x E4M3 with physical UE8M0/32 scales",
