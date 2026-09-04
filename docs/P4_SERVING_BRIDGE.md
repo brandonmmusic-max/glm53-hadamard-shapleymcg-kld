@@ -43,7 +43,14 @@ history, Hessian identity, law identity and the actual refinement count.
 KLD remains the acceptance metric for the calibrated experiment.
 
 `quantize_p4_layer` requires pinned BF16 shard hashes, an index hash, fit-role
-hash, and REAP capture-manifest hash. It opens only the `fit` role using
+hash, and REAP capture-manifest hash. It additionally requires the exact
+resolved path, byte count and SHA-256 for **each materialized local** hidden,
+expert-ID and route-weight capture file. These local pins cover sparse
+fit-only captures independently of the remote/full capture manifest. All
+three files are verified once before any CUDA transfer or selection, and
+the verified identities are included in every matrix receipt and checked
+again on resume. Same-length corruption, different paths and incomplete
+pin sets fail closed. It opens only the `fit` role using
 `LayerCapture(..., sampling_strategy="domain-balanced")`. Gate/up share the
 route-weighted Hessian of the candidate's E2M1/E4M3 activation conversion.
 Down uses the Hessian of quantized SwiGLU activations from the encoded gate
@@ -169,11 +176,16 @@ python3 -m glm53_nvfp4.build_p4_tp4_sidecars --matrix-manifest MATRIX_DIR/matric
 The design schema is `glm53-p4-viterbi-rne-encoder-design.v1`, with `law`,
 `ldlq=false`, `objective=viterbi-with-full-hessian-gptq-feedback`,
 `source_precision=BF16`, `source_index_sha256`, `source_file_sha256` mapping,
-`fit_roles_sha256`, `capture_manifest_sha256`, `data_role=fit`,
+`fit_roles_sha256`, `capture_manifest_sha256`, `capture_files`, `data_role=fit`,
 `sampling_strategy=domain-balanced`, `samples`, `layers`, `experts=288`,
 `hidden`, `intermediate`, `scale_refinement_iterations`, `search_grid`,
 `tailbite_context` in 1..128, `percdamp` and `column_block`. All paths in this
 example are placeholders; no calibrated GPU build is included in this receipt.
+
+`capture_files` has exactly `hidden_bf16`, `topk_ids_u16le`, and
+`topk_weights_f32le`, each containing `path` (resolved absolute filename),
+`bytes` (integer) and `sha256` (lowercase hex). These pins describe the local
+materialized files supplied to this encoder invocation.
 
 ## Attribution
 
