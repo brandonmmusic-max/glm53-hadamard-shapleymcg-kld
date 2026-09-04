@@ -42,14 +42,27 @@ def main() -> None:
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
     policy = json.loads(args.policy.read_text())
-    if (
-        policy.get("schema") != "glm53-p8-identity-h128-boundary-policy.v1"
-        or policy.get("phase") != "selection"
-        or policy.get("policy_bytes") != 39
-        or policy.get("ldlq_used") is not False
-    ):
+    schema = policy.get("schema")
+    if policy.get("phase") != "selection" or policy.get("ldlq_used") is not False:
         raise RuntimeError("invalid no-LDLQ boundary policy")
-    h128_experts = set(int(value) for value in policy["h128_experts"])
+    if schema == "glm53-p8-identity-h128-boundary-policy.v1":
+        if policy.get("policy_bytes") != 39:
+            raise RuntimeError("invalid V1 policy byte count")
+        states = [int(expert in set(policy["h128_experts"])) for expert in range(288)]
+    elif schema == "glm53-p8-joint-routed-sum-fc1-policy.v2":
+        if (
+            policy.get("policy_bytes") != 75
+            or policy.get("state_names")
+            != ["identity", "full-h128", "fc1-h128-identity-down"]
+        ):
+            raise RuntimeError("invalid V2 joint policy contract")
+        states = [int(value) for value in policy["expert_states"]]
+        if len(states) != 288 or any(value not in (0, 1, 2) for value in states):
+            raise RuntimeError("invalid V2 expert states")
+    else:
+        raise RuntimeError("unsupported no-LDLQ boundary policy")
+    h128_experts = {expert for expert, state in enumerate(states) if state != 0}
+    full_h128_experts = {expert for expert, state in enumerate(states) if state == 1}
     h128, h128_logical = _index_chunks(args.h128_chunk)
     identity, identity_logical = _index_chunks(args.identity_chunk)
     if set(h128) != set(identity) or h128_logical != identity_logical:
@@ -72,9 +85,11 @@ def main() -> None:
         match = EXPERT_RE.search(name)
         assert match is not None
         expert = int(match.group(1))
-        selected = h128 if expert in h128_experts else identity
+        projection = name.rsplit(".", 2)[1]
+        state = states[expert]
+        selected = h128 if state == 1 or (state == 2 and projection != "down_proj") else identity
         weight_map[name] = selected[name].name
-        h128_tensor_count += int(expert in h128_experts)
+        h128_tensor_count += int(selected is h128)
     removed = []
     for name in list(weight_map):
         if ".layers.3.mlp.experts." in name and name.endswith((".weight_scale", ".weight_scale_2", ".input_scale")):
@@ -98,16 +113,22 @@ def main() -> None:
 
     physical_bpw = (
         4.25
-        + (len(h128_experts) / 288.0) * (16.0 * 2048 / (2 * 2048 * 4096 + 4096 * 2048))
+        + (len(full_h128_experts) / 288.0) * (16.0 * 2048 / (2 * 2048 * 4096 + 4096 * 2048))
         + 8.0 * policy["policy_bytes"] / h128_logical
     )
     overlay = {
-        "schema": "glm53-p8-identity-h128-policy-overlay.v1",
+        "schema": (
+            "glm53-p8-joint-routed-sum-fc1-policy-overlay.v2"
+            if schema == "glm53-p8-joint-routed-sum-fc1-policy.v2"
+            else "glm53-p8-identity-h128-policy-overlay.v1"
+        ),
         "carrier": str(args.carrier.resolve()),
         "policy": str(args.policy.resolve()),
         "policy_sha256": sha256_file(args.policy),
         "bf16_layer": 3,
         "h128_experts": len(h128_experts),
+        "full_h128_experts": len(full_h128_experts),
+        "fc1_h128_experts": sum(state == 2 for state in states),
         "identity_experts": 288 - len(h128_experts),
         "redirected_tensors": len(h128),
         "h128_redirected_tensors": h128_tensor_count,

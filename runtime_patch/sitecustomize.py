@@ -153,6 +153,7 @@ if P8_PSEUDOQUANT:
     ]
     if not _P8_BOUNDARY_PATHS:
         raise RuntimeError("GLM53_P8_PSEUDOQUANT requires GLM53_P8_BOUNDARY_FILES")
+    _P8_POLICY_STATES = tuple(1 for _ in range(288)) if _P8_ARM == "candidate" else tuple(0 for _ in range(288))
     _P8_H128_EXPERTS = frozenset(range(288)) if _P8_ARM == "candidate" else frozenset()
     _P8_POLICY_SHA256 = "none"
     if _P8_ARM == "hybrid":
@@ -163,16 +164,31 @@ if P8_PSEUDOQUANT:
             raise RuntimeError("hybrid P8 pseudoquant requires GLM53_P8_POLICY")
         _p8_policy_bytes = Path(_p8_policy_path).read_bytes()
         _p8_policy = _p8_json.loads(_p8_policy_bytes)
-        if (
-            _p8_policy.get("schema") != "glm53-p8-identity-h128-boundary-policy.v1"
-            or _p8_policy.get("phase") != "selection"
-            or _p8_policy.get("policy_bytes") != 39
-            or _p8_policy.get("ldlq_used") is not False
-        ):
+        _p8_schema = _p8_policy.get("schema")
+        if _p8_policy.get("phase") != "selection" or _p8_policy.get("ldlq_used") is not False:
             raise RuntimeError("invalid P8 boundary policy")
-        _P8_H128_EXPERTS = frozenset(int(value) for value in _p8_policy["h128_experts"])
-        if len(_P8_H128_EXPERTS) != int(_p8_policy["h128_count"]):
-            raise RuntimeError("P8 boundary policy expert count mismatch")
+        if _p8_schema == "glm53-p8-identity-h128-boundary-policy.v1":
+            if _p8_policy.get("policy_bytes") != 39:
+                raise RuntimeError("invalid P8 V1 policy byte count")
+            _P8_H128_EXPERTS = frozenset(int(value) for value in _p8_policy["h128_experts"])
+            if len(_P8_H128_EXPERTS) != int(_p8_policy["h128_count"]):
+                raise RuntimeError("P8 boundary policy expert count mismatch")
+            _P8_POLICY_STATES = tuple(int(expert in _P8_H128_EXPERTS) for expert in range(288))
+        elif _p8_schema == "glm53-p8-joint-routed-sum-fc1-policy.v2":
+            if (
+                _p8_policy.get("policy_bytes") != 75
+                or _p8_policy.get("state_names")
+                != ["identity", "full-h128", "fc1-h128-identity-down"]
+            ):
+                raise RuntimeError("invalid P8 V2 policy contract")
+            _P8_POLICY_STATES = tuple(int(value) for value in _p8_policy["expert_states"])
+            if len(_P8_POLICY_STATES) != 288 or any(value not in (0, 1, 2) for value in _P8_POLICY_STATES):
+                raise RuntimeError("invalid P8 V2 expert states")
+            _P8_H128_EXPERTS = frozenset(
+                expert for expert, state in enumerate(_P8_POLICY_STATES) if state != 0
+            )
+        else:
+            raise RuntimeError("unsupported P8 boundary policy schema")
         _P8_POLICY_SHA256 = hashlib.sha256(_p8_policy_bytes).hexdigest()
 
     _p8_parts = []
@@ -254,12 +270,16 @@ if P8_PSEUDOQUANT:
             expert_input = carrier.index_select(0, token_index)
             gate = _p8_F.linear(expert_input, layer.w13_weight[expert, :intermediate])
             up = _p8_F.linear(expert_input, layer.w13_weight[expert, intermediate:])
-            use_h128 = expert in _P8_H128_EXPERTS
-            if use_h128:
+            boundary_state = _P8_POLICY_STATES[expert]
+            if boundary_state == 1:
                 gate = _p8_hadamard128_last(gate).clamp(max=10.0)
                 up = _p8_hadamard128_last(up).clamp(-10.0, 10.0)
                 middle = _p8_F.silu(gate) * up * diagonal[expert]
                 middle = _p8_hadamard128_last(middle)
+            elif boundary_state == 2:
+                gate = _p8_hadamard128_last(gate).clamp(max=10.0)
+                up = _p8_hadamard128_last(up).clamp(-10.0, 10.0)
+                middle = _p8_F.silu(gate) * up
             else:
                 gate = gate.clamp(max=10.0)
                 up = up.clamp(-10.0, 10.0)
@@ -278,7 +298,7 @@ if P8_PSEUDOQUANT:
                 "GLM53_P8_PSEUDOQUANT_FORWARD "
                 f"layer={layer._glm53_p8_layer} rank={rank} "
                 f"active_experts={len(active)} carrier=E4M3_K32 arm={_P8_ARM} "
-                f"boundary={'hybrid_98_h128' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity')} "
+                f"boundary={'hybrid_policy' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity')} "
                 f"policy_sha256={_P8_POLICY_SHA256} ldlq=false",
                 flush=True,
             )

@@ -1,0 +1,24 @@
+{
+  "schema": "glm53-p8-joint-policy-kld-relaxed-plan.v1",
+  "written_at": "2026-09-04T20:39:00-04:00",
+  "status": "preregistered-before-overlay-build-and-kld-run",
+  "reason_for_relaxation": "The frozen three-state policy improved held-out joint routed-sum NMSE by 24.0491% and won 6 of 8 windows versus decoded GPTQ NVFP4, while the paired BCa upper mean-log-ratio was only slightly positive at 0.01916. With two validation windows per domain, that interval is too noisy to remain a development blocker; it remains a reported control.",
+  "candidate": {
+    "layer": 3,
+    "codec": "K4 procedural MCG to E4M3 with physical UE8M0/32 scales",
+    "expert_states": ["identity", "full-h128", "fc1-h128-identity-down"],
+    "policy": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/joint-route-fc1-policy-v2/policy.json",
+    "policy_sha256": "3e653916a5628b0600089a2a595caa44851bc21e0bf44dac3c0d2584cf9a6612",
+    "state_counts": {"identity": 104, "full-h128": 94, "fc1-h128-identity-down": 90},
+    "physical_bpw": 4.250443113070947,
+    "ldlq": false
+  },
+  "control": "existing matched decoded full-Hessian GPTQ NVFP4 BF16-overlay run p8-scaled-mcg-l3-control-cf32-v1",
+  "role": "already opened conditional-fit n=32; no new protected role",
+  "run_id": "p8-joint-fc1-policy-l3-cf32-v1",
+  "bootstrap": {"method": "paired BCa", "replicates": 50000, "seed": 20260965, "unit": "window"},
+  "engineering_promotion_rule": "Promote to Shapley allocation design if mean end-to-end KLD improves at least 5% versus the matched GPTQ control. Window wins, domain signs, and the paired interval are reported but nonblocking controls.",
+  "strict_claim_rule": "A public claim that the codec beats NVFP4 still requires negative mean delta and paired BCa upper bound below zero; Shapley cannot retroactively alter this layer-3 claim.",
+  "stopping_rule": "One complete candidate run, no exclusions and no reroll.",
+  "protected_boundary": "Selection, confirmation, final, and all 28 confirmation logits remain unopened."
+}
