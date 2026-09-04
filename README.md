@@ -156,11 +156,11 @@ materialization or BF16 weight matmul in that endpoint. This is one fused
 kernel path, not one machine instruction; `mxf8f6f4` has twice the MMA issue
 count of NVFP4 for the same logical K span.
 
-The **P4** endpoint has not yet achieved this status. P4 still requires a
-bit-exact prologue that emits packed E2M1 nibbles plus E4M3/16 scales into
-`mxf4nvf4`. Therefore the current evidence supports a native Tensor Core P8
-codec for one physical layer, not an all-layer native codec and not yet an
-NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
+The **P4** endpoint has not yet achieved this status. Its prologue emitting
+packed E2M1 nibbles plus E4M3/16 scales into `mxf4nvf4` still requires device
+bit-exact and arithmetic closure. Therefore the current evidence supports a
+native Tensor Core P8 codec for one physical layer, not an all-layer native
+codec and not yet an NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
 BF16 overlays and must not be cited as native-kernel execution.
 
 An independent CPU P4 matrix contract and deterministic GPU-probe fixture
@@ -170,6 +170,17 @@ with physical positive E4M3/16 scales and a charged FP32 global scalar.
 Its stream-plus-block-scale rate is 4.5 bpw; the verifier also charges the
 scalar and the measured container bytes. This is structural CPU evidence
 and is a distinct law from the legacy zero-canonicalizing P4 encoder.
+
+A separate [experimental P4 implementation](docs/P4_NATIVE.md) now supplies
+the E2M1/E4M3/16 prologue, double-buffered producer/MMA path, and an explicit
+TP-local launch/probe seam. CPU bit-exact checks and offline SM120a ISA
+inspection are recorded under `evidence/opened/codec-v2/p4-astra/`. Device
+execution, integrated quality and speed remain untested; P8 is unchanged.
+
+These two building blocks are not yet interoperable: the matrix contract uses
+ties-to-even and one-matrix containers, while the kernel commit uses the legacy
+ties-to-lower-magnitude law and a six-tensor TP-rank container. A versioned
+bridge and exhaustive cross-check are required before any device-closure run.
 
 The first version-2 non-layer-3 artifact now closes this contract at layer 20.
 All 288 experts were encoded from the pinned BF16 source and domain-balanced
