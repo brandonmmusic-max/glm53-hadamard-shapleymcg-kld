@@ -27,6 +27,9 @@ if sha(manifest_path) != plan["inputs"]["overlay_manifest"]["sha256"]:
 addendum = plan_path.parent.parent / plan["inputs"]["preflight_addendum"]["path"]
 if sha(addendum) != plan["inputs"]["preflight_addendum"]["sha256"]:
     raise SystemExit("preflight addendum hash mismatch")
+addendum_v2 = plan_path.parent.parent / plan["inputs"]["preflight_addendum_v2"]["path"]
+if sha(addendum_v2) != plan["inputs"]["preflight_addendum_v2"]["sha256"]:
+    raise SystemExit("preflight addendum v2 hash mismatch")
 if manifest["design_sha256"] != sha(design_path):
     raise SystemExit("overlay/design identity mismatch")
 models = {row["coalition_id"]: row["model"] for row in manifest["coalitions"]}
@@ -50,7 +53,7 @@ for ROW in "${ROWS[@]}"; do
   GLM53_RUNTIME_IMAGE_ID=sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe \
   GLM53_RUNTIME_PATCH_MANIFEST="$CAMPAIGN/codec-v2/p8-joint-policy-runtime-manifest-v1.json" \
     "$REPO/scripts/run_kld_v3.sh" conditional-fit "$RUN_ID" "$MODEL" \
-    "glm53-$RUN_ID" identity 3-44
+    "glm53-$RUN_ID" identity 3-44 "" "" "" humming
 done
 
 if [ ! -e "$OUTPUT" ]; then
