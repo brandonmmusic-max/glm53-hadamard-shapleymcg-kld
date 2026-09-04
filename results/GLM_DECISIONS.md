@@ -404,6 +404,59 @@ confirmation, and final roles remained unopened for this redesign branch.
   The protected 28 confirmation logits remain unopened. No LDLQ or BlockLDLQ
   was used.
 
+## 2026-09-04: Decision 11 — optimize the actual routed top-8 sum
+
+- **Decision before result:** replace independent per-expert mask scoring with
+  the squared error of the actual route-weighted top-8 MoE sum, including
+  co-routed cross-expert terms. Use eight fit windows for selection and eight
+  disjoint fit windows for validation, two per domain in each phase. Advance
+  only for at least 10% improvement versus GPTQ NVFP4, 6/8 wins, and a BCa
+  upper bound below zero. Plan SHA-256:
+  `3b8d5bceae7ee239315bfb179649c044c652c5ba11fa91ca8ab375a874b642dd`.
+- **Outcome:** fail/null. The optimized 101-H128/187-identity mask improved
+  aggregate validation NMSE by 1.1388% and won 6/8 windows, but mean log ratio
+  was `+0.141697` with BCa 95% CI `[-0.129819,+0.937355]`. One code window
+  exposed a large GPTQ-specific advantage. Analysis SHA-256:
+  `9ae85c8f35370821ce7ba2a0013050419a6097e33a321cab7c51e940bd10f843`.
+  Protected roles remained closed. No LDLQ or BlockLDLQ was used.
+
+## 2026-09-04: Decision 12 — separate FC1 H128 from identity down
+
+- **Evidence before decision:** across all 288 experts, H128 improved gate and
+  up weight NMSE for 288/288 experts but worsened down on average. The binary
+  joint-route policy was a null.
+- **Decision before result:** add an algebraically closed third state that
+  uses H128-quantized gate/up, inverse-H128 before SwiGLU, and identity-MCG
+  down weights in the original basis. Optimize one 75-byte two-bit expert
+  policy on eight new fit windows and validate on eight more untouched fit
+  windows. Use the same 10%, 6/8, BCa-upper-below-zero gate. Plan SHA-256:
+  `ea735343a64815b0ea7cdbe9dad241027b7b5493274aadf1617c09f4f074fe3b`.
+- **Outcome:** promising but failed the full rule. The 104-identity,
+  94-full-H128, 90-FC1-only mask improved aggregate validation NMSE by
+  24.0491% and won 6/8 windows. Mean log ratio was `-0.162510`, but BCa 95%
+  CI `[-0.325965,+0.019159]` narrowly crossed zero. Policy SHA-256:
+  `3e653916a5628b0600089a2a595caa44851bc21e0bf44dac3c0d2584cf9a6612`;
+  analysis SHA-256:
+  `6b7463191e7180b6f43f5b01699262ae9ec4768e1b8562de87177b50528f0bee`.
+  No protected role was opened and no LDLQ was used.
+
+## 2026-09-04: Decision 13 — powered validation of frozen FC1 policy
+
+- **Decision before result:** freeze Decision 12's policy unchanged and use
+  every one of the 32 remaining fit windows, eight per domain. Advance to one
+  previously unopened KLD role only for at least 10% aggregate improvement,
+  24/32 wins, and a paired BCa upper bound below zero. No exclusions,
+  substitutions, policy edits, or rerolls. Plan SHA-256:
+  `5a630dd5422aa96bbb9138388f04536110eac4593fdda5c0b083339e4a079737`.
+- **Outcome:** failed the uncertainty gate despite a replicated large point
+  effect. Aggregate routed-output NMSE improved by 12.0290% and 25/32 windows
+  won. Code won 8/8, general and legal each won 7/8, and reasoning won 3/8.
+  Mean log ratio was `+0.0400501`, BCa 95% CI
+  `[-0.125090,+0.356753]`, driven by rare windows where GPTQ error was nearly
+  an order of magnitude lower. Analysis SHA-256:
+  `7c9c2b7d30ace28b068b0f91c12383ea2468bee6efa364d7449427845b8ad9d9`.
+  The 28 confirmation logits remain unopened. No LDLQ or BlockLDLQ was used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

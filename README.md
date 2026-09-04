@@ -75,6 +75,21 @@ failed the frozen `-0.0014`-nat threshold and the interval crossed zero. This
 is an adaptive developmental null, not qualification; the protected 28
 confirmation logits remain unopened. No LDLQ or BlockLDLQ was used.
 
+A second redesign then optimized the actual route-weighted top-8 expert sum,
+including cross-expert cancellation. A binary identity/full-H128 mask remained
+a null (1.14% aggregate routed-output NMSE improvement, BCa interval crossing
+zero). The evidence-motivated three-state codec—identity, full H128, or H128
+gate/up with identity down—was much stronger. Its first disjoint eight-window
+screen improved aggregate routed-output NMSE by **24.05%** and won 6/8, but
+the BCa upper bound narrowly crossed zero. With that 104/94/90 expert policy
+frozen, a powered test on all 32 remaining fit windows retained a **12.03%**
+aggregate improvement and won 25/32. It nevertheless failed its uncertainty
+gate: mean log ratio was `+0.04005`, BCa 95% CI
+`[-0.12509,+0.35675]`, due primarily to three rare windows where decoded GPTQ
+was unusually close to BF16. Code won 8/8; reasoning won only 3/8. This is the
+first replicated 10–30% local effect in the GLM codec work, but it is not an
+end-to-end KLD win and does not authorize a native kernel claim.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 The P4/P8 kernel closure gates remain blocked. P8 first failed E4M3 activation
