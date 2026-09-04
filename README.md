@@ -163,6 +163,14 @@ codec for one physical layer, not an all-layer native codec and not yet an
 NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
 BF16 overlays and must not be cited as native-kernel execution.
 
+An independent CPU P4 matrix contract and deterministic GPU-probe fixture
+are documented in [docs/P4_CODEC.md](docs/P4_CODEC.md). The new version specifies
+the exact alpha-1 MCG, ties-to-even E2M1 projection and signed-zero semantics,
+with physical positive E4M3/16 scales and a charged FP32 global scalar.
+Its stream-plus-block-scale rate is 4.5 bpw; the verifier also charges the
+scalar and the measured container bytes. This is structural CPU evidence
+and is a distinct law from the legacy zero-canonicalizing P4 encoder.
+
 The first version-2 non-layer-3 artifact now closes this contract at layer 20.
 All 288 experts were encoded from the pinned BF16 source and domain-balanced
 REAP fit capture into four codec-only chunks, then sharded into TP4 sidecars.
