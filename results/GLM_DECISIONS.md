@@ -662,6 +662,13 @@ confirmation, and final roles remained unopened for this redesign branch.
 - This conditional-fit result is developmental opened-role evidence, not
   untouched final qualification. No selection, confirmation, final, or
   reserved 28 confirmation logits may be opened. No LDLQ or BlockLDLQ is used.
+- **Pre-result runtime amendment 1:** the prior layer-3 proof used the BF16
+  overlay method and did not exercise layers 4–44's ModelOpt pre-forward
+  quant-config hook. Exact source inspection showed that hook would rebuild a
+  ModelOpt config from carrier scales already released by native P8. Runtime
+  commit `efd250b002e8da5a0e603253e0cd07ba6249c7b4` bypasses that builder only
+  for selected P8 methods; all experimental inputs and decisions are unchanged.
+  The amendment is separately sealed and preserves the original plan.
 
 ## 2026-09-03: uniform rotation
 
