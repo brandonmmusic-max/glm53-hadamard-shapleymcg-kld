@@ -217,6 +217,9 @@ def analyze(
     assert expected_ids is not None and expected_domains is not None
 
     samples: dict[int, list[np.ndarray]] = {int(layer): [] for layer in design["layers"]}
+    contextual_marginals: dict[int, list[dict]] = {
+        int(layer): [] for layer in design["layers"]
+    }
     path_efficiency = []
     running_rankings = []
     for permutation in design["permutations"]:
@@ -229,6 +232,18 @@ def analyze(
             after = np.asarray([runs[ids[index + 1]][wid] for wid in expected_ids], dtype=np.float64)
             marginal = before - after
             samples[int(layer)].append(marginal)
+            contextual_marginals[int(layer)].append(
+                {
+                    "permutation_index": permutation["permutation_index"],
+                    "before_coalition_id": ids[index],
+                    "after_coalition_id": ids[index + 1],
+                    "mean_marginal_kld_reduction": float(marginal.mean()),
+                    "per_window_marginal_kld_reduction": {
+                        wid: float(value)
+                        for wid, value in zip(expected_ids, marginal, strict=True)
+                    },
+                }
+            )
             path_sum += marginal
         residual = (empty - full) - path_sum
         path_efficiency.append(
@@ -268,6 +283,7 @@ def analyze(
                 "window_wins": int((per_window > 0).sum()),
                 "windows": len(expected_ids),
                 "permutation_samples": len(samples[layer]),
+                "contextual_marginals": contextual_marginals[layer],
                 "per_window_marginal_kld_reduction": {
                     wid: float(value) for wid, value in zip(expected_ids, per_window, strict=True)
                 },

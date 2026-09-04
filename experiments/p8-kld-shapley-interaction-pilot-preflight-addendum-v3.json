@@ -1,0 +1,34 @@
+{
+  "schema": "glm53-p8.direct-kld-shapley-pilot-preflight-addendum.v3",
+  "status": "written-before-any-pilot-KLD-request",
+  "parent_addendum_sha256": "94cf54df86d275bab5ccb435359ed67905bddbe182e507b4eb0d8a3e377e3538",
+  "third_failed_launch": {
+    "run_id": "p8-kld-shapley-pilot-v1-kld-c-e3b0c44298fc1c14",
+    "stage": "MoE weight load before server readiness",
+    "kld_windows_opened": 0,
+    "cause": "The zero-copy coalition builder replaced each routed-expert weight entry with BF16 but retained the carrier's ModelOpt NVFP4 declarations for layers 3, 19, 20, and 22 in config.json and hf_quant_config.json.",
+    "error": "The ModelOpt loader allocated a packed w2 destination of width 1024 and attempted to copy the full BF16 width 2048 tensor.",
+    "interpretation": "preflight metadata-ABI failure; not an experimental endpoint and not a reroll"
+  },
+  "correction": {
+    "method": "Generate coalition configs from the pinned carrier after removing every pilot layer from config_groups targets and quantized_layers; all four layers are BF16 in every coalition, whether assigned to matched GPTQ or P8.",
+    "validated_absent_layers": [
+      3,
+      19,
+      20,
+      22
+    ],
+    "generated_config_sha256": {
+      "config.json": "488644ec2bbc8f0825690335be30126c41b19a19fd08ccbbfbca0abec877649c",
+      "hf_quant_config.json": "9fd62672d165621ac71bbff51d989d8668719afb9e379da39741e3654d2749d7"
+    },
+    "corrected_overlay_manifest_sha256": "34b9fe2b3379e392f115480306d355e83d7b74be32fd9f6299279a8fc8d8f3bf",
+    "weights_unchanged": true,
+    "run_order_unchanged": true,
+    "roles_unchanged": true,
+    "runtime_unchanged": true
+  },
+  "stopping_rule_unchanged": "Run every one of the eight unique coalitions once; resume incomplete windows only; no exclusions, substitutions, or rerolls.",
+  "protected_boundary": "Selection, confirmation, final, and all reserved 28 confirmation logits remain unopened.",
+  "ldlq": false
+}

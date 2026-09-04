@@ -5,7 +5,7 @@ set -euo pipefail
 LAYER=$1
 [[ "$LAYER" =~ ^[0-9]+$ ]] && [ "$LAYER" -ge 3 ] && [ "$LAYER" -le 44 ] || { echo "layer must be 3..44" >&2; exit 2; }
 
-REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
+REPO=${GLM53_ENCODER_REPO:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53}
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 printf -v L3 '%03d' "$LAYER"
 ROOT="$CAMPAIGN/codec-v2/output-aware/layer${LAYER}-full"
@@ -29,10 +29,10 @@ trap restore EXIT
 [ "$backend_was_active" = true ] && systemctl --user stop klc-backend.service
 
 pids=()
-gpus=(1 2 3)
-starts=(0 96 192)
-ends=(96 192 288)
-for slot in 0 1 2; do
+gpus=(0 1 2 3)
+starts=(0 72 144 216)
+ends=(72 144 216 288)
+for slot in 0 1 2 3; do
   gpu=${gpus[$slot]}
   start=${starts[$slot]}
   end=${ends[$slot]}
