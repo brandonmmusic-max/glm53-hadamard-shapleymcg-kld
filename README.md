@@ -15,14 +15,17 @@ routed MoE layer 3 with the fixed-H16 candidate:
 | Fixed H16, all projections, 10k calibration cap, layer 3 only | 0.0375717123 | **-2.625%** | [-0.00171749, -0.00017658] | qualified conditional-fit pass |
 | Exact Qwen recipe, 256 samples/expert, layer 3 only | 0.0377024045 | -2.287% | [-0.00206005, +0.00058266] | mean improved; interval crosses zero |
 | Learned block rotation, all projections, layer 3 only | 0.0385788029 | -0.590% against its stock anchor | [-0.00229439, +0.00114439] | did not qualify |
+| Exact Qwen fixed H16, all 42 routed layers | 0.0380729712 | -1.326% | [-0.00217155, +0.00185182] | mean improved; conditional-fit fail |
 
 Lower KLD is better. These are 16-window conditional-fit measurements with
-20,000 paired bootstrap replicates. They are not yet a full-model or final
-holdout claim. All valid GLM NVFP4 rows use the runtime-qualified packed-W4
+20,000 paired bootstrap replicates. The full-42-layer row is a completed
+full-model conditional-fit measurement, but its confidence interval crosses
+zero; it is not a qualified improvement or a final-holdout claim. All valid
+GLM NVFP4 rows use the runtime-qualified packed-W4
 with BF16 expert activations (`W4A16_NVFP4`) at an exact 4.5000076294-bpw
 routed-weight payload; no W4A4 result is claimed.
 
-![Current layer-3 KLD comparison](figures/current-layer3-kld.png)
+![Current KLD comparison](figures/current-kld.png)
 
 ## What is established
 
@@ -32,6 +35,10 @@ routed-weight payload; no W4A4 result is claimed.
   transform inside the MoE execution path.
 - Fixed H16 is the only rotation family with a statistically qualified GLM
   improvement so far.
+- Uniform H16 across all 42 routed layers reduced mean KLD by 1.326%, but the
+  paired BCa interval crossed zero. This shows that forcing the same transform
+  everywhere dilutes the qualified layer-3 gain; selective placement is the
+  next conditional-fit test.
 - The learned candidate was significantly worse than fixed H16 in the direct
   comparison: learned minus H16 KLD was +0.00100709 with BCa 95% CI
   [+0.00013188, +0.00196291].
@@ -49,16 +56,17 @@ RTN NVFP4 checkpoint**: -29% on the final panel, -36% on selection, and -9%
 on WikiText at the same routed-weight rate. It combined REAP calibration,
 GPTQ, fixed H16, and every routed layer. H16 was not responsible for that
 entire gap: against the already calibrated GPTQ control, fixed H16 contributed
-about -9% on final, -15% on selection, and -6% on WikiText. The present GLM
-winner changes only layer 3 while the other 41 routed layers remain stock. Its
-2.625% end-to-end effect is therefore not an apples-to-apples estimate of the
-completed full-model gain. Exact Qwen inputs and source hashes are recorded in
+about -9% on final, -15% on selection, and -6% on WikiText. The present
+qualified GLM winner changes only layer 3 while the other 41 routed layers
+remain stock. Applying the exact fixed-H16 recipe to all 42 layers has now
+been measured at -1.326% mean KLD, but did not pass the uncertainty gate.
+Exact Qwen inputs and source hashes are recorded in
 `evidence/qwen-reference/comparison.json`.
 
 The live next tests are:
 
-1. the exact-Qwen fixed-H16 recipe across all 42 routed layers at stock NVFP4
-   rate, followed by a fresh selection wave; and
+1. selective fixed-H16 placement using the completed per-layer artifacts,
+   followed by a fresh selection wave only if conditional-fit passes; and
 2. fixed-H16 NVFP4/MXFP6 candidates with Shapley global allocation constrained
    to 6 bpw, followed by equal-cost controls and confirmation.
 
@@ -67,8 +75,9 @@ Its 5.9583409627-bpw budget is exact routed-weight storage. The Shapley and
 uniform-depth controls have identical 35/7 format counts, so their comparison
 isolates allocation value despite the different native activation formats.
 
-No 10-30% GLM improvement has been measured yet. That range remains a
-hypothesis until the full-model run completes.
+No 10-30% GLM improvement has been measured. The completed uniform full-model
+test did not reproduce that range, so it remains unsupported for GLM pending
+selective placement and later allocation.
 
 ## Repository map
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the current opened GLM layer-3 KLD comparison."""
+"""Render the current opened GLM H16 KLD comparison."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[1]
 SUMMARY = ROOT / "results/current-kld-summary.json"
-OUTPUT = ROOT / "figures/current-layer3-kld.png"
+OUTPUT = ROOT / "figures/current-kld.png"
 
 
 def main() -> None:
@@ -22,16 +22,17 @@ def main() -> None:
         "learned block rotation all projections, layer 3": "Learned",
         "fixed H16 all projections, layer 3, 10000 calibration cap": "H16 10k",
         "exact Qwen H16 all projections, layer 3, 256 samples per expert": "H16 Qwen-256",
+        "exact Qwen H16 all projections, all routed layers, 256 samples per expert": "H16 all 42",
     }
     rows = [row for row in data["candidates"] if row["name"] in wanted]
     labels = [wanted[row["name"]] for row in rows]
     values = [row["mean_kld"] for row in rows]
-    colors = ["#6b7280", "#9ca3af", "#d97706", "#047857", "#10b981"]
+    colors = ["#6b7280", "#9ca3af", "#d97706", "#047857", "#10b981", "#2563eb"]
 
     fig, ax = plt.subplots(figsize=(9.5, 5.4))
     bars = ax.bar(labels, values, color=colors)
     ax.set_ylabel("Mean KLD (lower is better)")
-    ax.set_title("GLM-5.3-Flash layer-3 rotation candidates\n16 opened conditional-fit windows")
+    ax.set_title("GLM-5.3-Flash H16 rotation candidates\n16 opened conditional-fit windows")
     ax.set_ylim(0.0368, 0.03935)
     ax.grid(axis="y", alpha=0.25)
     for bar, value in zip(bars, values, strict=True):
@@ -46,7 +47,7 @@ def main() -> None:
     fig.text(
         0.5,
         0.018,
-        "H16 10k vs stock: -2.625%; paired BCa 95% delta CI [-0.001717, -0.000177]",
+        "Best qualified: layer 3 H16 -2.625%. Full 42-layer H16: -1.326%, CI crosses zero.",
         ha="center",
         fontsize=9,
     )

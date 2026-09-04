@@ -61,7 +61,8 @@ expert for the exact-Qwen scale-up.
 Included now:
 
 - opened layer-3 H16, learned, identity, stock, and 256-versus-10k paired KLD;
-- quantization receipts and layer validation for the exact 256-sample build;
+- all 42 layers of exact-256 H16 quantization receipts and validation, plus the
+  completed full-model conditional-fit KLD and runtime proof;
 - source, runtime patch, Dockerfile, launchers, tests, and analysis code;
 - a checksum manifest and reproducibly generated figure.
 
@@ -81,7 +82,10 @@ history.
 
 ## Known validity threats
 
-- Current GLM evidence changes one routed layer, not all 42.
+- The uniform all-42-layer H16 candidate has been measured, but its 1.326%
+  lower mean KLD did not pass because the paired BCa interval crossed zero.
+- Only layer 3 has a statistically qualified H16 improvement; selective
+  multi-layer placement remains adaptive conditional-fit work.
 - The 16-window conditional-fit panel estimates within-panel uncertainty but
   not between-quantization-run variance.
 - The serving endpoint is W4A16. Native FP4 activation input was not qualified
