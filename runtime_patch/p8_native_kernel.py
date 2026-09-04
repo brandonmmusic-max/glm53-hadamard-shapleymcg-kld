@@ -23,6 +23,7 @@ from b12x.moe._shared.kernels.dynamic import MoEDynamicKernelBackend
 from b12x.moe.fused_moe._impl import (
     _DynamicMoEW4A8Launch,
     _e8m0_scale_to_w4a8_sfb_inplace,
+    _launch_dynamic_topk_sum,
     current_cuda_stream,
 )
 
@@ -68,6 +69,7 @@ class P8NativeTPMoE:
         swiglu_limit: float = 10.0,
         force_materialized: bool | None = None,
         mac_override: int | None = None,
+        deterministic_output: bool = False,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -77,6 +79,7 @@ class P8NativeTPMoE:
         self.swiglu_limit = float(swiglu_limit)
         self.force_materialized = force_materialized
         self.mac_override = None if mac_override is None else int(mac_override)
+        self.deterministic_output = bool(deterministic_output)
         if self.mac_override is not None and self.mac_override <= 0:
             raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
@@ -170,6 +173,7 @@ class P8NativeTPMoE:
             direct_routing=False,
             materialize_intermediate=materialized,
             share_input_across_experts=materialized,
+            deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
         )
         launch = _DynamicMoEW4A8Launch(
@@ -248,6 +252,7 @@ class P8NativeTPMoE:
                 ("scaled", 1),
                 ("identity", 1),
                 ("codebook", "mcg"),
+                ("deterministic_output", int(self.deterministic_output)),
             ),
             dsl_compile_options=OptLevel(2),
         )
@@ -313,6 +318,16 @@ class P8NativeTPMoE:
         token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
         token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
         output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
+        kernel_output = (
+            torch.empty(
+                m * self.topk,
+                self.hidden,
+                dtype=torch.bfloat16,
+                device=self.device,
+            )
+            if self.deterministic_output
+            else output
+        )
         arm.compiled(
             _gptr(cutlass.BFloat16, x),
             _gptr(cutlass.Int32, flat_ids, 4),
@@ -345,12 +360,12 @@ class P8NativeTPMoE:
             _gptr(cutlass.Uint32, self.w2_sfb),
             row_counts, expert_write_rows, expert_tile_base,
             self.ones, self.ones, self.ones, self.ones,
-            _gptr(cutlass.BFloat16, output),
+            _gptr(cutlass.BFloat16, kernel_output),
             _gptr(cutlass.Int32, token_map, 4),
             _gptr(cutlass.Float32, token_weights, 4),
             m,
             m * self.topk,
-            m,
+            m * self.topk if self.deterministic_output else m,
             rows_padded,
             max_tasks,
             physical_tiles,
@@ -359,4 +374,13 @@ class P8NativeTPMoE:
             _gptr(cutlass.Uint8, self.zero_lut),
             _gptr(cutlass.Float16, self.zero_rotation),
         )
+        if self.deterministic_output:
+            _launch_dynamic_topk_sum(
+                route_output=kernel_output,
+                output=output,
+                m=m,
+                num_topk=self.topk,
+                k=self.hidden,
+                stream=current_cuda_stream(),
+            )
         return output

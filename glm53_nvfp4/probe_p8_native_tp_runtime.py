@@ -85,6 +85,8 @@ def main() -> None:
     )
     parser.add_argument("--mac", type=int)
     parser.add_argument("--tokens", type=int, nargs="+", default=(3, 33))
+    parser.add_argument("--deterministic-output", action="store_true")
+    parser.add_argument("--repeats", type=int, default=1)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
@@ -101,6 +103,7 @@ def main() -> None:
         intermediate=512,
         force_materialized=args.mode == "materialized",
         mac_override=args.mac,
+        deterministic_output=args.deterministic_output,
     )
     gate, up, down = load_dense(args.dense, rank=args.rank, experts=args.experts)
     cells: list[dict[str, object]] = []
@@ -111,20 +114,36 @@ def main() -> None:
         ).to(torch.int32)
         weights = torch.softmax(torch.randn(tokens, 8, device="cuda"), -1).float()
         expected = reference(x.float(), ids, weights, gate, up, down)
-        actual = runtime(x, weights, ids).float()
-        torch.cuda.synchronize()
+        actual_runs = []
+        output_hashes = []
+        for _ in range(args.repeats):
+            actual = runtime(x, weights, ids).float()
+            torch.cuda.synchronize()
+            actual_runs.append(actual)
+            output_hashes.append(
+                hashlib.sha256(
+                    actual.cpu().contiguous().view(torch.uint8).numpy().tobytes()
+                ).hexdigest()
+            )
+        actual = actual_runs[0]
         cosine = float(F.cosine_similarity(actual.reshape(1, -1), expected.reshape(1, -1)))
         relative_l2 = float((actual - expected).norm() / expected.norm().clamp_min(1e-9))
+        bitwise_deterministic = len(set(output_hashes)) == 1
         cells.append(
             {
                 "tokens": tokens,
                 "cosine": cosine,
                 "relative_l2": relative_l2,
                 "finite": bool(torch.isfinite(actual).all()),
-                "output_sha256": hashlib.sha256(
-                    actual.cpu().contiguous().view(torch.uint8).numpy().tobytes()
-                ).hexdigest(),
-                "pass": bool(torch.isfinite(actual).all() and cosine > 0.995 and relative_l2 < 0.12),
+                "output_sha256": output_hashes[0],
+                "output_sha256_runs": output_hashes,
+                "bitwise_deterministic": bitwise_deterministic,
+                "pass": bool(
+                    torch.isfinite(actual).all()
+                    and cosine > 0.995
+                    and relative_l2 < 0.12
+                    and (args.repeats == 1 or bitwise_deterministic)
+                ),
             }
         )
     result = {
@@ -137,6 +156,8 @@ def main() -> None:
         "rank": args.rank,
         "mode": args.mode,
         "max_active_clusters": args.mac,
+        "deterministic_output": args.deterministic_output,
+        "repeats": args.repeats,
         "experts": list(range(args.experts)),
         "physical_bpw": 4.25,
         "compute": "mxf8f6f4 E4M3 x E4M3 with physical UE8M0/32 scales",
