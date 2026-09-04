@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -74,6 +75,24 @@ def _replace_layer(weight_map: dict[str, str], layer: int, entries: dict[str, st
     weight_map.update(entries)
 
 
+def _remove_quantized_layers(payload: dict, layers: list[int]) -> dict:
+    """Return a ModelOpt config with routed experts for ``layers`` unquantized."""
+    result = copy.deepcopy(payload)
+    quant = result.get("quantization_config", result)
+    targets = {
+        f"model.language_model.layers.{layer}.mlp.experts" for layer in layers
+    }
+    for group in quant.get("config_groups", {}).values():
+        if "targets" in group:
+            group["targets"] = [
+                target for target in group["targets"] if target not in targets
+            ]
+    quantized_layers = quant.get("quantized_layers", {})
+    for target in targets:
+        quantized_layers.pop(target, None)
+    return result
+
+
 def _write_overlay(
     output: Path,
     *,
@@ -84,6 +103,7 @@ def _write_overlay(
     base_layers: list[int],
     candidate_layers: list[int],
     design_sha256: str,
+    generated_configs: dict[str, dict],
 ) -> dict:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite {output}")
@@ -92,9 +112,23 @@ def _write_overlay(
     missing = sorted(required_shards - set(sources))
     if missing:
         raise RuntimeError(f"missing shard sources: {missing[:8]}")
+    broken = sorted(
+        name
+        for name in required_shards
+        if not sources[name].is_file()
+    )
+    if broken:
+        raise RuntimeError(f"missing shard source files: {broken[:8]}")
     for name, source in sources.items():
+        if name in generated_configs:
+            continue
         if name in required_shards or source.parent == carrier:
             os.symlink(source, output / name)
+    config_hashes = {}
+    for name, payload in generated_configs.items():
+        config_path = output / name
+        config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        config_hashes[name] = sha256_file(config_path)
     index = dict(index_template)
     index["weight_map"] = weight_map
     index_path = output / "model.safetensors.index.json"
@@ -107,6 +141,7 @@ def _write_overlay(
         "required_load_format": "instanttensor",
         "design_sha256": design_sha256,
         "index_sha256": sha256_file(index_path),
+        "generated_config_sha256": config_hashes,
         "zero_copy": True,
         "ldlq": False,
     }
@@ -150,6 +185,13 @@ def main() -> None:
     all_paths = [carrier, *base_paths.values(), *candidate_paths.values()]
     sources = _merge_sources(all_paths)
     design_hash = sha256_file(args.design)
+    generated_configs = {}
+    for name in ("config.json", "hf_quant_config.json"):
+        path = carrier / name
+        if path.is_file():
+            generated_configs[name] = _remove_quantized_layers(
+                json.loads(path.read_text()), layers
+            )
     rows = []
     args.output_root.mkdir(parents=True)
     for cid, coalition in design["coalitions"].items():
@@ -166,6 +208,7 @@ def main() -> None:
             base_layers=layers,
             candidate_layers=list(map(int, coalition)),
             design_sha256=design_hash,
+            generated_configs=generated_configs,
         )
         rows.append(
             {
@@ -174,6 +217,7 @@ def main() -> None:
                 "model": str(output.resolve()),
                 "index_sha256": receipt["index_sha256"],
                 "overlay_sha256": receipt["overlay_sha256"],
+                "generated_config_sha256": receipt["generated_config_sha256"],
             }
         )
     manifest = {

@@ -30,11 +30,38 @@ if sha(addendum) != plan["inputs"]["preflight_addendum"]["sha256"]:
 addendum_v2 = plan_path.parent.parent / plan["inputs"]["preflight_addendum_v2"]["path"]
 if sha(addendum_v2) != plan["inputs"]["preflight_addendum_v2"]["sha256"]:
     raise SystemExit("preflight addendum v2 hash mismatch")
+addendum_v3 = plan_path.parent.parent / plan["inputs"]["preflight_addendum_v3"]["path"]
+if sha(addendum_v3) != plan["inputs"]["preflight_addendum_v3"]["sha256"]:
+    raise SystemExit("preflight addendum v3 hash mismatch")
+addendum_v4 = plan_path.parent.parent / plan["inputs"]["preflight_addendum_v4"]["path"]
+if sha(addendum_v4) != plan["inputs"]["preflight_addendum_v4"]["sha256"]:
+    raise SystemExit("preflight addendum v4 hash mismatch")
 if manifest["design_sha256"] != sha(design_path):
     raise SystemExit("overlay/design identity mismatch")
 models = {row["coalition_id"]: row["model"] for row in manifest["coalitions"]}
 if set(models) != set(design["coalitions"]):
     raise SystemExit("overlay matrix is incomplete")
+targets = {
+    f"model.language_model.layers.{layer}.mlp.experts" for layer in design["layers"]
+}
+for cid, raw_model in models.items():
+    model = Path(raw_model)
+    index = json.loads((model / "model.safetensors.index.json").read_text())
+    missing = sorted(
+        shard for shard in set(index["weight_map"].values())
+        if not (model / shard).is_file()
+    )
+    if missing:
+        raise SystemExit(f"{cid} has missing shard sources: {missing[:8]}")
+    for name in ("config.json", "hf_quant_config.json"):
+        payload = json.loads((model / name).read_text())
+        quant = payload.get("quantization_config", payload)
+        declared = set(quant.get("quantized_layers", {}))
+        for group in quant.get("config_groups", {}).values():
+            declared.update(group.get("targets", []))
+        overlap = sorted(targets & declared)
+        if overlap:
+            raise SystemExit(f"{cid} retains BF16 layers in {name}: {overlap}")
 for cid in plan["run_order"]:
     print(f"{cid}\t{models[cid]}")
 PY

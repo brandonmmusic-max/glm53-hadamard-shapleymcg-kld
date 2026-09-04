@@ -75,6 +75,12 @@ def test_direct_kld_analysis_recovers_additive_ranking(tmp_path: Path):
     }
     for layer, expected in effects.items():
         assert np.isclose(means[layer], expected)
+    for row in result["per_layer"]:
+        assert len(row["contextual_marginals"]) == 2
+        assert all(
+            np.isclose(context["mean_marginal_kld_reduction"], effects[row["layer"]])
+            for context in row["contextual_marginals"]
+        )
     assert all(
         row["max_abs_window_efficiency_residual"] < 1e-15
         for row in result["path_efficiency"]
