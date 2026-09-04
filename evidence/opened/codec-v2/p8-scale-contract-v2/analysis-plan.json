@@ -1,0 +1,81 @@
+{
+  "algorithm_exclusion": "LDLQ and BlockLDLQ are excluded",
+  "analysis_lock": {
+    "codec_code_sha256": "bb4309ef2be5f008c8091c8be44e4596f367c50fffcdeac9d7ebe1f1a0bef07c",
+    "git_head": "23f3738c342ca85ce61286e80812561202b952f6",
+    "screen_code_sha256": "ea135d7934cd006ebd84feb37502a64b57b2d872ded8ae675d55a3850152c98d"
+  },
+  "arms": {
+    "identity_sfb": "multiply physical scale in prologue, round fully-scaled weights to E4M3, then use identity MX SFB",
+    "native_ue8m0_sfb": "normalized procedural-MCG E4M3 plus physical UE8M0/32 scale consumed by MX MMA"
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090427,
+    "unit": "expert"
+  },
+  "created_at": "2026-09-04T18:25:43.980758+00:00",
+  "decision_rule": "use identity SFB only if its geometric-mean routed-output NMSE regresses no more than 2 percent and it is non-inferior on at least 12 of 16 experts; otherwise use the physical UE8M0 scale as native MX SFB. The BCa interval is reported as a development control and is not a stop rule.",
+  "decision_thresholds": {
+    "maximum_identity_sfb_relative_regression": 0.02,
+    "minimum_identity_sfb_nonregressions": 12
+  },
+  "estimand": "paired per-expert log routed-output NMSE ratio, identity SFB divided by native UE8M0 SFB",
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "codec": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/identity-mcg-layer3-v1/codec/p8-identity-mcg-layer-003-experts-000-072.safetensors",
+      "sha256": "785f14b6331d462b40f2b8ebb2f50db6ace3fb40d300f7ddce77f2269f3edae1"
+    },
+    "dense": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/identity-mcg-layer3-v1/dense/p8-identity-mcg-layer-003-experts-000-072.safetensors",
+      "sha256": "99e0f1009784e33c8a48552703f64a47f0799626f9b960c384d9955317c47ec0"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "isa_cost": "P8 mxf8f6f4 has twice the MMA issue count of NVFP4",
+  "layer": 3,
+  "metrics_order": [
+    "per-projection weight NMSE and exact fraction",
+    "routed full-expert output NMSE"
+  ],
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "fit-developmental",
+  "sampling": {
+    "count": 128,
+    "offset": 448,
+    "role": "fit",
+    "strategy": "domain-balanced"
+  },
+  "schema": "glm53-p8-scale-contract-plan.v1",
+  "window_uncertainty_policy": "recorded development control; scientific KLD claim gate remains unchanged"
+}

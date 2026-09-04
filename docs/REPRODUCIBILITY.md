@@ -31,6 +31,14 @@ before each run. Numerical gates compare BF16 pseudoquant candidate and BF16
 decoded-GPTQ control overlays through the identical InstantTensor/framework
 execution path.
 
+As of decision 12, paired window uncertainty is a recorded development
+control rather than an engineering stop. An interval crossing zero may permit
+continued codec and kernel work, but it may not support a comparative quality
+claim. A final statement that P8/P4 beats NVFP4 still requires matched
+end-to-end teacher KLD with the paired BCa upper bound below zero. Shapley is
+used only after a viable base codec is identified and cannot substitute for
+that comparison.
+
 For the layer-22 gate, both arms redirect the same 864 routed-expert tensors
 in exactly one layer. The control is a BF16 decode of full-Hessian GPTQ
 NVFP4; the candidate is the BF16 reference decode of the 4.25-bpw P8 stream.
@@ -74,7 +82,7 @@ sequential GPTQ across 128-column slabs, and a cap of 256 routed samples per
 expert for the exact-Qwen scale-up.
 
 The codec-v2 P8 encoder instead preserves physical 16x16 trellis order,
-decodes a K4 stream to fully scaled E4M3 with K32 UE8M0 scales, applies static
+decodes a K4 stream to E4M3 with physical K32 UE8M0 scales, applies static
 within-group activation order, and carries full-Hessian GPTQ-style error
 feedback between groups while jointly refitting scales. It is 4.25 physical
 bpw and charged 4.5 bpw in the KLD gates. No LDLQ or BlockLDLQ implementation
@@ -130,9 +138,16 @@ history.
   matched-BF16 layer attribution found conditional-fit improvements at layers
   3 and 20, but their frozen combination improved the reused V5 wave by only
   1.383% with a BCa interval crossing zero and opposite signs across domains.
-- The native P8 closure remains blocked by E4M3 activation serving: with
-  near-lossless weights, activation quantization dominates the layer-3 error.
-  Independently, the strongest new layer-22 candidate improved causal
+- The earlier integrated W6A8 activation path regressed layer-3 KLD even with
+  near-lossless weights. The corrected monolithic P8 prologue closes on eight
+  actual full-size layer-3 expert payloads (cosine 0.998953, relative L2
+  0.045753). The split/prefill specialization now also closes for K3/K4
+  synthetic payloads and for the actual full-size K4 layer-3 payload at M33 and
+  M64 (real-payload cosine 0.998940–0.998948). The former failure was an
+  omitted mandatory K32 MMA lane permutation in one materialization branch;
+  it remains preserved. Integrated end-to-end kernel KLD is not yet measured.
+  Independently, the
+  strongest new layer-22 candidate improved causal
   full-expert NMSE by 17.07% but regressed matched-path end-to-end KLD by
   1.074%, with its paired interval crossing zero. Local routed-output NMSE is
   therefore not sufficient promotion evidence for the current encoder.

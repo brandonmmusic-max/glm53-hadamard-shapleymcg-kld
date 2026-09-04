@@ -92,11 +92,17 @@ end-to-end KLD win and does not authorize a native kernel claim.
 
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
-The P4/P8 kernel closure gates remain blocked. P8 first failed E4M3 activation
-carrier closure—even near-lossless MXFP6 weights do not serve within CI of
-the BF16 path—and neither the uniform nor expert-masked redesigned encoder
-passes its matched-path end-to-end KLD gate. Consequently no native prologue,
-speed, or determinism claim is made.
+P8 device arithmetic closure now passes for the procedural-MCG K3/K4 decoder
+with physical UE8M0/32 scales and an identity activation boundary. The fresh
+split/prefill run passed K3 and K4 at 33 and 64 tokens (cosine
+`0.998896`–`0.998941`), and the actual 4.25-bpw layer-3 K4 payload passed at
+full GLM dimensions (cosine `0.998940`–`0.998948`, relative L2
+`0.045903`–`0.046079`). The former split failure was a missing mandatory K32
+MMA lane permutation, now fixed and preserved as an implementation diagnostic.
+This clears device arithmetic only: integrated end-to-end kernel KLD, speed,
+and five-run determinism remain unqualified. The earlier W6A8 activation
+failure remains a negative control, and neither the uniform nor expert-masked
+encoder has passed the strict matched-path end-to-end KLD claim gate.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.

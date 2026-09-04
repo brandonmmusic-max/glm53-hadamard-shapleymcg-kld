@@ -30,12 +30,28 @@ def main() -> None:
         for row in repeat["cells"]
     )
     runtime_match = repeat["runtime_dynamic"]["sha256"] == plan["sources"]["runtime_dynamic"]
-    passed = repeat["decision"] == "pass" and cells_pass and runtime_match
+    scale_match = repeat.get("weight_scale_contract") == plan.get("weight_scale_contract")
+    codebook_match = repeat.get("codebook_selection") == plan.get("codebook_selection")
+    boundary_match = repeat.get("boundary") == plan.get("activation_boundary")
+    passed = (
+        repeat["decision"] == "pass"
+        and cells_pass
+        and runtime_match
+        and scale_match
+        and codebook_match
+        and boundary_match
+    )
     payload = {
-        "schema": "glm53-p8-mcg-split-closure-result.v1",
+        "schema": "glm53-p8-mcg-split-closure-result.v3",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decision": "pass-split-prefill-arithmetic-closure" if passed else "fail",
-        "checks": {"required_cells": cells_pass, "runtime_source_identity": runtime_match},
+        "checks": {
+            "required_cells": cells_pass,
+            "runtime_source_identity": runtime_match,
+            "weight_scale_contract": scale_match,
+            "explicit_mcg_codebook": codebook_match,
+            "activation_boundary": boundary_match,
+        },
         "inputs": {"plan": sha256_file(args.plan), "repeat": sha256_file(args.repeat)},
         "scope": "split FC1/FC2 device arithmetic only; not end-to-end KLD, production-model integration, speed, or determinism qualification",
         "table_bytes": 0,

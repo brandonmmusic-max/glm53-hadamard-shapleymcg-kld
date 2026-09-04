@@ -1,0 +1,57 @@
+{
+  "codebook_selection": "explicit constructor argument: mcg",
+  "created_at": "2026-09-04T18:59:45.326678+00:00",
+  "decision_question": "Do table-free procedural MCG K3/K4 weights with physical non-unit UE8M0/32 scales execute through both split FC1 and FC2 mxf8f6f4 kernels at M33 and M64 within tolerance?",
+  "encoder_contract": "Viterbi plus full-Hessian GPTQ-style feedback; no LDLQ; native ties-to-even E4M3",
+  "image": {
+    "id": "sha256:df31cef051820b5e974893004fadc7d55a7a8898cf2b0830c0783376772e0927",
+    "tag": "klc/glm53-flash-nvfp4:p8-mcg-scaled-v8"
+  },
+  "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4; P8 is quality-oriented",
+  "observation": "Earlier scaled runs used an MCG oracle while the kernel silently defaulted to SQG and are invalid. Corrected non-unit-scale diagnostics passed. The v4 arithmetic repeat also passed but its seal failed only because two semantically identical scale-contract strings differed; this fresh-seed run uses one exact contract string.",
+  "probe_arguments": [
+    "--mode",
+    "split",
+    "--scaled",
+    "--scale-pattern",
+    "random"
+  ],
+  "required_cells": [
+    {
+      "bits": 3,
+      "tokens": 33
+    },
+    {
+      "bits": 3,
+      "tokens": 64
+    },
+    {
+      "bits": 4,
+      "tokens": 33
+    },
+    {
+      "bits": 4,
+      "tokens": 64
+    }
+  ],
+  "role": "developmental split-prefill arithmetic closure; no teacher logits or protected roles",
+  "schema": "glm53-p8-mcg-split-closure-plan.v3",
+  "seed": 20260950,
+  "sources": {
+    "b12x_reference": "757621e70414d34554954574c9344daad0b3a0bd6c49a95fb089ff8ad7bb52f8",
+    "b12x_test_oracle": "691225bec738cbdb6b7af3d6438864e211718e23f7dd19e9316c8e831c638613",
+    "mcg_decode": "8b1e90d3189231ff77b4e3a44aa8d51d4383d565d5e43a7e73faa40cec65b17f",
+    "probe": "946f23785294a2d134f185e28af9d1307ef91225dc6a71644c6b89cdfca34a81",
+    "runtime_dynamic": "3a32fc3c0b924a5a36567e238ba274361fc396cfbddedda41cde5a7804e5ec9b",
+    "split_transformer": "14b3acc335547fef20e77415e54f049fa6562a6e7d60059176f6397734cc9ee1"
+  },
+  "status": "frozen-before-repeat",
+  "stopping_rule": "one fresh-seed four-cell repeat; preserve any failure without reroll",
+  "table_bytes": 0,
+  "thresholds": {
+    "cosine_min_exclusive": 0.995,
+    "finite": true,
+    "relative_l2_max_exclusive": 0.12
+  },
+  "weight_scale_contract": "physical non-unit UE8M0/32 consumed by MX MMA"
+}
