@@ -89,7 +89,8 @@ if P8_NATIVE:
                 "GLM53_P8_NATIVE_FORWARD "
                 f"layer=3 rank={layer._glm53_p8_tp_rank} stream=K4 "
                 "mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
-                "law=procedural_mcg boundary=identity physical_bpw=4.25 ldlq=false",
+                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
+                "physical_bpw=4.25 ldlq=false",
                 flush=True,
             )
             layer._glm53_p8_native_forward_logged = True
@@ -122,7 +123,8 @@ if P8_NATIVE:
     _p8n_glm_model.FusedMoEFactory = _p8n_factory
     print(
         "GLM53_P8_NATIVE_PATCH_ACTIVE layers=3 tp=4 K4 procedural_mcg "
-        "E4M3 UE8M0_K32 identity physical_bpw=4.25 ldlq=false",
+        "E4M3 UE8M0_K32 identity deterministic_route_topk_sum "
+        "physical_bpw=4.25 ldlq=false",
         flush=True,
     )
 
