@@ -131,12 +131,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunk", type=Path, action="append", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--receipt", type=Path)
     parser.add_argument("--layer", type=int, default=3)
     parser.add_argument("--world-size", type=int, default=4)
     args = parser.parse_args()
     if args.world_size != 4:
         raise ValueError("this frozen product currently targets TP4")
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    receipt_path = args.receipt or args.output_dir / "receipt.json"
+    if receipt_path.exists():
+        raise FileExistsError(f"refusing to overwrite {receipt_path}")
     receipt: dict[str, object] = {
         "schema": "glm53-p8-mcg-tp4-sidecars.v2",
         "layer": args.layer,
@@ -201,7 +205,7 @@ def main() -> None:
                 "sources": sources,
             }
         )
-    receipt_path = args.output_dir / "receipt.json"
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(json.dumps(receipt, sort_keys=True))
 

@@ -139,8 +139,16 @@ class P8NativeTPMoE:
         if tuple(w2_scale.shape) != (experts, hidden, intermediate // 32):
             raise RuntimeError(f"unexpected W2 scale shape {tuple(w2_scale.shape)}")
         self.experts = experts
-        self.w13_stream = w13.to(device=self.device).contiguous().view(torch.int32).reshape(-1)
-        self.w2_stream = w2.to(device=self.device).contiguous().view(torch.int32).reshape(-1)
+        # The trellis storage is byte-for-byte the same size as the packed
+        # E2M1 descriptor carrier expected by the inherited W4A8 launch ABI.
+        # Alias it for the descriptor-only arguments instead of allocating a
+        # second ~0.9 GiB of unread dummy weights per layer and TP rank.  The
+        # kernel reads the procedural stream through the uint32 pointers below;
+        # it never dereferences the descriptor carrier values.
+        w13_stream_storage = w13.to(device=self.device).contiguous()
+        w2_stream_storage = w2.to(device=self.device).contiguous()
+        self.w13_stream = w13_stream_storage.view(torch.int32).reshape(-1)
+        self.w2_stream = w2_stream_storage.view(torch.int32).reshape(-1)
         w13_scale = w13_scale.to(device=self.device).contiguous()
         w2_scale = w2_scale.to(device=self.device).contiguous()
         # The monolithic kernel consumes the logical [E, N, K/32] UE8M0
@@ -163,12 +171,13 @@ class P8NativeTPMoE:
             rows=hidden,
             k_dim=intermediate,
         ).reshape(-1)
-        # These are descriptor carriers only; trellis staging never reads them.
-        self.w13_dummy = torch.zeros(
-            experts, 2 * intermediate, hidden // 2, dtype=torch.uint8, device=self.device
+        # These are descriptor carriers only; they alias the trellis storage
+        # above and therefore add zero payload bytes.
+        self.w13_dummy = w13_stream_storage.view(torch.uint8).reshape(
+            experts, 2 * intermediate, hidden // 2
         )
-        self.w2_dummy = torch.zeros(
-            experts, hidden, intermediate // 2, dtype=torch.uint8, device=self.device
+        self.w2_dummy = w2_stream_storage.view(torch.uint8).reshape(
+            experts, hidden, intermediate // 2
         )
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
