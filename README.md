@@ -114,6 +114,17 @@ It retains 0.035714 bpw of headroom and excludes LDLQ and BlockLDLQ. The
 amendment and both immutable design hashes are recorded in
 `experiments/p8-kld-shapley-native6-v2-amendment.json`.
 
+The uniform all-42-layer P8 product gate is now the execution critical path.
+Its full-model KLD plan is sealed before checkpoint completion at
+`experiments/p8-uniform-all42-fullmodel-kld-v1.json` (SHA-256
+`86b415ad76b80adc8dd983edcf17d2c0b371b32ccc921643ed8a0e112aeb98d2`).
+The chained runner verifies the complete 168-sidecar TP4 inventory, immutable
+runtime patch, carrier receipt, role identity, frozen analyzer, and the
+already-opened contextual-control inventory before starting one resumable
+32-window conditional-fit run. It reports absolute and per-domain KLD plus
+paired BCa intervals. P4 construction remains parallel CPU/static work and
+does not consume the GPUs needed by this measurement.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 P8 device arithmetic closure now passes for the procedural-MCG K3/K4 decoder

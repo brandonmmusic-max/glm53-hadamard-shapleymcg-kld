@@ -637,6 +637,32 @@ confirmation, and final roles remained unopened for this redesign branch.
   introduced. Device closure waits for a reconciled serving commit and an
   available GPU boundary that does not corrupt the all-layer P8 build.
 
+## 2026-09-04: Decision 25 — full-model P8 KLD is the critical path
+
+- **Decision before result:** complete the uniform K4 procedural-MCG P8
+  checkpoint for every routed layer 3–44, verify all 168 TP4 sidecars and
+  receipts at exactly 4.25 payload bpw, and then execute one resumable KLD run
+  on the exact 32-window domain-balanced conditional-fit role. Do not reroll,
+  exclude, or replace windows. Plan SHA-256:
+  `86b415ad76b80adc8dd983edcf17d2c0b371b32ccc921643ed8a0e112aeb98d2`.
+- Report the absolute full-model mean KLD, all window values, four domain
+  summaries, and paired window-bootstrap intervals. The already-opened
+  decoded-GPTQ result is retained as a directional context row only: its rate
+  and transformed layer set do not match uniform P8, so it cannot establish a
+  strict product win.
+- The KLD run uses an immutable runtime worktree at
+  `bb45c5bc35b218f810c667698940b06d71ba1b21`, its content-addressed patch
+  manifest, TP4 with expert parallelism disabled, DCP1, fixed-order routed
+  summation, and the physical all-layer P8 sidecars. The analyzer is frozen by
+  SHA-256 before the target result.
+- P4 encoder, kernel, and GLM serving integration remain CPU/static side work
+  until the P8 build releases the GPUs. A complete finite P8 KLD measurement
+  advances to the preregistered five-cold-run TP4 speed comparison against the
+  exact EXL3 system; Shapley allocation remains blocked on that speed gate.
+- This conditional-fit result is developmental opened-role evidence, not
+  untouched final qualification. No selection, confirmation, final, or
+  reserved 28 confirmation logits may be opened. No LDLQ or BlockLDLQ is used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

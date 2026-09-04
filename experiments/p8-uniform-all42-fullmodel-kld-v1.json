@@ -1,0 +1,69 @@
+{
+  "schema": "glm53-p8-uniform-all42-fullmodel-kld-plan.v1",
+  "written_at": "2026-09-04T19:41:00-04:00",
+  "status": "preregistered-before-all-layer-checkpoint-completion",
+  "priority": "main experiment; P4 integration remains a parallel side track",
+  "run_id": "p8-uniform-all42-native-cf32-v1",
+  "role": {
+    "name": "conditional-fit",
+    "windows": 32,
+    "domain_balance": "8 per domain",
+    "evidence_level": "opened-role developmental full-model measurement",
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+    "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+  },
+  "candidate": {
+    "layers": [3, 44],
+    "layer_count": 42,
+    "world_size": 4,
+    "sidecar_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1",
+    "required_sidecars": 168,
+    "payload_bpw": 4.25,
+    "codec": "K4 procedural-MCG alpha2 to E4M3 plus physical UE8M0/32",
+    "mma": "mxf8f6f4 m16n8k32",
+    "ldlq": false
+  },
+  "carrier": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/identity-mcg-layer3-v1/candidate-bf16-pseudoquant",
+    "receipt": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-h128/identity-mcg-layer3-v1/candidate-bf16-pseudoquant/BF16_LAYER_RECEIPT.json",
+    "receipt_sha256": "ec9eae6b5041c2a3f5b4a86ac541453a721301543023c91b39ee21a8c1e9ea12",
+    "load_format": "instanttensor"
+  },
+  "runtime": {
+    "commit": "bb45c5bc35b218f810c667698940b06d71ba1b21",
+    "worktree": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-all42-runtime",
+    "patch_manifest": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/runtime-patch-manifest-bb45c5b.json",
+    "patch_manifest_sha256": "338f6e897490646c1577d419a952ed4a1006d3627bfee87457e3f75c07c7dc32",
+    "patch_tree_sha256": "1a5436b45f4a83d3413c2c0ff18fd2b5d7a1b5e710ceb9c25edb44add0bcb0b1",
+    "design_sha256": "74637836d2680d3040ef000167a052c68519f89cdbc5fdeba03231c180a4d781",
+    "image_id": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "topology": "TP4 EP-off DCP1",
+    "deterministic_route_topk_sum": true
+  },
+  "paired_context_control": {
+    "description": "already-opened decoded GPTQ NVFP4 control on the identical role; contextual comparator, not equal-rate qualification",
+    "records": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/records/p8-scaled-mcg-l3-control-cf32-v1",
+    "windows": 32,
+    "canonical_file_list_sha256": "8f5ced5fad3db5efebf6c9ee2a090fd4a86c8d819aaec2a422bd4643ec8643d2",
+    "mean_kld": 0.05333141760014658
+  },
+  "bootstrap": {
+    "replicates": 50000,
+    "seed": 20260965,
+    "unit": "window",
+    "interval": "paired BCa 95%"
+  },
+  "analysis": {
+    "module": "glm53_nvfp4.analyze_uniform_p8_fullmodel",
+    "code_sha256": "e6d73ca4a3e8b4e9543b715c19c44f976efc20ef92e69454829031b5238ca17c"
+  },
+  "decision_before_result": {
+    "primary": "Report absolute mean full-model KLD, all 32 window values, domains, and paired BCa interval without excluding or rerolling windows.",
+    "interpretation": "The paired decoded-GPTQ row is contextual because its model-wide rate and transformed-layer set are not equal to uniform P8. Do not label a strict product win from that comparison alone.",
+    "continuation": "Proceed to the already-preregistered matched TP4 P8-versus-EXL3 speed gate after a complete finite KLD run; Shapley allocation remains blocked until that speed gate passes.",
+    "engineering_window_gate_relaxed": true,
+    "strict_quality_claim_gate_relaxed": false
+  },
+  "stopping_rule": "One complete n=32 run. Preserve failures and partial records; resume the same run identity without rerolling.",
+  "protected_boundary": "No selection, confirmation, final, or reserved 28 confirmation logits may be opened."
+}
