@@ -57,13 +57,31 @@ developmental null/fail, not evidence that the physical codec is worse on a
 protected holdout. Confirmation logits remain unopened, and neither LDLQ nor
 BlockLDLQ was used.
 
+Expanding the local attribution to all 288 layer-3 experts confirmed that the
+H128 effect was real but projection-dependent: gate and up weight NMSE
+improved by **18.81%** and **19.24%** (288/288 wins each), while down worsened
+by **0.94%** (116/288 wins). Full routed-expert output NMSE improved by
+**28.03%** (252/288 wins). A predeclared 39-byte expert mask selected H128 for
+98 experts and identity for 190; on a disjoint fit-only validation split that
+hybrid improved routed-output NMSE by **13.10%** versus GPTQ NVFP4, with
+201/288 wins and a BCa interval excluding zero.
+
+That local gain still did not establish end-to-end linkage. On the already
+opened conditional-fit n=32 panel, the masked 4.250443-bpw P8 codec measured
+mean KLD `0.0527762731` versus `0.0533314176` for the matched 4.5-bpw decoded
+GPTQ NVFP4 control: delta `-0.0005551445`, or a **1.0409% improvement**, with
+paired BCa 95% CI `[-0.002402,+0.001145]`. It improved 19/32 windows but
+failed the frozen `-0.0014`-nat threshold and the interval crossed zero. This
+is an adaptive developmental null, not qualification; the protected 28
+confirmation logits remain unopened. No LDLQ or BlockLDLQ was used.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 The P4/P8 kernel closure gates remain blocked. P8 first failed E4M3 activation
 carrier closure—even near-lossless MXFP6 weights do not serve within CI of
-the BF16 path—and the redesigned encoder now also fails its matched-path
-end-to-end KLD gate. Consequently no native prologue, speed, or determinism
-claim is made.
+the BF16 path—and neither the uniform nor expert-masked redesigned encoder
+passes its matched-path end-to-end KLD gate. Consequently no native prologue,
+speed, or determinism claim is made.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.

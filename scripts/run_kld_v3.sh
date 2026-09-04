@@ -24,6 +24,7 @@ ROUTE_CAPTURE_OUTPUT=${GLM53_ROUTE_CAPTURE_OUTPUT:-}
 P8_PSEUDOQUANT=${GLM53_P8_PSEUDOQUANT:-}
 P8_PSEUDOQUANT_ARM=${GLM53_P8_PSEUDOQUANT_ARM:-candidate}
 P8_BOUNDARY_FILES=${GLM53_P8_BOUNDARY_FILES:-}
+P8_POLICY=${GLM53_P8_POLICY:-}
 DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
@@ -43,6 +44,7 @@ DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$DISABLE_EP" = 0 ] || [ "$DISABLE_EP" = 1 ] || { echo "GLM53_DISABLE_EP must be 0 or 1" >&2; exit 2; }
 [ -z "$P8_PSEUDOQUANT" ] || [ "$DISABLE_EP" = 1 ] || { echo "P8 pseudoquant reference requires GLM53_DISABLE_EP=1" >&2; exit 2; }
 [ -z "$P8_PSEUDOQUANT" ] || [ -n "$P8_BOUNDARY_FILES" ] || { echo "P8 pseudoquant requires GLM53_P8_BOUNDARY_FILES" >&2; exit 2; }
+[ "$P8_PSEUDOQUANT_ARM" != hybrid ] || [ -n "$P8_POLICY" ] || { echo "hybrid P8 pseudoquant requires GLM53_P8_POLICY" >&2; exit 2; }
 if [ -f "$MODEL_DIR/OVERLAY.json" ] && [ "$LOAD_FORMAT" != instanttensor ]; then
   echo "sparse overlay checkpoints require GLM53_LOAD_FORMAT=instanttensor" >&2
   exit 2
@@ -127,6 +129,7 @@ if [ -n "$P8_PSEUDOQUANT" ]; then
     -e GLM53_P8_LAYERS=3
     -e GLM53_P8_BOUNDARY_FILES="$P8_BOUNDARY_FILES"
   )
+  [ -z "$P8_POLICY" ] || rotation_env+=( -e GLM53_P8_POLICY="$P8_POLICY" )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
     rotation_mount+=( -v "$REPO/runtime_patch:/runtime-patch:ro" )
   fi
@@ -200,7 +203,7 @@ docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 [ "$(docker inspect "$TEST" --format '{{.Image}}')" = "$IMAGE_ID" ]
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
-[ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM ldlq=false" "$SESSION/server-ready.log"
+[ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"
 [ "$MOE_BACKEND" != humming ] || grep -qi 'humming moe' "$SESSION/server-ready.log"
 if [ "$HUMMING_ACT" = nvfp4 ]; then
@@ -219,7 +222,9 @@ fi
 extra=()
 [ -z "$SELECTION_WAVE" ] || extra+=(--selection-wave "$SELECTION_WAVE")
 [ -z "$FREEZE_RECEIPT" ] || extra+=(--freeze-receipt "$(readlink -f "$FREEZE_RECEIPT")")
-CONFIG_ID="$ENDPOINT_TAG-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-ep4-dcp$DCP_SIZE-eager-nomtp-kvfp8"
+EP_TAG=ep4
+[ "$DISABLE_EP" != 1 ] || EP_TAG=noep
+CONFIG_ID="$ENDPOINT_TAG-v5-$ROTATION-$ROTATION_SCOPE-$MOE_BACKEND-$HUMMING_ACT-$LOAD_FORMAT-tp4-$EP_TAG-dcp$DCP_SIZE-eager-nomtp-kvfp8"
 if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
   [ "$ROLE" != confirmation ] || { echo "route-only diagnostics may not open confirmation" >&2; exit 2; }
   python3 -m glm53_nvfp4.route_eval --role "$ROLE" --roles "$ROLES" \
