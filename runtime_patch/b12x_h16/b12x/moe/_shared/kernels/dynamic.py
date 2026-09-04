@@ -968,10 +968,6 @@ class MoEDynamicKernelBackend:
                 )
             if trellis_codebook == "mcg" and trellis_bits == 2:
                 raise ValueError("the redesigned P8 MCG product supports K3/K4, not K2")
-            if trellis_codebook == "mcg" and materialize_intermediate:
-                raise NotImplementedError(
-                    "P8 MCG split-materialized phase kernels are not ported yet"
-                )
         elif trellis_bits is not None:
             raise ValueError("trellis_bits is only valid for w4a8_trellis")
         self.trellis_bits = 0 if trellis_bits is None else int(trellis_bits)
@@ -1039,6 +1035,9 @@ class MoEDynamicKernelBackend:
             # non-split activations (notably ReLU2) instead of rejecting them
             # during otherwise valid monolithic-kernel construction.
             activation=self.activation if self.w4a8_split_materialized else "silu",
+            trellis_codebook=(
+                self.trellis_codebook if self.w4a8_split_materialized else "none"
+            ),
         )
         self.materialized_phase2_kernel = W4A8MaterializedPhase2Kernel(
             source_tile_m=materialized_source_tile_m,
@@ -1050,6 +1049,9 @@ class MoEDynamicKernelBackend:
             ),
             trellis_direct_lut=(
                 self.trellis_direct_lut and self.w4a8_split_materialized
+            ),
+            trellis_codebook=(
+                self.trellis_codebook if self.w4a8_split_materialized else "none"
             ),
         )
         if self.w4a8_repacked and quant_recipe not in ("w4a8_mx", "w4a8_trellis"):
@@ -2831,7 +2833,10 @@ class MoEDynamicKernelBackend:
             ]
             trellis_lut_smem: cute.struct.Align[
                 cute.struct.MemRange[
-                    cutlass.Uint8, 4096 if self.w4a8_trellis else 16
+                    cutlass.Uint8,
+                    4096
+                    if self.w4a8_trellis and self.trellis_codebook != "mcg"
+                    else 16,
                 ],
                 16,
             ]
@@ -2938,7 +2943,9 @@ class MoEDynamicKernelBackend:
             )
         sfa_base_addr = ctrl_base_addr + Int32(Storage._offsets["sSFA"])
         reduce_scratch_addr = ctrl_base_addr + Int32(Storage._offsets["reduce_scratch"])
-        if cutlass.const_expr(self.w4a8_trellis):
+        if cutlass.const_expr(
+            self.w4a8_trellis and self.trellis_codebook != "mcg"
+        ):
             # Stage the 4 KiB T12 staircase once; every later decode gathers
             # from shared memory. The phase-0 grid barrier orders the copy
             # ahead of any consumer decode.

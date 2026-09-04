@@ -515,6 +515,38 @@ confirmation, and final roles remained unopened for this redesign branch.
   product qualification. P8 remains a quality product whose MMA issues at
   twice the NVFP4 count. No LDLQ or BlockLDLQ was used.
 
+## 2026-09-04: Decision 19 — split-prefill P8 arithmetic closure
+
+- **Decision before repeat:** after one unsealed M33/M64 bring-up, freeze a
+  fresh seed and require all four K3/K4 by M33/M64 cells to have finite output,
+  cosine above `0.995`, relative L2 below `0.12`, and exact runtime-source
+  identity. The source transformer is fail-closed against the pinned B12X FC1
+  and FC2 hashes. Plan SHA-256:
+  `34134dbd58e540ba0b55fa5c9951c9cfedcfe7d6b37a6cb789aacbe2f44c5dc1`.
+- **Outcome:** passed. Cosine ranged `0.9988336..0.9989196`; relative L2
+  ranged `0.0464960..0.0483086`. Both split FC1 and split FC2 decode the K3/K4
+  MCG stream in their MMA warps. The unused SQG shared-table reservation and
+  copy were removed, so procedural MCG now has zero runtime table bytes.
+  Result SHA-256:
+  `16ccbac5ef027ef8814e1a7be2d151c465fccb3c315934327b89e70eaae15a11`.
+- **Boundary:** this is prefill arithmetic closure, not full-model KLD or
+  speed qualification. P8 still has twice the NVFP4 MMA issue count. No LDLQ
+  or BlockLDLQ was used.
+
+## 2026-09-04: Decision 20 — five-run split determinism
+
+- **Decision before result:** run the identical K3/K4 by M33/M64 split probe
+  in five cold containers and require every output tensor SHA-256 to match.
+  Plan SHA-256:
+  `61c46b3cd3ca7ede322a4b92eca56b0ea02cad9651dcf1e11d84a7a9fcf8b7bd`.
+- **Outcome:** failed. All 20 arithmetic cells passed and their metrics were
+  stable, but every output hash differed across runs. The probe exercised the
+  ordinary unordered BF16 atomic-scatter specialization, not the runtime's
+  separate deterministic route-output plus fixed top-k reduction path.
+  This preserves the failure and leaves gate 4d open until that specialization
+  is run five times. It does not reverse Decisions 18–19's decoder/MMA closure.
+  No LDLQ or BlockLDLQ was used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

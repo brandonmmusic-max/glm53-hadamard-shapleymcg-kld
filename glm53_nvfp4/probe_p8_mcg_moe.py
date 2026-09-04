@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
 import sys
@@ -18,6 +19,7 @@ def main() -> None:
     parser.add_argument("--b12x-source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260920)
+    parser.add_argument("--mode", choices=("small", "split"), default="small")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
@@ -75,54 +77,66 @@ def main() -> None:
 
     test_module.build_trellis_weight = build_mcg
     cells: list[dict[str, object]] = []
+    token_counts = (3,) if args.mode == "small" else (33, 64)
     for bits in (3, 4):
-        test_module._BITS = bits
-        actual, expected = test_module._run_trellis_dynamic(
-            activation="silu",
-            E=8,
-            m=3,
-            K=512,
-            n=256,
-            top_k=4,
-            seed=args.seed + bits,
-        )
-        cosine = float(
-            torch.nn.functional.cosine_similarity(
-                actual.reshape(1, -1), expected.reshape(1, -1)
-            ).item()
-        )
-        relative_l2 = float(
-            ((actual - expected).norm() / expected.norm().clamp_min(1e-9)).item()
-        )
-        cells.append(
-            {
-                "bits": bits,
-                "finite": bool(torch.isfinite(actual).all()),
-                "nonzero": int(torch.count_nonzero(actual).item()),
-                "cosine": cosine,
-                "relative_l2": relative_l2,
-                "pass": bool(
-                    torch.isfinite(actual).all()
-                    and cosine > 0.995
-                    and relative_l2 < 0.12
-                ),
-            }
-        )
+        for tokens in token_counts:
+            test_module._BITS = bits
+            actual, expected = test_module._run_trellis_dynamic(
+                activation="silu" if args.mode == "small" else "situ",
+                E=8,
+                m=tokens,
+                K=512,
+                n=256,
+                top_k=4,
+                seed=args.seed + bits * 100 + tokens,
+                tile_m=16 if args.mode == "small" else 64,
+                split_materialized=args.mode == "split",
+                mac=4 if args.mode == "small" else 64,
+            )
+            cosine = float(
+                torch.nn.functional.cosine_similarity(
+                    actual.reshape(1, -1), expected.reshape(1, -1)
+                ).item()
+            )
+            relative_l2 = float(
+                ((actual - expected).norm() / expected.norm().clamp_min(1e-9)).item()
+            )
+            cells.append(
+                {
+                    "bits": bits,
+                    "tokens": tokens,
+                    "finite": bool(torch.isfinite(actual).all()),
+                    "nonzero": int(torch.count_nonzero(actual).item()),
+                    "cosine": cosine,
+                    "relative_l2": relative_l2,
+                    "output_sha256": hashlib.sha256(
+                        actual.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
+                    ).hexdigest(),
+                    "pass": bool(
+                        torch.isfinite(actual).all()
+                        and cosine > 0.995
+                        and relative_l2 < 0.12
+                    ),
+                }
+            )
 
     dynamic_path = Path(runtime_dynamic.__file__).resolve()
     payload = {
-        "schema": "glm53-p8-mcg-native-moe-closure.v1",
+        "schema": "glm53-p8-mcg-native-moe-closure.v2",
         "product": "P8",
         "compute": "mxf8f6f4 m16n8k32 with E4M3 activations and weights",
         "law": "procedural MCG alpha 2.0",
         "ldlq": False,
         "geometry": {
+            "mode": args.mode,
             "experts": 8,
-            "tokens": 3,
+            "tokens": list(token_counts),
             "hidden": 512,
             "intermediate": 256,
             "top_k": 4,
-            "activation": "silu",
+            "activation": "silu" if args.mode == "small" else "situ",
+            "tile_m": 16 if args.mode == "small" else 64,
+            "materialize_intermediate": args.mode == "split",
         },
         "cells": cells,
         "decision": "pass" if all(cell["pass"] for cell in cells) else "fail",
@@ -140,7 +154,11 @@ def main() -> None:
             ),
         },
         "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
-        "scope": "device arithmetic closure only; not end-to-end KLD or speed qualification",
+        "scope": (
+            "split-prefill device arithmetic closure only; not end-to-end KLD or speed qualification"
+            if args.mode == "split"
+            else "small-M device arithmetic closure only; not end-to-end KLD or speed qualification"
+        ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
