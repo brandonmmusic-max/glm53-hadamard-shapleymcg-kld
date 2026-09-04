@@ -457,6 +457,64 @@ confirmation, and final roles remained unopened for this redesign branch.
   `7c9c2b7d30ace28b068b0f91c12383ea2468bee6efa364d7449427845b8ad9d9`.
   The 28 confirmation logits remain unopened. No LDLQ or BlockLDLQ was used.
 
+## 2026-09-04: Decision 15 — correct scalar-E4M3 rate labeling
+
+- Code audit found that the early `scalar-e4m3-k32` upper-bound diagnostic
+  selected independently from all finite E4M3 values. Its dense symbol stream
+  therefore requires 8 bits/weight plus 0.25 bpw of UE8M0 scales: **8.25
+  bpw**, not the 4.25 bpw recorded in those historical screen rows.
+- This does not affect any physical K4 trellis payload, KLD candidate, or
+  4.250443-bpw claim; all of those store four trellis edge bits per weight.
+  The historical JSON is retained immutably, and future screen code now emits
+  8.25 bpw for that upper bound. Any new scalar fallback must use at most 16
+  E4M3 reconstruction levels and explicit 4-bit indices to qualify at 4.25
+  bpw.
+
+## 2026-09-04: Decision 16 — genuine scalar16 hybrid and MCG alpha refit
+
+- **Decision before result:** replace the invalid unrestricted scalar-E4M3
+  fallback with a fitted 16-entry E4M3 codebook carrying exactly four indices
+  per weight, then test scalar16 alone and a per-projection scalar16/MCG hybrid
+  at 4.25 bpw. Separately refit the procedural MCG family compander over the
+  fixed projection grid. No LDLQ or BlockLDLQ is permitted.
+- **Outcome:** scalar16 alone failed. The hybrid improved GPTQ NVFP4 weight
+  NMSE by 13.16%, but was 2.886% worse than procedural MCG, so it was rejected.
+  The MCG compander refit selected alpha `2.0` independently for gate, up, and
+  down; every projection retained the existing value. MCG alpha `2.0` remains
+  frozen and the runtime uses native ties-to-even E4M3 rounding.
+
+## 2026-09-04: Decision 17 — relax the noisy window gate only as a control
+
+- **Evidence before decision:** replicated routed-output gains of 12.03% and
+  25/32 window wins did not translate into a resolved end-to-end KLD effect;
+  the adaptive KLD point estimate was only 1.04% and its paired interval
+  crossed zero. The W6A8 carrier control also failed because native E4M3
+  activation quantization dominated, not because of an identified missing
+  scale factor.
+- **Decision before subsequent device result:** the 32-window uncertainty rule
+  no longer blocks developmental encoder or kernel work. A failed or noisy
+  window screen is retained as a control and may inform later Shapley
+  allocation, but it cannot qualify a candidate. The scientific claim remains
+  unchanged: a codec beats NVFP4 only when paired end-to-end teacher KLD has a
+  BCa upper confidence bound below zero on an eligible role. Shapley allocation
+  cannot convert an inferior base arm into a win.
+
+## 2026-09-04: Decision 18 — procedural-MCG P8 device arithmetic closure
+
+- **Decision before repeat:** after an unsealed bring-up, freeze one fresh-seed
+  K3/K4 repeat. Require zero decoder mismatches over 32,768 values per rate,
+  cosine above `0.995`, relative L2 below `0.12`, finite outputs, identical
+  runtime-source hashes, and no reroll. Plan SHA-256:
+  `cafc8963560fda0e7202c1f8487991bdcf0ebea048870a3b6b65c3df7b153017`.
+- **Outcome:** passed this bounded gate. K3 and K4 each had zero decoder
+  mismatches. Native SM120 MoE arithmetic through `mxf8f6f4` measured cosine
+  `0.9986532` / `0.9987590` and relative L2 `0.0552597` / `0.0564104`.
+  The decoder is procedural MCG alpha 2.0 with zero runtime table bytes.
+- **Boundary:** this closes bit-exact decode and small-M device arithmetic only.
+  It is not split-prefill closure, end-to-end KLD, speed, determinism, or
+  product qualification. P8 remains a quality product whose MMA issues at
+  twice the NVFP4 count. No LDLQ or BlockLDLQ was used.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

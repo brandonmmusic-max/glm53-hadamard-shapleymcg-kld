@@ -1,0 +1,91 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "alpha_grid": [
+    1.5,
+    1.75,
+    2.0,
+    2.25,
+    2.5,
+    2.75
+  ],
+  "created_at": "2026-09-04T17:37:52.328173+00:00",
+  "encoder": "K4 procedural MCG Viterbi plus GPTQ-style full-Hessian inter-group feedback, static within-group act order, and two UE8M0 scale refits",
+  "fit_experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "prior_scalar_analysis": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-scalar16-hybrid-v1/analysis.json",
+      "sha256": "15734691c59b8a797a23ddf05e5384b557dd7e7a7acb7336563af06bf90504f3"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "isa_cost": "P8 mxf8f6f4 issues twice the MMA instructions of NVFP4",
+  "layer": 3,
+  "projections": [
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "rate": "4.25 physical bpw; charge 4.5 bpw against GPTQ NVFP4; three alpha constants have negligible model-level storage",
+  "reserved_validation_experts": [
+    72,
+    77,
+    82,
+    87,
+    92,
+    97,
+    102,
+    107,
+    112,
+    117,
+    122,
+    127,
+    132,
+    137,
+    142,
+    143
+  ],
+  "role": "fit-only checkpoint-family procedural-law tuning",
+  "runtime": "procedural MCG decoder, zero LUT bytes, E4M3/UE8M0 K32 P8",
+  "sampling": {
+    "alpha_selection": {
+      "count": 128,
+      "offset": 256
+    },
+    "hessian_fit": {
+      "count": 256,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert"
+  },
+  "schema": "glm53-p8-mcg-projection-alpha-fit-plan.v1",
+  "selection_rule": "independently per projection choose the alpha with minimum geometric-mean held-out projection-output NMSE across all 16 fit experts; ties choose the smaller alpha; freeze all three before causal validation on reserved experts"
+}

@@ -108,7 +108,9 @@ def main() -> None:
                 full_gptq_quantize(weight, hessian, group_size=16)
             ).to(device)
             for variant, reconstructed, bpw in (
-                ("scalar-e4m3-k32", scalar, 4.25),
+                # This unrestricted 253-level diagnostic needs one E4M3 byte
+                # per weight.  It is an 8.25-bpw upper bound, not a K4 arm.
+                ("scalar-e4m3-k32", scalar, 8.25),
                 ("plain-mcg-k4", plain, 4.25),
                 ("hessian-mcg-k4", candidate, 4.25),
                 ("gptq-nvfp4", control, 4.5),

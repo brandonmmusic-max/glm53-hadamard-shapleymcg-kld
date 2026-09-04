@@ -50,6 +50,9 @@ copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/boundary-policy-v1" p8-boundary-polic
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/joint-route-policy-v1" p8-joint-route-policy
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/joint-route-fc1-policy-v2" p8-joint-route-fc1-policy
 copy_json_tree "$CAMPAIGN/codec-v2/p8-h128/fc1-powered-validation-v1" p8-fc1-powered-validation
+copy_json_tree "$CAMPAIGN/codec-v2/p8-scalar16-hybrid-v1" p8-scalar16-hybrid
+copy_json_tree "$CAMPAIGN/codec-v2/p8-mcg-projection-alpha-v1" p8-mcg-projection-alpha
+copy_json_tree "$CAMPAIGN/codec-v2/p8-device-closure-v1" p8-device-closure
 copy_json_tree "$CAMPAIGN/rotation-v5/down-h16-kld-v5-powered/sealed" powered-h16-v5
 
 mkdir -p "$DEST/capture-receipts"
