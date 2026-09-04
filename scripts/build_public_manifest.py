@@ -28,7 +28,10 @@ def main() -> None:
     paths.extend(
         [
             ROOT / "results/current-kld-summary.json",
+            ROOT / "results/selective-h16-summary.json",
+            ROOT / "results/GLM_DECISIONS.md",
             ROOT / "figures/current-layer3-kld.png",
+            ROOT / "figures/selective-h16-generalization.png",
         ]
     )
     lines = [f"{sha256(path)}  {path.relative_to(ROOT)}" for path in paths]
