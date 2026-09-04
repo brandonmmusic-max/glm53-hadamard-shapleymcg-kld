@@ -10,6 +10,10 @@ RUN_ID=$2
 MODEL_DIR=$(readlink -f "$3")
 MODEL_NAME=$4
 FREEZE=${5:-}
+[ ! -f "$MODEL_DIR/OVERLAY.json" ] || {
+  echo "sparse overlays are forbidden in the legacy safetensors KLD launcher; use run_kld_v3.sh with InstantTensor" >&2
+  exit 2
+}
 [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be selection or confirmation" >&2; exit 2; }
 [ "$ROLE" != confirmation ] || [ -n "$FREEZE" ] || { echo "confirmation requires freeze receipt" >&2; exit 2; }
 

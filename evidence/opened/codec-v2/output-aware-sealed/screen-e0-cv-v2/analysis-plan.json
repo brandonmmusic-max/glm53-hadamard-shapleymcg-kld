@@ -1,0 +1,79 @@
+{
+  "advance_rule": "advance to 16 experts only if validation aggregate improves at least 10 percent versus both Hessian-only trellis and GPTQ NVFP4, with neither projection worse than Hessian-only trellis",
+  "algorithm_exclusion": "no LDLQ code path, objective, or result is used",
+  "candidate": {
+    "encoder": "Viterbi per native 16x16 tile plus full-Hessian GPTQ-style inter-group error feedback and static within-group act order",
+    "fit_grid": {
+      "correction_scale": [
+        0.125,
+        0.25,
+        0.5,
+        0.75
+      ],
+      "ridge_ratio": [
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "law": "procedural MCG alpha=2.0",
+    "rate": "K4 plus one UE8M0 byte per 32 weights = 4.25 bpw",
+    "runtime": "P8 mxf8f6f4; quality product; twice NVFP4 MMA issue rate",
+    "scale_refit_iterations": 2
+  },
+  "carrier": "P8 E4M3 K32 UE8M0 amax pseudoquant",
+  "controls": [
+    "BF16 weight on P8 activation carrier",
+    "scalar E4M3 K32",
+    "plain MCG K4 Viterbi",
+    "Hessian-feedback MCG K4 Viterbi without output correction",
+    "standard GPTQ NVFP4 at 4.5 bpw"
+  ],
+  "created_at": "2026-09-04T07:21:15.584245+00:00",
+  "experts": [
+    0
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "layer": 3,
+  "prior_failure": {
+    "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/screen-e0-v1/result.json",
+    "sha256": "1f823d62784fdc3bd72ade1675667684c920c2042eb66f33e39e42213e2a8735"
+  },
+  "projections": [
+    "gate_proj",
+    "up_proj"
+  ],
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "fit engineering screen; nested split after v1 overfit",
+  "sampling": {
+    "fit": {
+      "count": 128,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert",
+    "tuning": {
+      "count": 128,
+      "offset": 128
+    },
+    "validation": {
+      "count": 128,
+      "offset": 256
+    }
+  },
+  "schema": "glm53-output-aware-trellis-screen-plan.v2",
+  "selection_rule": "fit corrections only on offset 0; choose one ridge/correction pair by lowest unquantized offset-128 tuning output NMSE; then freeze before offset-256 validation and quantization"
+}

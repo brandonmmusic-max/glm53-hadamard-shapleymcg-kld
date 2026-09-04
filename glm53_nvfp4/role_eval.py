@@ -57,7 +57,7 @@ def _load_teacher(path: Path, window: dict) -> np.ndarray:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", choices=("conditional-fit", "selection", "confirmation"), required=True)
-    parser.add_argument("--selection-wave", type=int, choices=(1, 2, 3))
+    parser.add_argument("--selection-wave", type=int)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--teacher-root", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -76,7 +76,10 @@ def main() -> None:
     if args.selection_wave is not None:
         if args.role != "selection":
             raise RuntimeError("--selection-wave is valid only for selection")
-        wave_ids = set(roles["selection_waves"][str(args.selection_wave)])
+        wave = str(args.selection_wave)
+        if wave not in roles["selection_waves"]:
+            raise RuntimeError(f"selection wave {wave} is not declared")
+        wave_ids = set(roles["selection_waves"][wave])
         windows = [window for window in windows if window["id"] in wave_ids]
         if len(windows) != len(wave_ids):
             raise RuntimeError("selection wave ids do not resolve exactly")
@@ -143,7 +146,10 @@ def main() -> None:
             raise RuntimeError(f"{window['id']}: token geometry mismatch")
         teacher_path = args.teacher_root / window["teacher_path"]
         teacher_entry = teacher_files[window["teacher_path"]]
-        expected_manifest_role = "conditional-fit" if args.role == "conditional-fit" else args.role
+        expected_manifest_role = window.get(
+            "teacher_source_role",
+            "conditional-fit" if args.role == "conditional-fit" else args.role,
+        )
         if (
             teacher_entry["window_id"] != window["id"]
             or teacher_entry["role"] != expected_manifest_role

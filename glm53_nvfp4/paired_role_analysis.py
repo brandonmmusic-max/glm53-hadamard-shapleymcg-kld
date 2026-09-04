@@ -50,14 +50,17 @@ def main() -> None:
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--role", choices=("conditional-fit", "selection", "confirmation"), default="confirmation")
-    parser.add_argument("--selection-wave", type=int, choices=(1, 2, 3))
+    parser.add_argument("--selection-wave", type=int)
     args = parser.parse_args()
     roles = json.loads(args.roles.read_text())
     expected = [item["id"] for item in roles["roles"][args.role]]
     if args.selection_wave is not None:
         if args.role != "selection":
             raise RuntimeError("--selection-wave requires selection role")
-        wave_ids = set(roles["selection_waves"][str(args.selection_wave)])
+        wave = str(args.selection_wave)
+        if wave not in roles["selection_waves"]:
+            raise RuntimeError(f"selection wave {wave} is not declared")
+        wave_ids = set(roles["selection_waves"][wave])
         expected = [item_id for item_id in expected if item_id in wave_ids]
     candidate = load_window_means(args.candidate_run)
     stock = load_window_means(args.stock_run)

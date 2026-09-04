@@ -1,0 +1,10 @@
+{
+  "schema": "glm53-hessian-trellis-full-16expert-failure.v1",
+  "attempt": 1,
+  "status": "failed-before-result",
+  "error": "RuntimeError: expected mat1 and mat2 to have the same dtype, but got: c10::BFloat16 != float",
+  "location": "screen_hessian_trellis_full_experts.py:146 F.linear(eval_candidate_middle, quantized[down_proj])",
+  "diagnosis": "The E4M3 carrier mirror returns BF16 while decoded pseudoquant weights are FP32. The metric call failed before the first expert record was emitted.",
+  "repair": "Cast both operands to FP32 only for the pseudoquant metric matmul; the frozen encoder, carrier, samples, expert set, and decision rule are unchanged.",
+  "protected_roles_opened": []
+}

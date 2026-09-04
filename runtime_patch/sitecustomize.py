@@ -1,6 +1,7 @@
 """Inject the sealed GLM-5.3 routed-input block rotation into vLLM.
 
-Enable only with ``GLM53_ROUTED_ROTATION=had16`` or ``learned``.  The patched
+Enable only with ``GLM53_ROUTED_ROTATION=had16``, ``had32``, ``had64``, or
+``learned``.  The patched
 vLLM MoE factory already has a routed-only input-transform contract: routed
 experts receive the transformed tensor while the router and shared expert keep
 the original tensor.
@@ -106,6 +107,7 @@ if MIXED_MXFP6:
     os.environ.setdefault("B12X_FP6_MODEL_DIR", "/model")
 
     from b12x.integration.vllm import plugin as _fp6_plugin
+    from b12x.integration.vllm import fp6_serving as _fp6_serving
     from vllm.model_executor.layers.quantization import modelopt as _modelopt
 
     _fp6_plugin.register_b12x_fp6()
@@ -114,6 +116,68 @@ if MIXED_MXFP6:
     _B12X_FP6_CONFIG = _fp6_plugin._CONFIG_CLS(
         os.environ["B12X_FP6_MODEL_DIR"]
     )
+
+    # GLM-5.3-Flash uses SiluAndMulWithClamp(swiglu_limit=10).  The pinned
+    # v79 MXFP6 bridge preserved only the string activation name, so the
+    # otherwise clamp-capable B12X kernel planned an ordinary, unclipped SiLU
+    # path.  Carry the model-locked limit into Caps; include it in the scratch
+    # cache identity so an unclipped plan can never be reused accidentally.
+    _w6a8_limit_raw = os.environ.get("GLM53_W6A8_SWIGLU_LIMIT", "").strip()
+    if _w6a8_limit_raw:
+        import torch as _torch
+
+        _w6a8_limit = float(_w6a8_limit_raw)
+        if not (_w6a8_limit > 0.0):
+            raise RuntimeError(
+                f"GLM53_W6A8_SWIGLU_LIMIT must be positive, got {_w6a8_limit!r}"
+            )
+
+        def _plan_and_scratch_with_glm_clamp(self, m, topk, device):
+            from b12x.moe import fused_moe as _fused_moe
+
+            key = (
+                int(m),
+                int(topk),
+                device,
+                id(self.weight_plan),
+                bool(self.apply_router_weight_on_input),
+                "glm53-swiglu-limit",
+                _w6a8_limit,
+            )
+            cached = _fp6_serving._SCRATCH_CACHE.get(key)
+            if cached is None:
+                plan = _fused_moe.plan(
+                    _fused_moe.Caps(
+                        max_tokens=m,
+                        num_topk=topk,
+                        device=device,
+                        weight_plan=self.weight_plan,
+                        core_token_counts=(m,),
+                        route_num_experts=0,
+                        quant_mode="w6a8_mx",
+                        apply_router_weight_on_input=self.apply_router_weight_on_input,
+                        swiglu_limit=_w6a8_limit,
+                    )
+                )
+                scratch = tuple(
+                    _torch.empty(
+                        shape,
+                        dtype=dtype,
+                        device=plan.scratch_specs()[index].device,
+                    )
+                    for index, (shape, dtype) in enumerate(plan.shapes_and_dtypes())
+                )
+                cached = (plan, scratch)
+                _fp6_serving._SCRATCH_CACHE[key] = cached
+            return cached
+
+        _fp6_serving.B12XFP6MoEMethod._plan_and_scratch = (
+            _plan_and_scratch_with_glm_clamp
+        )
+        print(
+            f"GLM53_W6A8_SWIGLU_CLAMP_ACTIVE limit={_w6a8_limit:g}",
+            flush=True,
+        )
     _ORIGINAL_MIXED_GET_QUANT_METHOD = (
         _modelopt.ModelOptMixedPrecisionConfig.get_quant_method
     )
@@ -204,7 +268,7 @@ if MIXED_MXFP6:
 
 
 if MODE:
-    if MODE not in {"had16", "learned"}:
+    if MODE not in {"had16", "had32", "had64", "learned"}:
         raise RuntimeError(f"unsupported GLM53_ROUTED_ROTATION={MODE!r}")
 
     import torch
@@ -264,16 +328,16 @@ if MODE:
         _LEARNED = load_file(rotation_path, device="cpu")
 
 
-    def _hadamard16() -> torch.Tensor:
+    def _hadamard(size: int) -> torch.Tensor:
         h = torch.ones((1, 1), dtype=torch.float32)
-        while h.shape[0] < 16:
+        while h.shape[0] < size:
             h = torch.cat((torch.cat((h, h), 1), torch.cat((h, -h), 1)), 0)
-        return h / 4.0
+        return h / (size**0.5)
 
 
     def _rotation_for(layer: int, kind: str) -> torch.Tensor:
-        if MODE == "had16":
-            return _hadamard16()
+        if MODE in {"had16", "had32", "had64"}:
+            return _hadamard(int(MODE[3:]))
         assert _LEARNED is not None
         preferred = f"layer_{layer:03d}_{kind}"
         legacy = f"layer_{layer:03d}"
@@ -290,10 +354,11 @@ if MODE:
         return rotation
 
 
-    def _apply_block16(hidden_states: torch.Tensor, rotation: torch.Tensor) -> torch.Tensor:
-        blocks = hidden_states.shape[-1] // 16
-        if blocks * 16 != hidden_states.shape[-1]:
-            raise RuntimeError("rotated width is not divisible by 16")
+    def _apply_block_rotation(hidden_states: torch.Tensor, rotation: torch.Tensor) -> torch.Tensor:
+        size = rotation.shape[-1]
+        blocks = hidden_states.shape[-1] // size
+        if blocks * size != hidden_states.shape[-1]:
+            raise RuntimeError(f"rotated width is not divisible by {size}")
         if rotation.ndim == 3 and rotation.shape[0] != blocks:
             raise RuntimeError(
                 f"rotation has {rotation.shape[0]} blocks for runtime width "
@@ -303,7 +368,7 @@ if MODE:
             rotation = rotation.to(
                 device=hidden_states.device, dtype=hidden_states.dtype
             )
-        view = hidden_states.reshape(*hidden_states.shape[:-1], blocks, 16)
+        view = hidden_states.reshape(*hidden_states.shape[:-1], blocks, size)
         if rotation.ndim == 2:
             output = view @ rotation
         else:
@@ -315,13 +380,13 @@ if MODE:
         def __init__(self, layer: int):
             super().__init__()
             rotation = _rotation_for(layer, "in")
-            if rotation.ndim not in (2, 3) or rotation.shape[-2:] != (16, 16):
+            if rotation.ndim not in (2, 3) or rotation.shape[-2] != rotation.shape[-1]:
                 raise RuntimeError(f"invalid layer {layer} rotation shape {tuple(rotation.shape)}")
             gram = rotation.transpose(-1, -2) @ rotation
             # vLLM constructs each worker under a rank-local default CUDA
             # device.  A learned safetensors matrix may therefore already be
             # on that device; keep the orthogonality reference colocated.
-            eye = torch.eye(16, dtype=rotation.dtype, device=rotation.device)
+            eye = torch.eye(rotation.shape[-1], dtype=rotation.dtype, device=rotation.device)
             if float((gram - eye).abs().max()) > 2e-4:
                 raise RuntimeError(f"layer {layer} rotation is not orthogonal")
             # vLLM constructs the model in its target-device context.  Keeping
@@ -339,7 +404,7 @@ if MODE:
             if rotation.device != hidden_states.device or rotation.dtype != hidden_states.dtype:
                 rotation = rotation.to(device=hidden_states.device, dtype=hidden_states.dtype)
                 self.rotation = rotation
-            output = _apply_block16(hidden_states, rotation)
+            output = _apply_block_rotation(hidden_states, rotation)
             if not self._forward_logged:
                 if torch.distributed.is_available() and torch.distributed.is_initialized():
                     rank = str(torch.distributed.get_rank())
@@ -365,7 +430,7 @@ if MODE:
     ):
         rotation = getattr(self, "_glm53_in_rotation", None)
         if sublayer_name == "w13" and rotation is not None:
-            inputs = _apply_block16(inputs, rotation)
+            inputs = _apply_block_rotation(inputs, rotation)
             if not getattr(self, "_glm53_in_rotation_logged", False):
                 if torch.distributed.is_available() and torch.distributed.is_initialized():
                     rank = str(torch.distributed.get_rank())
@@ -401,7 +466,7 @@ if MODE:
         if rotation.device != output.device or rotation.dtype != output.dtype:
             rotation = rotation.to(device=output.device, dtype=output.dtype)
             self._glm53_mid_rotation = rotation
-        output.copy_(_apply_block16(output, rotation))
+        output.copy_(_apply_block_rotation(output, rotation))
         if not getattr(self, "_glm53_mid_rotation_logged", False):
             if torch.distributed.is_available() and torch.distributed.is_initialized():
                 rank = str(torch.distributed.get_rank())
@@ -500,7 +565,9 @@ if MODE:
         ):
             in_rotation = _rotation_for(layer, "in")
             gram = in_rotation.transpose(-1, -2) @ in_rotation
-            eye = torch.eye(16, dtype=in_rotation.dtype, device=in_rotation.device)
+            eye = torch.eye(
+                in_rotation.shape[-1], dtype=in_rotation.dtype, device=in_rotation.device
+            )
             if float((gram - eye).abs().max()) > 2e-4:
                 raise RuntimeError(f"layer {layer} input rotation is not orthogonal")
             routed = runner.routed_experts
@@ -513,7 +580,9 @@ if MODE:
             mid_rotation = _rotation_for(layer, "mid")
             gram = mid_rotation.transpose(-1, -2) @ mid_rotation
             eye = torch.eye(
-                16, dtype=mid_rotation.dtype, device=mid_rotation.device
+                mid_rotation.shape[-1],
+                dtype=mid_rotation.dtype,
+                device=mid_rotation.device,
             )
             if float((gram - eye).abs().max()) > 2e-4:
                 raise RuntimeError(f"layer {layer} mid rotation is not orthogonal")

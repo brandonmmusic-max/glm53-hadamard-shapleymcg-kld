@@ -1,0 +1,74 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "baseline": {
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control",
+    "receipt": {
+      "bytes": 4018,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/gptq-bf16-control/BF16_LAYER_RECEIPT.json",
+      "sha256": "d5423500db33349863c2a75910853d4b877337f3eca1e5d95a958ed1b8598c78"
+    }
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090427,
+    "unit": "window"
+  },
+  "candidates": {
+    "20": {
+      "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer20",
+      "receipt": {
+        "bytes": 2205,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer20/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+        "sha256": "8454b82c626a2db52168a2adb710a81fd7092c0f76198f765260aee7de80f9a9"
+      }
+    },
+    "3": {
+      "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer3",
+      "receipt": {
+        "bytes": 2196,
+        "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/composite-3-19-20/bf16matched-layer3/BF16_WEIGHT_OVERLAY_RECEIPT.json",
+        "sha256": "7d8f6509380bcc69066dcb671428d9764131721ec7cc22181968d7ea474cbd00"
+      }
+    }
+  },
+  "created_at": "2026-09-04T13:17:35.088642+00:00",
+  "decision_rule": "call a layer externally supported for redesign only if mean delta is at most -0.0006 nats, its Bonferroni-adjusted 97.5 percent paired BCa upper bound is below zero, and all three domain mean deltas are negative",
+  "estimand": "per-layer candidate minus decoded-GPTQ BF16-overlay teacher KLD",
+  "execution_match": "every arm is a BF16 weight overlay through the identical InstantTensor/framework path; only one layer's reconstructed values differ",
+  "inputs": {
+    "failed_subset_analysis": {
+      "bytes": 1257,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/supported-subset-3-20/external-v5-v1/analysis.json",
+      "sha256": "13d8dc8824acca8f9f1e4d6768e937741d81da58fba233892032246c96cbf89e"
+    },
+    "roles": {
+      "bytes": 99836,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v5.json",
+      "sha256": "85cb6f8d29151863457830e41a141743feabcd69706a231d89cd01a3e02175c9"
+    },
+    "teacher_verification": {
+      "bytes": 21080,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v5-powered/sealed/teacher-selection-verification.json",
+      "sha256": "71e80dc52df8ddce75f006fae39c7bd2290a06df55de359e56b59bc4da664945"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is a quality product",
+  "multiplicity": "two comparisons; family alpha 0.05, individual two-sided alpha 0.025",
+  "protected_boundary": "the 28 reserved confirmation logits are not read",
+  "represented_domains": [
+    "axis1_general",
+    "axis2_legal",
+    "axis3_code_agentic"
+  ],
+  "role": "opened V5 selection wave reused for exploratory attribution",
+  "role_limitation": "the combined layer-3/20 contrast has already been observed on this role; these individual-layer results are developmental and cannot qualify a protected claim",
+  "run_order": [
+    "3",
+    "20"
+  ],
+  "runtime_boundary": "pseudoquant encoder evidence only; native P8 remains blocked by activation-path closure",
+  "schema": "glm53-p8-v5-layer-attribution-plan.v1",
+  "selection_wave": 1,
+  "windows": 63
+}

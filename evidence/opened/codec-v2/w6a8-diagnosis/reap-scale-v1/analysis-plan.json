@@ -1,0 +1,80 @@
+{
+  "arms": [
+    {
+      "a1_gscale": 1.0,
+      "a2_gscale": 1.0,
+      "id": "S0"
+    },
+    {
+      "a1_gscale": [
+        1.0,
+        1.0905077326652577,
+        1.189207115002721,
+        1.2968395546510096,
+        1.4142135623730951,
+        1.5422108254079407,
+        1.681792830507429,
+        1.8340080864093424
+      ],
+      "a2_gscale": 1.0,
+      "id": "S1-grid"
+    }
+  ],
+  "created_at": "2026-09-04T06:57:38.933393+00:00",
+  "decision_rule": {
+    "fc1_scale_material": "validation geometric-mean output NMSE improves at least 5 percent and at least 12 of 16 experts improve",
+    "fc1_scale_not_dominant": "otherwise retain unit a1 and proceed to isolated FC2 activation/epilogue diagnosis"
+  },
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "held_constant": [
+    "exact packed and decoded MXFP6 weights",
+    "real layer-3 hidden states and route weights",
+    "model swiglu_limit 10",
+    "precise activation math",
+    "dynamic FC2 scaling"
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "dense_receipt": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/w6a8-diagnosis/candidate-bf16-identical/BF16_LAYER_RECEIPT.json",
+      "sha256": "549c404f1bbfccc16c1ee10c3565d3f17c271b8b2c535fe5198b40b6eaa20241"
+    },
+    "native_receipt": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/alphabet/layer3-scalar-mxfp6/candidate/MIXED_RECEIPT.json",
+      "sha256": "fbf08269383d786d598dd0d22ebd3791b3e5cadb877440144ae98e8ca56f74fb"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 has twice the MMA issue count of NVFP4; this is a fit-role carrier diagnosis, not a speed claim",
+  "layer": 3,
+  "ldlq": false,
+  "protected_boundary": "selection, confirmation, final, and the 28 confirmation logits remain unopened",
+  "role": "fit",
+  "sampling": "64 domain-balanced routed REAP samples per expert, split selection offset 0 n32 and validation offset 32 n32",
+  "schema": "glm53-w6a8-reap-scale-plan.v1",
+  "selection_rule": "choose one shared a1 phase minimizing geometric-mean expert output NMSE on offset 0; ties choose smaller phase",
+  "validation_rule": "evaluate the frozen shared phase on offset 32 without reselection"
+}

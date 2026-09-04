@@ -1,0 +1,136 @@
+{
+  "schema": "glm53-codec-v2-redesign-summary.v1",
+  "algorithm": {
+    "bits": 4,
+    "product": "P8",
+    "alphabet": "E4M3",
+    "block_size": 32,
+    "scale": "UE8M0",
+    "law": "procedural MCG alpha 2.0",
+    "encoder": "Viterbi plus full-Hessian GPTQ-style inter-group feedback and static within-group activation order",
+    "ldlq": false,
+    "physical_bpw": 4.25,
+    "charged_bpw_for_kld_gate": 4.5,
+    "isa_cost": "mxf8f6f4 has twice the MMA issue count of NVFP4"
+  },
+  "projection_screen": {
+    "experts": 16,
+    "expert_wins": 16,
+    "relative_improvement_vs_gptq_nvfp4": 0.14945824021507392,
+    "mean_log_ratio_ci95_bca": [-0.17207098581671934, -0.15204278466714866],
+    "analysis_sha256": "c166ebd2439dd3b86f6da90e680e4244a162a4989fa53a3f6435931d01f17b3c"
+  },
+  "causal_full_expert_screen": {
+    "experts": 16,
+    "expert_wins": 15,
+    "relative_improvement_vs_gptq_nvfp4": 0.11868135462605267,
+    "mean_log_ratio_ci95_bca": [-0.15863799360470227, -0.06032063278967642],
+    "analysis_sha256": "26489a089e1f179d766c17df1035a42eaa51b1fb096f10013af4790f72f68b78"
+  },
+  "layer22_causal_full_expert_screen": {
+    "experts": 16,
+    "expert_wins": 16,
+    "relative_improvement_vs_gptq_nvfp4": 0.17073501238171074,
+    "mean_log_ratio_ci95_bca": [-0.1910927184175228, -0.18287003473384172],
+    "decision": "pass-build-layer22-kld-candidate",
+    "analysis_sha256": "d59c064522bf003198bb88d70bc59d0d74a3ad5bb875d913d7bea19c533e37ab"
+  },
+  "layer22_matched_bf16_kld": {
+    "layers": [22],
+    "windows": 32,
+    "candidate_mean": 0.039143557781622915,
+    "gptq_nvfp4_bf16_mean": 0.03872751349769958,
+    "mean_delta": 0.0004160442839233332,
+    "relative_improvement": -0.010742860729957338,
+    "delta_ci95_bca": [-0.00024917426922516463, 0.0011677178395734034],
+    "domain_mean_delta": {
+      "axis1_general": 0.0006726543590502741,
+      "axis2_legal": -0.0008103544191269676,
+      "axis3_code_agentic": 0.0011846972587595513,
+      "axis4_reasoning_termination": 0.0006171799370104751
+    },
+    "window_wins": 14,
+    "decision": "fail-pseudoquant-kld",
+    "analysis_sha256": "a8b7ab00b56c38e2bd63710f3c569bf77ca6f04ef82a9823501f486632f28f23"
+  },
+  "invalidated_mixed_pipeline_diagnostic": {
+    "windows": 32,
+    "candidate_mean": 0.054869699834587574,
+    "gptq_nvfp4_mean": 0.054602731903094254,
+    "mean_delta": 0.0002669679314933164,
+    "relative_improvement": -0.00488927792050986,
+    "delta_ci95_bca": [-0.0029615131637570243, 0.006933357513819713],
+    "window_wins": 15,
+    "decision": "invalid-for-encoder-attribution-candidate-bf16-versus-control-packed-humming",
+    "analysis_sha256": "dbb5501165e94ba8c3b1e365d5f596e7c482273ff4e3e04de65af4fd01a5caf6"
+  },
+  "matched_bf16_composite_kld": {
+    "layers": [3, 19, 20],
+    "windows": 32,
+    "candidate_mean": 0.0382613187,
+    "gptq_nvfp4_bf16_mean": 0.0388985177,
+    "mean_delta": -0.000637199,
+    "relative_improvement": 0.016381,
+    "delta_ci95_bca": [-0.002456, 0.000675],
+    "decision": "fail-preregistered-effect-and-ci-gate",
+    "analysis_sha256": "ac0a142145f720916f407b51d3125117b462491295aa86abe29bb32a83f62839"
+  },
+  "matched_bf16_layer_attribution": {
+    "windows": 32,
+    "supported_layers": [3, 20],
+    "layer3_relative_improvement": 0.041572529409827585,
+    "layer3_delta_ci98_333_bca": [-0.004055183483410982, -0.00029738114260091555],
+    "layer20_relative_improvement": 0.0308581281323691,
+    "layer20_delta_ci98_333_bca": [-0.0034453657865058454, -0.0003380130626531588],
+    "analysis_sha256": "56811eb6c35cfc94c81d1aefe685e7ba0eaab951aa5aad2c84485de242ea2055"
+  },
+  "external_v5_subset_kld": {
+    "layers": [3, 20],
+    "windows": 63,
+    "candidate_mean": 0.04417641873018886,
+    "gptq_nvfp4_bf16_mean": 0.04479617144629285,
+    "mean_delta": -0.0006197527161039846,
+    "relative_improvement": 0.013834948302379524,
+    "delta_ci95_bca": [-0.002496135174935282, 0.0006606803099285499],
+    "domain_mean_delta": {
+      "axis1_general": -0.0026108913387805207,
+      "axis2_legal": 0.00043139140583413007,
+      "axis3_code_agentic": 0.000320241784634437
+    },
+    "decision": "fail-external-v5",
+    "analysis_sha256": "13d8dc8824acca8f9f1e4d6768e937741d81da58fba233892032246c96cbf89e"
+  },
+  "external_v5_layer_attribution": {
+    "windows": 63,
+    "layer3_relative_improvement": -0.0006558304100729995,
+    "layer3_delta_ci97_5_bca": [-0.002285134389132685, 0.0020278039354912937],
+    "layer20_relative_improvement": 0.006996284574471101,
+    "layer20_delta_ci97_5_bca": [-0.0016385090392622668, 0.0004057780074953009],
+    "supported_layers": [],
+    "decision": "fail-no-v5-layer-supported",
+    "analysis_sha256": "20b688c8765b758904cb4a0b90d7b3e3dcaf62d38b11804f66051cbb2d26ec06"
+  },
+  "blockhessian_layer_sweep": {
+    "layers": 38,
+    "screen_positive_layers": [],
+    "best_layer": 22,
+    "best_relative_improvement": -0.027454182482063327,
+    "best_expert_wins": 10,
+    "best_mean_log_ratio_ci95_bca": [-0.007512230235668343, 0.0768388170692488],
+    "decision": "fail-no-screen-positive-layer",
+    "interpretation": "projection-only design prior; not causal MoE NMSE, KLD, or Shapley",
+    "analysis_sha256": "359386462bf62c6630586156a157bf43cf932fd52e6d5c781695fdb135cbed38"
+  },
+  "learned_t12": {
+    "runtime_table_bytes": 4096,
+    "validation_experts": 16,
+    "expert_wins_vs_mcg": 0,
+    "relative_improvement_vs_mcg": -0.5639861956411845,
+    "relative_improvement_vs_gptq_nvfp4": -0.32005214643805946,
+    "decision": "fail-do-not-build",
+    "analysis_sha256": "4f2e75ef7cb673b5c08ff7286b69d41df505fec8e21f036a594632a6874cfcab"
+  },
+  "protected_roles_opened": ["V5 selection wave 1, previously opened for H16 and reused as external codec validation"],
+  "confirmation_logits_opened": false,
+  "kernel_status": "P8 blocked by failed E4M3 activation carrier closure and failed matched-path encoder KLD gate; P4 exact-E2M1 encoder failed its numerical screen"
+}

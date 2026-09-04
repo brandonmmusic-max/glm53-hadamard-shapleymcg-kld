@@ -1,0 +1,333 @@
+{
+  "analysis_lock": {
+    "analysis_commit": "4c6e38e074a6259a5b2f3f92af3e216e9c14f568",
+    "analysis_plan_sha256": "5cfb8fbecc68fe1a47f4baefcf144239f970743b086ac0c382a74659a3746a86",
+    "metric_code_sha256": "8192b600312d87e43ef754278f8a91abcc66de1530a73659277972c29b9e04c1"
+  },
+  "authorization": {
+    "automatic_continuation": true,
+    "compute": "authorized",
+    "publication": "not-authorized",
+    "receipt_sha256": "d3a8f87f839218a887644ca3bfc9f6de394382360ccaa509b6034b161fa9f0d2"
+  },
+  "decision_question": "Can deterministic reduction, precise activation math, and dynamic FC2 scaling make the W6A8 carrier noninferior to the identical-weight BF16 overlay?",
+  "design": {
+    "changed_factors": [
+      "top-k reduction",
+      "fast activation math",
+      "dynamic FC2 activation scale"
+    ],
+    "controls": [
+      "R0 identical decoded weights through BF16 overlay",
+      "W0 current W6A8 path"
+    ],
+    "exclusion_rule": "no exclusions, substitutions, or reruns after scoring begins",
+    "experimental_unit": "one fixed document window scored by both identical-weight execution paths",
+    "failure_policy": "preserve failed launches and mark the affected contrast indeterminate",
+    "held_constant": [
+      "weight values",
+      "layer 3",
+      "runtime image",
+      "TP4/EP4/DCP4",
+      "teacher logits",
+      "window order"
+    ],
+    "independent_repetitions": 1,
+    "intended_evidence_level": "controlled-comparison",
+    "multiplicity": "one primary W3-R0 gate; W1-W0, W2-W1, and W3-W2 are diagnostic causal contrasts",
+    "nuisance_variables": [
+      "CUDA scheduling",
+      "server cold-start state",
+      "document heterogeneity"
+    ],
+    "primary_estimand": {
+      "aggregation": "equal-weight mean over windows with paired BCa interval",
+      "decision_threshold": "BCa upper bound <= +0.0014 nats; mean >= +0.01 blocks ladder",
+      "definition": "paired per-window student-to-BF16-teacher KLD difference",
+      "direction": "smaller is better",
+      "name": "W3 minus R0 mean KLD"
+    },
+    "run_order": "R0, W0, W1, W2, W3",
+    "stopping_rule": "run each arm once over the exact 32 windows; no role substitution, arm deletion, or reroll",
+    "subsamples": "32 fixed conditional-fit windows, exactly eight from each of four domains"
+  },
+  "deviations": [
+    "The earlier 00:37 roles-v4 attempt silently fell back to roles-v3 and produced no record.",
+    "Three prior V3 selection waves were opened within 26 minutes.",
+    "Confirmation hidden states, but not confirmation teacher logits, were read for a different hybrid artifact after a selection failure.",
+    "This record supersedes a launch-only attempt that used an H16-only runtime image; no W arm was scored."
+  ],
+  "experiment_id": "glm53-w6a8-gate3-conditional-fit32-v2",
+  "holdout": {
+    "evaluator_identity": "glm53_nvfp4.role_eval plus w6a8_gate3_analysis at frozen hashes",
+    "final_opened_at": "Not tested",
+    "opening_receipt_sha256": "Not tested",
+    "optimizer_access": "yes",
+    "protection": "procedural"
+  },
+  "hypotheses": {
+    "falsification_condition": "The W3 BCa upper delta exceeds +0.0014 nats; +0.01 mean delta additionally blocks the ladder.",
+    "prediction": "The fixed W3 arm has BCa upper delta no larger than +0.0014 nats versus R0.",
+    "primary": "W3 is noninferior to R0 at the fixed +0.0014-nat margin.",
+    "rivals": [
+      "Top-k-8 BF16 atomic accumulation causes the excess KLD.",
+      "Fast SiLU math causes the excess KLD.",
+      "FC2 intermediate scaling causes the excess KLD.",
+      "The remaining E4M3 activation quantization itself causes the excess KLD.",
+      "Distributed TP4 loading differs from the top-k-1 canary."
+    ]
+  },
+  "identities": {
+    "dataset_revision": "N/A",
+    "environment_lock_sha256": "cff1a4553a77bb89c872f29a8a93784a3cb08b398434b652c39e476a98f20e70",
+    "hardware_topology": "0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-4d808f8d-88c8-8d7d-cb31-d077a6fd28ac, 610.57.04, 97887 MiB\n1, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, GPU-790ae15a-10c6-c726-f987-69e190a1999d, 610.57.04, 97887 MiB\n2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-469ff3c0-6cc5-0b61-e9a2-e60331dfb2fc, 610.57.04, 97887 MiB\n3, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, GPU-9422d6fe-9b4b-4a05-bae8-16933f2aab21, 610.57.04, 97887 MiB",
+    "image_digest": "N/A",
+    "model_revision": "a6c167b62691b2bac901344b65cb651a70f53e43",
+    "source_commit": "4c6e38e074a6259a5b2f3f92af3e216e9c14f568",
+    "teacher_revision": "95f4fdd94bf29989db2e0d1054e4931f55edb6aa"
+  },
+  "independent_audit": {
+    "auditor": "Not tested",
+    "receipt_sha256": "Not tested",
+    "reproduction_level": "Not tested",
+    "status": "not-run"
+  },
+  "invariants": [
+    {
+      "expected": true,
+      "expression": "all 32 role entries have locally verified teacher files",
+      "name": "teacher-materialized-and-hashed",
+      "observed": true,
+      "required_before_stage": "seal",
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "expression": "each declared domain has eight windows",
+      "name": "domain-balanced",
+      "observed": true,
+      "required_before_stage": "seal",
+      "status": "passed"
+    },
+    {
+      "expected": 0,
+      "expression": "selection, confirmation, and final entries in this role file equal zero",
+      "name": "protected-roles-unopened",
+      "observed": 0,
+      "required_before_stage": "seal",
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "expression": "BF16 overlay chunk hashes equal exact decodes of the four MXFP6 input chunk hashes",
+      "name": "identical-weight-control",
+      "observed": true,
+      "required_before_stage": "seal",
+      "status": "passed"
+    }
+  ],
+  "observation": "Near-lossless layer-3 MXFP6 weights previously incurred about +123 percent KLD through W6A8 on a noisy 16-window role.",
+  "qualification": {
+    "attempt_count": 1,
+    "decision": "fail-ladder-blocked",
+    "limitations": [
+      "Development conditional-fit role; not protected confirmation or final evidence."
+    ],
+    "primary_result": "W3 minus R0 mean KLD was +0.0616921245 nats with paired BCa 95% CI [+0.0504003196, +0.0744450147]; all 32 windows worsened.",
+    "raw_evidence_sha256": "274b4bda537b2256f98307d2a149368c281b0d02b032edb0d901d8518548844b",
+    "status": "failed"
+  },
+  "roles": {
+    "conditional-fit": [
+      {
+        "id": "conditional-fit-0056",
+        "input_sha256": "21d952a5587f2b985a3db4853d446eabc0d05b13964f441e5d30c4d13e92ad6d",
+        "teacher_sha256": "55a70a330f39c5f23294c23d270a1ddc53031def99a42206e2706d4d0bb4466b"
+      },
+      {
+        "id": "conditional-fit-0008",
+        "input_sha256": "c6d580427dea063ddfd06cb599c1369fb9efbf84532d47f55ae72a5cd76ffddb",
+        "teacher_sha256": "040641247b2e060035d89c2e7345e029d7c142983585e7c5d63dc818486f650d"
+      },
+      {
+        "id": "conditional-fit-0100",
+        "input_sha256": "918a8bebb0c12c817b7cb4be4b726bf8b39dc8e51a0a3a7ecdc224125898fbbd",
+        "teacher_sha256": "f62991383b3ef5e8db0ed71442b17c428972e58da1c868c6aeb0f3fa143c865b"
+      },
+      {
+        "id": "conditional-fit-0094",
+        "input_sha256": "6be0a582894a1f7ed2bdb55bdf1ed7f515ef867681e9874362fcbd6af73e69a5",
+        "teacher_sha256": "656911b8fb34d7f42e984dd21311caf9ef56db0b7618b414cad4089562d93cba"
+      },
+      {
+        "id": "conditional-fit-0083",
+        "input_sha256": "537f95642b564e9fcd51877acc3a1382b406a4c9e2f165bef6a6bb0aa99addd2",
+        "teacher_sha256": "66a7870a1f13c8b5d647c1681fca005bb0f55a6e502e94f282da673a6bed3f1b"
+      },
+      {
+        "id": "conditional-fit-0021",
+        "input_sha256": "7e12a220d5d1c3fe51d60e3f57a11e5448524cc893ab70d6b490b9d3e6e36ed9",
+        "teacher_sha256": "ebf76910c4db8f6955ad03f2ec7352e2f8aaf15e0c939d28f9a7d78f6bd7451b"
+      },
+      {
+        "id": "conditional-fit-0098",
+        "input_sha256": "f5fef37d67821fc86fc89e1e06e541102b6507b456b24a214d20665f3baef92c",
+        "teacher_sha256": "16e3d9524100836c020535635f7722a4c93ce0fdddc2ad0781f25bda77e8bcc9"
+      },
+      {
+        "id": "conditional-fit-0080",
+        "input_sha256": "62735734619ebc8da4996914f2f12c05b53b423e5501cc8e12a223c0ad24728f",
+        "teacher_sha256": "e9c1a77490a5db63d410297bd8febe06adf4df2a6f4e16552db187738c9289d2"
+      },
+      {
+        "id": "conditional-fit-0081",
+        "input_sha256": "363bd9a0d17c3ba30023ccd62d2c9aedcd760ccf0b8f7fb67eba44d567aedc5c",
+        "teacher_sha256": "5ae07760d91030d1eba925b76ea463309baa49c2e7d5f5e14409a23ced7fd20d"
+      },
+      {
+        "id": "conditional-fit-0123",
+        "input_sha256": "691e47fb8f0572ef5e6156821600967b61e0a047d413f39442eb650da1fc24c8",
+        "teacher_sha256": "4a24b5b750ba98c06d9bc69e19334aff89e7bd4f9429592598af5d62de7ecb42"
+      },
+      {
+        "id": "conditional-fit-0090",
+        "input_sha256": "d90d9f881c78bbda6a7a2ed11283d6d77ed9f60f9f005f7fceea5a5145de1012",
+        "teacher_sha256": "db2a5fe33c9e457a22ebeb31a7073c1dac666b877503e9b4e90a8d6abf7b8a32"
+      },
+      {
+        "id": "conditional-fit-0062",
+        "input_sha256": "bf84f8bec93ddb1eff28f6886e6206c300f67b5fa75c6f4a6f7192da2585c2a2",
+        "teacher_sha256": "d6f7883a533625c7c75119fe7403b48bf81885b1de0b311a1a0571949f7f231c"
+      },
+      {
+        "id": "conditional-fit-0047",
+        "input_sha256": "524b65e6369a63d17557ff7349018e2abbde2b0380389fb9e47b27525bacd99e",
+        "teacher_sha256": "8513cdcb9940786c7c42bf14d2f5f2cd452791e4ec6036c06a1f973eb969018d"
+      },
+      {
+        "id": "conditional-fit-0051",
+        "input_sha256": "69cceca1cf05be9d85157a9a21c0f62d98c632e45e0ef1ae81537da5ce1d1a1e",
+        "teacher_sha256": "177477c19b54dc0b0230e19202d48ab71d52f2b1a37fe383511bb64f0aae2fcf"
+      },
+      {
+        "id": "conditional-fit-0055",
+        "input_sha256": "6bd43cbcc1e94326307cc04a64f5e8d1a5927a7af8b86e171701d7481833e4b9",
+        "teacher_sha256": "7679c828eae4bf08f17598d044904693fc90c05b9d3f189dddeeb846100e43a7"
+      },
+      {
+        "id": "conditional-fit-0031",
+        "input_sha256": "366a9f7115192e3e1b0370a94e5f8f7bb27cf392dd80750865c7f594306a475c",
+        "teacher_sha256": "e04a6c04a951efb5a178927e91457535cc67745ce5c81e785cb6d963aac6ce83"
+      },
+      {
+        "id": "conditional-fit-0003",
+        "input_sha256": "4460d5c70ccdf0fb3b65706f066bd2475baf2d685626f06d79e4ee3116dbed3f",
+        "teacher_sha256": "7677c89cc3dee8e2a64e3c7947add39475f828921a3a8fe2e92b379b3ed8320b"
+      },
+      {
+        "id": "conditional-fit-0009",
+        "input_sha256": "d79bd597b3eadefbf9627cd2196fed794d2219a5eb837a7f7fd5ad7802672e8b",
+        "teacher_sha256": "00701ad8bf4a4a5eedcedd4eafd956830c9ff1c790b15074ca721a3462abf930"
+      },
+      {
+        "id": "conditional-fit-0010",
+        "input_sha256": "25b458dce7a6d0c15d3e7f767829317ebd922178fd7e3af04c51c8f0caed6f14",
+        "teacher_sha256": "f9bf4519890b70d972dfdf9760181418eb7c55b6237c0108f01d44df89943278"
+      },
+      {
+        "id": "conditional-fit-0011",
+        "input_sha256": "d4c8fc140e9fb5f119d95581ddbcf88baed9bf7c0b6b7c1db2941b33e6a2e1b9",
+        "teacher_sha256": "9f37c4ead38bb80a5d85f825b156e5b493b6d3f1ca9dabfad06b0416f37db286"
+      },
+      {
+        "id": "conditional-fit-0030",
+        "input_sha256": "67c28a42e317aa90ff2d09f4204a47081ec9a29dabea2f2e15ba537d47da1dce",
+        "teacher_sha256": "90c08d120cfac926855e15c106dba1e242099bcd0ae6da7655bfaa54d5ce2420"
+      },
+      {
+        "id": "conditional-fit-0032",
+        "input_sha256": "22102181840013e05b552af1a20ca576ffdd686d332014953787ef9ae47d04ec",
+        "teacher_sha256": "1aa70ccf8e224c3a58834e2232a3a2477768db29ffeca39f5b27c17ad8c40c2b"
+      },
+      {
+        "id": "conditional-fit-0035",
+        "input_sha256": "b9e87c451721ca9eaa1ded0f42eed7a834819a8047a89dcbdb75ded2556e5693",
+        "teacher_sha256": "4e958dce74e093eb62ba5ac210fe0a4e50f12f1875de678769700cde206b429d"
+      },
+      {
+        "id": "conditional-fit-0040",
+        "input_sha256": "f0c35dcf41ba1f35e62b200bdb806f3aa11468c86a3e733abff1808f4f05c501",
+        "teacher_sha256": "f4c96798fc9eb5564d9aec52779cc0ce88bc55312dcd7663240938d711c8a90d"
+      },
+      {
+        "id": "conditional-fit-0041",
+        "input_sha256": "0bb8fad47a5e1293352926d1c60712133308c4e91a5d7f7f31530092fbc38408",
+        "teacher_sha256": "c2bbe4ea31532baceff966423c6ce6e042aebb5a2eb1de45e382a7d3df6f6827"
+      },
+      {
+        "id": "conditional-fit-0046",
+        "input_sha256": "5d3ff44cfdbe1c9c33eabcf7400a9c2a4aef17d193cff2cb39b5dc73baa881ce",
+        "teacher_sha256": "3caa5c58fb0b0e80129d551b39867fd52fefd93830060bb5655862fdd0e3b8ce"
+      },
+      {
+        "id": "conditional-fit-0060",
+        "input_sha256": "6c189792cdcf7081dbaac8005511e71635c24669a82a9c5769258bf09f15f082",
+        "teacher_sha256": "d9e6344664b92527ee58d3bca038702676b357e7052ade03ac4bc9c70908cc34"
+      },
+      {
+        "id": "conditional-fit-0063",
+        "input_sha256": "e6f8a4df2b88bcbac8471ad6f6525464a42cf300cf42c5df7f6e607ab4e63cce",
+        "teacher_sha256": "a9bb59659437c1df5b3f3ef0b54eda61402842a2597b76b0124f58b59ecf3ab4"
+      },
+      {
+        "id": "conditional-fit-0074",
+        "input_sha256": "0826c73d214d2aa0c8fb53b9010063b8bd4ed3668ed6c21311b17606193eae7b",
+        "teacher_sha256": "440341730d063ae27bbc15bcbfc879d9d16b3b25691d97b8cfd60be8f32f2313"
+      },
+      {
+        "id": "conditional-fit-0099",
+        "input_sha256": "945156ccddec2b941c81e78087a1d26a14f6ce19a3c26a5edff86bee98020804",
+        "teacher_sha256": "da8dea840dd57564f0b3675872eaf297631b38a6d8dabcde7f8b54db06623e9a"
+      },
+      {
+        "id": "conditional-fit-0113",
+        "input_sha256": "5d720cfe777dcb387dc9e37da41ad0fe479e40bccaf146547e9f470604d84094",
+        "teacher_sha256": "6dc5f38f3436d6833b0ab68ce34e0f7ee5cde80359c26602526d8de512fd3207"
+      },
+      {
+        "id": "conditional-fit-0118",
+        "input_sha256": "1c797b2e734b8465ce5c68cb3e3a82f7edfb23497daba1baaa4d09443be775d4",
+        "teacher_sha256": "e296287593aa0dc89b695a6a082a224a85904757c4a3cefa69729394d1469f89"
+      }
+    ],
+    "confirmation": [],
+    "final": [],
+    "fit": [],
+    "selection": []
+  },
+  "schema_version": 1,
+  "seal": {
+    "algorithm": "sha256",
+    "created_at": "2026-09-04T05:50:20.182461+00:00",
+    "plan_sha256": "8758559f4b196b8779e52e517ec9cc7368b26e8fda8fc812eed8194402d37ccf"
+  },
+  "stage_receipts": [
+    {
+      "created_at": "2026-09-04T02:34:26-04:00",
+      "evidence": [
+        {"bytes": 13957, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/w6a8-diagnosis/sealed/gate3-v2/gate3-result.json", "sha256": "274b4bda537b2256f98307d2a149368c281b0d02b032edb0d901d8518548844b"},
+        {"bytes": 70052, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/run-w6a8-gate3-v2-r0-bf16-cf32.json", "sha256": "03dd89b8713c36a3f71d469c566851b4c2ef4be6ef0577c0a16b1593c1c724ad"},
+        {"bytes": 70542, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/run-w6a8-gate3-v2-w0-current-cf32.json", "sha256": "0e07b9383cee965e95545b67030f59a42e2fd37a0d1c5bca50133f73709f4061"},
+        {"bytes": 71366, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/run-w6a8-gate3-v2-w1-deterministic-cf32.json", "sha256": "9af9e2c9db282a04d7fe4be11283f8cd3716239919cbe4f4b2168f17247ae79a"},
+        {"bytes": 70592, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/run-w6a8-gate3-v2-w2-precise-cf32.json", "sha256": "c9364aa1ff0ed530dc339dca3ebf7434b65859e4617b4e8fb5dfd624636cfd78"},
+        {"bytes": 71174, "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3/run-w6a8-gate3-v2-w3-dynamic-fc2-cf32.json", "sha256": "3f3d65ecacbee520804e265b8042671b668316110efdde784e9931737a0b151e"}
+      ],
+      "notes": ["W3-R0 mean delta +0.0616921245 nats, BCa 95% CI [+0.0504003196,+0.0744450147]; all 32 windows worsened; fail-ladder-blocked."],
+      "plan_sha256": "8758559f4b196b8779e52e517ec9cc7368b26e8fda8fc812eed8194402d37ccf",
+      "prior_receipt_sha256": "Not tested",
+      "receipt_sha256": "4a6766e63745f84d1874ee6123e2a4ba856e16416a920f11d66363d59d303e20",
+      "stage": "gate3-fixed-arms-outcome"
+    }
+  ],
+  "status": "completed"
+}

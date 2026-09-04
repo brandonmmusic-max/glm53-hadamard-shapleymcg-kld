@@ -1,0 +1,68 @@
+{
+  "algorithm_exclusion": "no LDLQ or BlockLDLQ code path, objective, or result is used",
+  "baseline": {
+    "bpw": 4.5,
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer22-kld/gptq-bf16-control",
+    "receipt": {
+      "bytes": 1609,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer22-kld/gptq-bf16-control/BF16_LAYER_RECEIPT.json",
+      "sha256": "4a0f03ec57f22d578c9762dbabeca875dfc377bb01cc4302c34d02e8afda18ed"
+    },
+    "source_format": "decoded full-Hessian GPTQ NVFP4"
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 50000,
+    "seed": 2026090432,
+    "unit": "window"
+  },
+  "candidate": {
+    "charged_bpw": 4.5,
+    "model": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer22-kld/p8-bf16-candidate",
+    "physical_codec_bpw": 4.25,
+    "receipt": {
+      "bytes": 1582,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer22-kld/p8-bf16-candidate/BF16_LAYER_RECEIPT.json",
+      "sha256": "632d67dfc2f5989a05993e2b354d68da5015a18ec3323ab11dad5148cb3e1629"
+    }
+  },
+  "created_at": "2026-09-04T14:25:52.193496+00:00",
+  "decision_rule": "pass only if mean delta is at most -0.0014 nats and the paired BCa 95 percent upper bound is below zero",
+  "domain_counts": {
+    "axis1_general": 8,
+    "axis2_legal": 8,
+    "axis3_code_agentic": 8,
+    "axis4_reasoning_termination": 8
+  },
+  "execution_match": "both arms replace exactly layer 22 as BF16 through the identical InstantTensor/framework path; only reconstructed weight values differ",
+  "inputs": {
+    "causal_analysis": {
+      "bytes": 4233,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/cross-layer/layer-022-16expert-v1/analysis.json",
+      "sha256": "d59c064522bf003198bb88d70bc59d0d74a3ad5bb875d913d7bea19c533e37ab"
+    },
+    "roles": {
+      "bytes": 23117,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    },
+    "runtime_manifest": {
+      "bytes": 1267,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/rotation-v5/down-h16-kld-v4/sealed/runtime-patch-manifest.json",
+      "sha256": "47afc582ec2df784101b00e7fa0703ae884785d7d813cedc837467645c5320a0"
+    }
+  },
+  "isa_cost_statement": "P8 mxf8f6f4 uses twice the MMA issue count of NVFP4 and is a quality product; P4 is the NVFP4-speed product",
+  "layer": 22,
+  "primary_estimand": "paired equal-window mean KLD(candidate) minus KLD(decoded-GPTQ control)",
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "conditional-fit developmental gate",
+  "run_order": [
+    "matched-gptq-bf16-control",
+    "p8-layer22-bf16-candidate"
+  ],
+  "runtime_boundary": "a pass qualifies pseudoquant encoder quality only; P8 device closure remains blocked by the E4M3 activation carrier",
+  "schema": "glm53-p8-layer22-matched-kld-plan.v1",
+  "stopping_rule": "run each arm once on the exact 32 windows; preserve failures; no exclusions, substitutions, or rerolls",
+  "windows": 32
+}

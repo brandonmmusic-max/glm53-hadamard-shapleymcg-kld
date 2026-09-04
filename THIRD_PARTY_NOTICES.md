@@ -12,6 +12,18 @@ and software. Those components are not relicensed by the ShapleyMCG License.
 - InstantTensor: see its upstream repository.
 - PyTorch: BSD-style license.
 - NVIDIA CUDA, ModelOpt, and container components: NVIDIA terms apply.
+- ExLlamaV3 / ExL3: Copyright turboderp and contributors, MIT License. The
+  procedural trellis constants and bitstream layout used by the research codec
+  are attributed to ExLlamaV3; the retained terms are in
+  `LICENSE.exllamav3` and must accompany reuse.
+- KQuant / QSRT reference snapshot: commit
+  `104dd9233f850a3955f4991bea68b07dd34deeb8`, attributed to Luke Alonso and
+  contributors. The audited snapshot did not contain a `LICENSE` file, so this
+  repository does not assert a license for copied KQuant/QSRT material.
+- The vendored B12X `w4a8_trellis` and `w4a8_trellis_decode` paths implement a
+  QSRT SQG-XOR-Cheb-T12 decoder. Reuse of its pipeline, lane mapping, or T12
+  table must be described as a port and retain the KQuant/QSRT attribution and
+  unverified-license notice above.
 
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be

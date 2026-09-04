@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-  echo "usage: $0 LAYER identity|had16|learned [ROTATION_FILE]" >&2
+  echo "usage: $0 LAYER identity|had16|had32|had64|learned [ROTATION_FILE]" >&2
   exit 2
 fi
 LAYER=$1
@@ -10,20 +10,26 @@ ROTATION=$2
 ROTATION_FILE=${3:-}
 ROTATION_SCOPE=${GLM53_ROTATION_SCOPE:-all}
 MAX_SAMPLES=${GLM53_MAX_SAMPLES:-256}
+QUANT_METHOD=${GLM53_QUANT_METHOD:-gptq}
+GPTQ_GEOMETRY=${GLM53_GPTQ_GEOMETRY:-full}
+SAMPLING_STRATEGY=${GLM53_SAMPLING_STRATEGY:-domain-balanced}
 [[ "$LAYER" =~ ^[0-9]+$ ]] && [ "$LAYER" -ge 3 ] && [ "$LAYER" -le 44 ] || { echo "layer must be 3..44" >&2; exit 2; }
-[ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
+[ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
 [ "$ROTATION_SCOPE" = gate-up ] || [ "$ROTATION_SCOPE" = mid-only ] || [ "$ROTATION_SCOPE" = all ] || { echo "invalid GLM53_ROTATION_SCOPE" >&2; exit 2; }
+[ "$QUANT_METHOD" = gptq ] || [ "$QUANT_METHOD" = mr-gptq ] || [ "$QUANT_METHOD" = fpquant-mr-gptq ] || [ "$QUANT_METHOD" = rtn ] || [ "$QUANT_METHOD" = trellis-nvfp4 ] || [ "$QUANT_METHOD" = identity-k4 ] || { echo "invalid GLM53_QUANT_METHOD" >&2; exit 2; }
+[ "$QUANT_METHOD" != trellis-nvfp4 ] || [ "$ROTATION" = identity ] || { echo "trellis-nvfp4 requires identity rotation" >&2; exit 2; }
 
 REPO=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 SOURCE=$CAMPAIGN/downloads/GLM-5.3-Flash-BF16
 SOURCE_INDEX=$CAMPAIGN/downloads/source-metadata/model.safetensors.index.json
 CAPTURE=$CAMPAIGN/teacher/calibration/main-ep4-full
-ROLES=$CAMPAIGN/roles/roles-v3.json
+ROLES=${GLM53_ROLES:-$CAMPAIGN/roles/roles-v3.json}
 EXACT_VERSION=${GLM53_EXACT_VERSION:-v6}
 ARM=$ROTATION
 [ "$ROTATION_SCOPE" = all ] || ARM=$ROTATION-$ROTATION_SCOPE
+[ "$QUANT_METHOD" = gptq ] || ARM=$ARM-$QUANT_METHOD
 ROOT=$CAMPAIGN/exact-$EXACT_VERSION/layer-$(printf '%03d' "$LAYER")/$ARM
 CHUNKS=$ROOT/chunks
 EVIDENCE=$ROOT/evidence
@@ -62,13 +68,24 @@ for gpu in 0 1 2 3; do
   printf -v E3 '%03d' "$end"
   extra=()
   [ -z "$ROTATION_FILE" ] || extra+=(--rotation-file "$ROTATION_FILE")
+  if [ "$QUANT_METHOD" = trellis-nvfp4 ]; then
+    extra+=(--codec-output "$CHUNKS/$ARM-layer-$L3-experts-$S3-$E3.trellis.safetensors")
+    extra+=(--trellis-bits "${GLM53_TRELLIS_BITS:-4}")
+    extra+=(--trellis-codebook "${GLM53_TRELLIS_CODEBOOK:-mcg}")
+    extra+=(--trellis-compander-scale "${GLM53_TRELLIS_COMPANDER_SCALE:-1.9}")
+    extra+=(--trellis-scale-refinement-iterations "${GLM53_TRELLIS_SCALE_REFINEMENT_ITERATIONS:-2}")
+    [ -z "${GLM53_TRELLIS_CODEBOOK_FILE:-}" ] || extra+=(--trellis-codebook-file "$GLM53_TRELLIS_CODEBOOK_FILE")
+  fi
   CUDA_VISIBLE_DEVICES=$gpu /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.quantize_layer \
     --source "$SOURCE" --source-index "$SOURCE_INDEX" --capture-root "$CAPTURE" --roles "$ROLES" \
-    --output "$CHUNKS/$ROTATION-layer-$L3-experts-$S3-$E3.safetensors" \
-    --receipt "$EVIDENCE/$ROTATION-layer-$L3-experts-$S3-$E3.json" \
+    --output "$CHUNKS/$ARM-layer-$L3-experts-$S3-$E3.safetensors" \
+    --receipt "$EVIDENCE/$ARM-layer-$L3-experts-$S3-$E3.json" \
     --layer "$LAYER" --expert-start "$start" --expert-end "$end" --device cuda:0 \
     --max-samples "$MAX_SAMPLES" --search-grid 12 --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
-    --gptq-geometry full --projections all "${extra[@]}" >"$LOGS/quant-gpu-$gpu.log" 2>&1 &
+    --sampling-strategy "$SAMPLING_STRATEGY" \
+    --gptq-geometry "$GPTQ_GEOMETRY" --quant-method "$QUANT_METHOD" --projections all \
+    --endpoint-sweeps "${GLM53_ENDPOINT_SWEEPS:-1}" --endpoint-ridge-ratio "${GLM53_ENDPOINT_RIDGE_RATIO:-3.0}" \
+    "${extra[@]}" >"$LOGS/quant-gpu-$gpu.log" 2>&1 &
   pids+=("$!")
 done
 failed=0
@@ -81,24 +98,26 @@ for gpu in 0 1 2 3; do
   start=$((gpu * 72)); end=$((start + 72))
   printf -v S3 '%03d' "$start"
   printf -v E3 '%03d' "$end"
-  receipts+=(--receipt "$EVIDENCE/$ROTATION-layer-$L3-experts-$S3-$E3.json")
-  chunks+=(--chunk "$CHUNKS/$ROTATION-layer-$L3-experts-$S3-$E3.safetensors")
+  receipts+=(--receipt "$EVIDENCE/$ARM-layer-$L3-experts-$S3-$E3.json")
+  chunks+=(--chunk "$CHUNKS/$ARM-layer-$L3-experts-$S3-$E3.safetensors")
 done
 /usr/bin/python3 -m glm53_nvfp4.validate_layer --layer "$LAYER" --projections all \
   "${receipts[@]}" --output "$EVIDENCE/layer-validation.json" | tee "$LOGS/layer-validation.log"
 
-scale_extra=()
-[ -z "$ROTATION_FILE" ] || scale_extra+=(--rotation-file "$ROTATION_FILE")
-CUDA_VISIBLE_DEVICES=0 /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.calibrate_input_scale \
-  --capture-root "$CAPTURE" --source "$SOURCE" --source-index "$SOURCE_INDEX" \
-  --roles "$ROLES" --layer "$LAYER" --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
-  --device cuda:0 --max-samples "$MAX_SAMPLES" --output "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors" \
-  --receipt "$EVIDENCE/input-scales.json" "${scale_extra[@]}" >"$LOGS/input-scales.log" 2>&1
-chunks+=(--chunk "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors")
+if [ "$QUANT_METHOD" != trellis-nvfp4 ]; then
+  scale_extra=()
+  [ -z "$ROTATION_FILE" ] || scale_extra+=(--rotation-file "$ROTATION_FILE")
+  CUDA_VISIBLE_DEVICES=0 /home/brandonmusic/klc-env/bin/python -m glm53_nvfp4.calibrate_input_scale \
+    --capture-root "$CAPTURE" --source "$SOURCE" --source-index "$SOURCE_INDEX" \
+    --roles "$ROLES" --layer "$LAYER" --rotation "$ROTATION" --rotation-scope "$ROTATION_SCOPE" \
+    --device cuda:0 --max-samples "$MAX_SAMPLES" --output "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors" \
+    --receipt "$EVIDENCE/input-scales.json" "${scale_extra[@]}" >"$LOGS/input-scales.log" 2>&1
+  chunks+=(--chunk "$CHUNKS/$ROTATION-layer-$L3-input-scales.safetensors")
+fi
 
 cd "$REPO"
 /usr/bin/python3 -m glm53_nvfp4.candidate \
   --carrier /home/brandonmusic/models/GLM-5.3-Flash-NVFP4 \
   --output "$CANDIDATE" "${chunks[@]}" >"$LOGS/candidate-overlay.json"
 sha256sum "$CANDIDATE/model.safetensors.index.json" >"$EVIDENCE/candidate-index.sha256"
-echo "$ROTATION exact Qwen-style layer $LAYER candidate complete"
+echo "$ROTATION/$QUANT_METHOD exact Qwen-style layer $LAYER candidate complete"

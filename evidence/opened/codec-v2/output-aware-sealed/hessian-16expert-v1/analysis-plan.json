@@ -1,0 +1,92 @@
+{
+  "algorithm_exclusion": "no LDLQ code path, objective, or result is used",
+  "bootstrap": {
+    "method": "paired BCa",
+    "replicates": 20000,
+    "seed": 20260904,
+    "unit": "expert"
+  },
+  "candidate": {
+    "alphabet": "E4M3",
+    "bits": 4,
+    "block_size": 32,
+    "encoder": "native-tile Viterbi plus GPTQ-style full-Hessian inter-group error feedback and static within-group activation order",
+    "isa_cost": "mxf8f6f4 issues twice the MMA instructions of NVFP4",
+    "law": "procedural MCG alpha=2.0",
+    "product": "P8",
+    "scale": "UE8M0",
+    "scale_refit_iterations": 2,
+    "stored_bpw": 4.25
+  },
+  "controls": {
+    "diagnostic": [
+      "plain MCG K4 Viterbi",
+      "scalar E4M3 K32"
+    ],
+    "primary": "full-Hessian GPTQ NVFP4, 4.5 bpw"
+  },
+  "created_at": "2026-09-04T07:23:27.688258+00:00",
+  "decision_rule": "pass only if geometric-mean candidate improvement versus GPTQ NVFP4 is at least 10 percent, the paired expert BCa upper bound on mean log ratio is below zero, and at least 12 of 16 experts improve",
+  "estimand": "per expert, geometric mean of gate/up held-out routed projection-output NMSE; paired log ratio candidate/control",
+  "experts": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    71
+  ],
+  "inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "layer": 3,
+  "prior": [
+    {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/screen-e0-v1/analysis.json",
+      "sha256": "344545c1811bf220413951caaae763470cecae3510c6a61ae9f76ea4318547f1"
+    },
+    {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/sealed/screen-e0-cv-v2/analysis.json",
+      "sha256": "71059c923939d87d508a83b16daf0f8813d30b34095f4b006f5affe3f25bdf10"
+    }
+  ],
+  "projections": [
+    "gate_proj",
+    "up_proj"
+  ],
+  "protected_boundary": "selection, confirmation, final, and all 28 confirmation logits remain unopened",
+  "role": "fit engineering qualification before end-to-end KLD",
+  "sampling": {
+    "evaluation": {
+      "count": 128,
+      "offset": 256
+    },
+    "hessian_fit": {
+      "count": 256,
+      "offset": 0
+    },
+    "strategy": "domain-balanced routed REAP samples per expert"
+  },
+  "schema": "glm53-hessian-trellis-16expert-plan.v1"
+}
