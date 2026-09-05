@@ -34,9 +34,11 @@ Exact terminal artifacts and per-file hashes are retained under
 [p8-speed-attempts](../evidence/opened/codec-v2/p8-speed-attempts/).
 `scripts/snapshot_p8_speed_attempts.py` refuses active services and refuses
 to overwrite changed evidence. Each source attempt and service remains local.
-Live attempt v2a3 runs from commit
-`33bc3de0e94dfaac49fc44c442ef4fea54f97936`; its results are pending and will
-be recorded separately, without rewriting the failed attempts.
+Attempt v2a3 ran from commit
+`33bc3de0e94dfaac49fc44c442ef4fea54f97936` and completed all ten cold runs.
+Median 32K prefill improved 11.00%, while C1 decode regressed 77.33%; the
+predeclared two-metric gate failed and allocation stopped. The complete result
+is [P8_SPEED_V2A3](P8_SPEED_V2A3.md), without rewriting the failed attempts.
 
 The separate read-only `glm53_nvfp4.audit_p8_speed_receipts` verifies
 receipt hashes, unique cold-container identities, within-arm configuration
