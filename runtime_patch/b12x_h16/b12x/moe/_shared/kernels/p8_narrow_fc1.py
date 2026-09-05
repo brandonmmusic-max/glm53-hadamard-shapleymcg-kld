@@ -4,8 +4,8 @@ Donor w4a8_phase1.py sha256
 7222df68bb6ad7ec5ca69cf7c4ffd5c3d6b1ddc240e6375c4b1e77bcc151909c.
 
 N64/N32 tasks preserve full ordered K4096 and complete output K32 groups.
-The initial candidate retains N128 packed staging granularity. This duplicates
-B staging across narrow owners; it is intentionally not a claimed speedup.
+Only owned B/SFB spans are staged at their original N128 shared offsets.
+This changes copy traffic without changing MMA, scale, or output arithmetic.
 Device arithmetic closure and graph replay validation are required.
 """
 from __future__ import annotations
@@ -89,6 +89,205 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
         self.trellis_identity_boundary = True
         self.trellis_lut_offset = self.shared_bytes
 
+
+    @cute.jit
+    def _stage_owned_trellis_b(
+        self, tr_u32: cute.Tensor, smem_base: Int32, tile_base: Int64,
+        k16_stride_u32: Int32, bits: cutlass.Constexpr, tidx: Int32,
+        tcnt: cutlass.Constexpr, k16_rows: cutlass.Constexpr, subtile: Int32,
+    ):
+        # One vector copies four u32 words (16 bytes). Retain the full N128
+        # row stride so the existing decoder's logical warp addresses agree.
+        full_chunks = 16 * bits
+        owned_chunks = (self.owned_n // 16) * (2 * bits)
+        transfers = k16_rows * owned_chunks
+        limit = Int64(tr_u32.shape[0]) - Int64(4)
+        for i in cutlass.range_constexpr((transfers + tcnt - 1) // tcnt):
+            idx = tidx + Int32(i * tcnt)
+            if idx < Int32(transfers):
+                k16_local = idx // Int32(owned_chunks)
+                local_chunk = idx - k16_local * Int32(owned_chunks)
+                chunk = subtile * Int32(owned_chunks) + local_chunk
+                src = (
+                    tile_base + Int64(k16_local) * Int64(k16_stride_u32)
+                    + Int64(chunk * Int32(4))
+                )
+                if src >= Int64(0) and src <= limit:
+                    cp_async4_shared_global(
+                        smem_base + (k16_local * Int32(full_chunks) + chunk)
+                        * Int32(16),
+                        get_ptr_as_int64(tr_u32, src),
+                    )
+
+    @cute.jit
+    def _stage_owned_sfb(
+        self, scales: cute.Tensor, dst_base: Int32, tile_word_base: Int64,
+        packed_half: Int32, tid: Int32, subtile: Int32,
+    ):
+        # Each owned N8 needs eight u32 scale words. The K128 word remains
+        # intact: the consumer still selects its original K32 byte.
+        owned_vectors = self.owned_n // 4
+        for i in cutlass.range_constexpr(
+            (owned_vectors + self.threads_per_cta - 1) // self.threads_per_cta
+        ):
+            idx = tid + Int32(i * self.threads_per_cta)
+            if idx < Int32(owned_vectors):
+                vector = subtile * Int32(owned_vectors) + idx
+                src_word = (
+                    tile_word_base + Int64(packed_half * Int32(128))
+                    + Int64(vector * Int32(4))
+                )
+                cp_async4_shared_global(
+                    dst_base + vector * Int32(16),
+                    get_ptr_as_int64(scales, src_word),
+                )
+
+    @cute.jit
+    def _stage_slice(
+        self,
+        packed_a_u32: cute.Tensor,
+        scale_storage: cute.Tensor,
+        w13_rp: cute.Tensor,
+        w13_sfb_rp: cute.Tensor,
+        token_map: cute.Tensor,
+        smem_base: Int32,
+        tid: Int32,
+        source_m_tile: Int32,
+        m_half: Int32,
+        expert_idx: Int32,
+        output_tile: Int32,
+        valid_rows: Int32,
+        k64_slice: Int32,
+        input_k128_tiles: Int32,
+        intermediate_tiles: Int32,
+        packed_w13_tiles: Int32,
+        subtile: Int32,
+    ):
+        stage = k64_slice & Int32(1)
+        stage_base = smem_base + stage * Int32(self.stage_bytes)
+        a_base = stage_base + Int32(self.a_offset)
+        sfa_base = stage_base + Int32(self.sfa_offset)
+        gate_b_base = stage_base + Int32(self.gate_b_offset)
+        up_b_base = stage_base + Int32(self.up_b_offset)
+        gate_sfb_base = stage_base + Int32(self.gate_sfb_offset)
+        up_sfb_base = stage_base + Int32(self.up_sfb_offset)
+
+        physical_row_base = source_m_tile * Int32(self.source_tile_m) + m_half * Int32(
+            self.tile_m
+        )
+        words_per_token = input_k128_tiles * Int32(32)
+
+        # Gather the shared input representation through the published route
+        # map.  Invalid tail rows may read token zero safely; no output is
+        # published for them.
+        for i in cutlass.range_constexpr(
+            (self.tile_m * 4 + self.threads_per_cta - 1) // self.threads_per_cta
+        ):
+            idx = tid + Int32(i * self.threads_per_cta)
+            if idx < Int32(self.tile_m * 4):
+                row = idx >> Int32(2)
+                vec = idx & Int32(3)
+                tok = Int32(0)
+                if row < valid_rows:
+                    tok = token_map[physical_row_base + row].to(Int32)
+                    if cutlass.const_expr(self.deterministic_output):
+                        tok = tok // Int32(self.num_topk)
+                physical_vec = vec ^ (row & Int32(7))
+                src_word = (
+                    tok * words_per_token + k64_slice * Int32(16) + (vec << Int32(2))
+                )
+                cp_async4_shared_global(
+                    a_base + row * Int32(128) + (physical_vec << Int32(4)),
+                    get_ptr_as_int64(packed_a_u32, src_word),
+                )
+
+        if tid < Int32(self.tile_m):
+            tok = Int32(0)
+            if tid < valid_rows:
+                tok = token_map[physical_row_base + tid].to(Int32)
+                if cutlass.const_expr(self.deterministic_output):
+                    tok = tok // Int32(self.num_topk)
+            sf_src = tok * input_k128_tiles * Int32(4) + (
+                k64_slice >> Int32(1)
+            ) * Int32(4)
+            cp_async_u32_shared_global(
+                sfa_base + (tid << Int32(2)),
+                get_ptr_as_int64(scale_storage, sf_src),
+            )
+
+        k128_slice = k64_slice >> Int32(1)
+        k_half = k64_slice & Int32(1)
+        input_k128_count = input_k128_tiles
+
+        up_packed_tile = output_tile >> Int32(1)
+        up_packed_half = output_tile & Int32(1)
+        gate_tile = output_tile + intermediate_tiles
+        gate_packed_tile = gate_tile >> Int32(1)
+        gate_packed_half = gate_tile & Int32(1)
+
+        up_tile = (
+            expert_idx * packed_w13_tiles + up_packed_tile
+        ) * input_k128_count + k128_slice
+        gate_tile_idx = (
+            expert_idx * packed_w13_tiles + gate_packed_tile
+        ) * input_k128_count + k128_slice
+
+        if cutlass.const_expr(self.w4a8_trellis):
+            # Projection-major [proj][E][K16][N16] trellis windows (the
+            # prepared QSRT layout, shared with the micro kernel); stage
+            # the four K16 rows of this K64 epoch for gate (projection 0)
+            # and up (projection 1). Only the owned N64/N32 spans are copied;
+            # their original N128 shared-memory offsets remain unchanged.
+            tr_n16_cnt = intermediate_tiles * Int32(8)
+            tr_k16_stride = tr_n16_cnt * Int32(8 * self.trellis_bits)
+            tr_eu = Int64(input_k128_tiles * Int32(8)) * Int64(tr_k16_stride)
+            tr_w13_half = Int64(w13_rp.shape[0]) >> Int64(1)
+            tr_common = (
+                Int64(expert_idx) * tr_eu
+                + Int64(k64_slice * Int32(4)) * Int64(tr_k16_stride)
+                + Int64(output_tile * Int32(8))
+                * Int64(8 * self.trellis_bits)
+            )
+            self._stage_owned_trellis_b(
+                w13_rp,
+                gate_b_base,
+                tr_common,
+                tr_k16_stride,
+                self.trellis_bits,
+                tid,
+                self.threads_per_cta,
+                4,
+                subtile,
+            )
+            self._stage_owned_trellis_b(
+                w13_rp,
+                up_b_base,
+                tr_common + tr_w13_half,
+                tr_k16_stride,
+                self.trellis_bits,
+                tid,
+                self.threads_per_cta,
+                4,
+                subtile,
+            )
+            if cutlass.const_expr(self.trellis_scaled):
+                self._stage_owned_sfb(
+                    w13_sfb_rp,
+                    gate_sfb_base,
+                    Int64(gate_tile_idx) * Int64(256),
+                    gate_packed_half,
+                    tid,
+                    subtile,
+                )
+                self._stage_owned_sfb(
+                    w13_sfb_rp,
+                    up_sfb_base,
+                    Int64(up_tile) * Int64(256),
+                    up_packed_half,
+                    tid,
+                    subtile,
+                )
+
     @cute.jit
     def _activated_value(self, gate, up, alpha_value):
         # Match dynamic.py _gated_activation_value, including comparisons and
@@ -164,6 +363,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             input_k128_tiles,
             intermediate_tiles,
             packed_w13_tiles,
+            subtile,
         )
         cute.arch.cp_async_commit_group()
 
@@ -215,6 +415,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                     input_k128_tiles,
                     intermediate_tiles,
                     packed_w13_tiles,
+                    subtile,
                 )
             cute.arch.cp_async_commit_group()
             cute.arch.cp_async_wait_group(1)
