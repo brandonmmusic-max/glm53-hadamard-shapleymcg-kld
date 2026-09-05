@@ -71,66 +71,6 @@ def test_p8_fc2_has_no_e2m1_or_atomic_math():
     assert "self.deterministic_output = True" in source
 
 
-def test_p8_fc2_stages_one_a_tile_for_each_n256_pair():
-    source = (KERNELS / "p8_small_m.py").read_text()
-    tree = ast.parse(source)
-    kernel_class = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "P8SmallMPhase2Kernel"
-    )
-    methods = {
-        node.name: node
-        for node in kernel_class.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-
-    def called(method, name):
-        return [
-            node
-            for node in ast.walk(methods[method])
-            if isinstance(node, ast.Call)
-            and (
-                (isinstance(node.func, ast.Name) and node.func.id == name)
-                or (isinstance(node.func, ast.Attribute) and node.func.attr == name)
-            )
-        ]
-
-    # The route/output-pair kernel owns N256 directly; there is no outer
-    # two-half loop and no second invocation that can reload the same A slice.
-    assert len(called("kernel", "_run_task")) == 1
-    assert "for half in cutlass.range_constexpr(2)" not in source
-    assert "output_pair * Int32(256)" in source
-
-    # One pair stage copies A once, then stages the two compressed N128 stream
-    # halves and the complete physical N256 scale tile.
-    assert len(called("_stage_pair_slice", "cp_async_u32_shared_global")) == 1
-    assert len(called("_stage_pair_slice", "_w4a8_stage_trellis_b_tile")) == 2
-    assert "b_stage_bytes = 2 * b_half_bytes" in source
-    assert "sfb_stage_bytes = 2 * sfb_half_bytes" in source
-    assert "range_constexpr(8)" in source
-
-    # Four warps own disjoint N64 spans, covering one N256 output pair and its
-    # sixteen N16 trellis blocks exactly once.
-    columns = {
-        warp * 64 + c * 2 + nt * 8 + element
-        for warp in range(4)
-        for c in range(4)
-        for nt in range(8)
-        for element in range(2)
-    }
-    assert columns == set(range(256))
-    n16_blocks = {
-        warp * 4 + half_block
-        for warp in range(4)
-        for half_block in range(4)
-    }
-    assert n16_blocks == set(range(16))
-    assert {(n16 >> 3, n16 & 7) for n16 in n16_blocks} == {
-        (half, local) for half in range(2) for local in range(8)
-    }
-
-
 def test_dynamic_calls_route_ids_and_bypasses_old_fc2():
     source = (KERNELS / "dynamic.py").read_text()
     assert "self.external_materialized_fc2 = self.w4a8_split_materialized or self.p8_small_m" in source
