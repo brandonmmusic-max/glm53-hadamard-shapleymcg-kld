@@ -7,8 +7,8 @@ CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 ROOT=/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1
 KLD_SERVICE=${GLM53_P8_KLD_SERVICE:-glm53-uniform-p8-all42-kld-v1a2.service}
 KLD_ANALYSIS=$ROOT/fullmodel-kld-vs-decoded-gptq-context.json
-PLAN=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json
-PLAN_SEAL=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.sha256
+PLAN=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v2.json
+PLAN_SEAL=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v2.sha256
 IMAGE_AMENDMENT=$REPO/experiments/p8-all42-runtime-image-amendment-2.json
 ANALYZER=$REPO/glm53_nvfp4/analyze_p8_vs_exl3_speed.py
 RUNTIME_PATCH=$RUNTIME_REPO/runtime_patch
@@ -21,11 +21,11 @@ EXL3_RECEIPT=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/re
 EXL3_COMPOSE=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/runtime/compose.sm120-tp4-vision-mtp5.yaml
 BENCH_REPO=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-r10-rebase/tooling/llm-inference-bench
 BENCH=$BENCH_REPO/llm_decode_bench.py
-OUT=$ROOT/speed-v1
+OUT=$ROOT/speed-v2
 ANALYSIS=$OUT/analysis.json
 EXECUTION=$OUT/execution.json
 LOG=$OUT/followon.log
-CONTAINER=glm53-p8-exl3-speed-v1
+CONTAINER=glm53-p8-exl3-speed-v2
 PORT=8017
 LOCK=/run/lock/klc/model-stack.lock
 P8_IMAGE=sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8
@@ -64,6 +64,12 @@ if not values or not all(math.isfinite(v) for v in values):
     raise SystemExit("KLD analysis is not complete and finite")
 PY
 
+# The original matched-topology trial is terminal evidence, not a resumable
+# slot in this separately declared product-topology comparison.
+PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_speed_v2 \
+  --plan "$PLAN" --prior-plan "$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json" \
+  --failed-log "$ROOT/speed-v1/round-01-exl3/server.log" | tee -a "$LOG"
+
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
 (cd "$REPO/experiments" && sha256sum --check --strict p8-all42-runtime-image-amendment-2.sha256) | tee -a "$LOG"
 PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_runtime_image --amendment "$IMAGE_AMENDMENT" | tee -a "$LOG"
@@ -101,12 +107,13 @@ def sha(p):
         for chunk in iter(lambda:f.read(1<<20), b''): h.update(chunk)
     return h.hexdigest()
 static={
-  'schema':'glm53-p8-uniform-all42-vs-exl3-speed-execution.v1',
+  'schema':'glm53-p8-uniform-all42-vs-exl3-speed-execution.v2',
   'plan_sha256':sha(plan), 'kld_analysis_sha256':sha(kld),
   'image_amendment_sha256':sha(plan.parent/'p8-all42-runtime-image-amendment-2.json'),
   'p8_image_id':json.loads((plan.parent/'p8-all42-runtime-image-amendment-2.json').read_text())['image_id'],
   'runtime_manifest_sha256':sha(runtime), 'exl3_receipt_sha256':sha(exl3),
   'benchmark_tool_sha256':sha(bench), 'started_at':datetime.now(timezone.utc).isoformat(),
+  'topologies':{key:json.loads(plan.read_text())[key]['topology'] for key in ('candidate','baseline')},
   'protected_roles_opened':[],
 }
 if output.exists():
@@ -162,7 +169,9 @@ run_arm() {
   nvidia-smi -q -x >"$slot/nvidia-before.xml"
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
-  local image model name cache
+  local image model name cache expected_dcp
+  if [ "$arm" = p8 ]; then expected_dcp=1
+  else expected_dcp=4; fi
   local -a envs mounts args
   envs=(
     -e CUDA_VISIBLE_DEVICES=0,1,2,3 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e OMP_NUM_THREADS=2
@@ -177,7 +186,7 @@ run_arm() {
   mounts=()
   args=(
     --host 0.0.0.0 --port "$PORT" --language-model-only --tensor-parallel-size 4
-    --decode-context-parallel-size 1 --dcp-comm-backend a2a --dtype bfloat16
+    --decode-context-parallel-size "$expected_dcp" --dcp-comm-backend a2a --dtype bfloat16
     --attention-backend B12X_MLA_SPARSE --kv-cache-dtype nvfp4_ds_mla
     --max-model-len 131072 --max-num-batched-tokens 2048 --max-num-seqs 1
     --gpu-memory-utilization 0.94 --enable-chunked-prefill --no-enable-prefix-caching
@@ -203,7 +212,7 @@ run_arm() {
       -e VLLM_EXL3_PREFILL_BLOCK_M=128 -e VLLM_EXL3_PREFILL_TRELLIS=1
       -e B12X_GL53_ROUTE128_WIDE=1 -e B12X_GL53_ROUTE128_HYBRID_TAIL=1
     )
-    args+=(--quantization exl3 --load-format safetensors --moe-backend b12x)
+    args+=(--enable-expert-parallel --quantization exl3 --load-format safetensors --moe-backend b12x)
   fi
   mkdir -p "$cache"
   docker run -d --name "$CONTAINER" --gpus all --network host --ipc host --shm-size 64g \
@@ -225,14 +234,17 @@ run_arm() {
   docker image inspect "$image" >"$slot/image.json"
   docker logs "$CONTAINER" >"$server_log" 2>&1
   grep -q 'tensor_parallel_size=4' "$server_log"
-  grep -q 'decode_context_parallel_size=1' "$server_log"
+  grep -q "decode_context_parallel_size=$expected_dcp" "$server_log"
   grep -q 'speculative_config=None' "$server_log"
   grep -q 'enforce_eager=False' "$server_log"
   grep -q 'kv_cache_dtype=nvfp4_ds_mla' "$server_log"
   grep -q 'Breakable CUDA graph enabled' "$server_log"
   if [ "$arm" = p8 ]; then
+    ! grep -q "'enable_expert_parallel': True" "$server_log"
     grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=$LAYERS tp=4 .*physical_bpw=4.25 ldlq=false" "$server_log"
   else
+    grep -q "'enable_expert_parallel': True" "$server_log"
+    grep -q 'EXL3 full-expert EP runtime planned' "$server_log"
     grep -q 'quantization=exl3' "$server_log"
     grep -q 'GLM-5.3 routed-only EXL3: streaming unsliced K4 experts' "$server_log"
   fi

@@ -60,6 +60,13 @@ result. Allocation remains stopped under the preregistered incomplete-arm
 rule. Repair requires a disclosed compatibility amendment and a fresh run,
 not relabeling this trial or silently changing TP. The P8 KLD result is intact.
 
+Source diagnosis: the stored experts are unsliced; the reader synthesizes the
+TP2 restriction. The existing four-GPU EXL3 service uses its explicit EP path.
+[Speed plan v2](../experiments/p8-uniform-all42-tp4-vs-exl3-speed-v2.json)
+therefore preregisters P8 TP4/no-EP/DCP1 versus EXL3 TP4/EP4/DCP4, target-only
+in both, retaining the same five-run speed thresholds. This is explicitly a
+different-topology product comparison; it does not retroactively repair v1.
+
 ## Reproduction and receipts
 
 Evidence lives in [the exact-copy and projected-data snapshot](../evidence/opened/codec-v2/uniform-p8-all42-v1/).
