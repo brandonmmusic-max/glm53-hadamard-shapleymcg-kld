@@ -63,6 +63,13 @@ def ms_summary(values):
             'min_ms': min(values)/1e6, 'max_ms': max(values)/1e6}
 
 
+def require_c1(grids):
+    active_m = infer_active_m(grids)
+    if active_m != 1:
+        raise ValueError(f'expected active M1, got {active_m}')
+    return active_m
+
+
 def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
     receipt = json.loads(client.read_text())
     if receipt['status'] != 'client-completed-trace-unverified':
@@ -105,12 +112,19 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
                 raise ValueError('worker device identity missing')
             geometry = ('gridX','gridY','gridZ','blockX','blockY','blockZ')
             inventory = Counter((strings[row['demangledName']], *(row[key] for key in geometry)) for row in chunks[0])
+            for chunk in chunks[1:]:
+                current = Counter((strings[row['demangledName']], *(row[key] for key in geometry)) for row in chunk)
+                if current != inventory:
+                    raise ValueError('kernel symbol/geometry inventory changes across replay')
             if cross_worker_inventory is None:
                 cross_worker_inventory = inventory
             elif inventory != cross_worker_inventory:
                 raise ValueError('kernel symbol/geometry inventory differs across ranks')
             duration_sums, duration_unions = defaultdict(list), defaultdict(list)
-            name_sums, name_counts, name_geometry = defaultdict(list), {}, {}
+            name_sums, name_counts = defaultdict(list), {}
+            name_geometry = defaultdict(Counter)
+            for row in chunks[0]:
+                name_geometry[strings[row['demangledName']]][tuple(row[key] for key in geometry)] += 1
             spans, bounds, per_replay = [], [], []
             for chunk in chunks:
                 start, end = min(row['start'] for row in chunk), max(row['end'] for row in chunk)
@@ -126,7 +140,6 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
                     if cat in {'moe_fc1','moe_fc2'}:
                         categories['moe_total'].append(interval)
                     names[name].append(interval)
-                    name_geometry[name] = [row[key] for key in geometry]
                     if cat == 'topk':
                         all_topk_grids.add(row['gridX'])
                 for cat in ('moe_fc1','moe_fc2','topk'):
@@ -147,7 +160,9 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
                                'union': ms_summary(duration_unions[cat])} for cat in duration_sums}
             top_names = sorted(name_sums, key=lambda name: statistics.median(name_sums[name]), reverse=True)[:30]
             top = [{'name':name, 'category':category(name), 'calls_per_replay':name_counts[name],
-                    'geometry':name_geometry[name], **ms_summary(name_sums[name])} for name in top_names]
+                    'geometries':[{'geometry':list(shape),'calls_per_replay':calls}
+                                  for shape,calls in sorted(name_geometry[name].items())],
+                    **ms_summary(name_sums[name])} for name in top_names]
             workers_result.append({
                 'pid':pid, 'cuda_id':device['cudaId'], 'uuid':device['uuid'],
                 'sms':device['numMultiprocessors'], 'generation_ranges':count, 'graph_launches':len(launches),
@@ -160,7 +175,7 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
         'trace_sha256':sha256(trace), 'report_sha256':sha256(report) if report else None,
         'client_receipt_sha256':sha256(client), 'graph_replay_proven':True,
         'grouping':'per-worker cudaGraphLaunch correlationId and repeated node inventory',
-        'graph_span_distributed':ms_summary(distributed), 'active_m':infer_active_m(all_topk_grids),
+        'graph_span_distributed':ms_summary(distributed), 'active_m':require_c1(all_topk_grids),
         'workers':workers_result, 'protected_roles_opened':[], 'ldlq':False,
         'limits':['One server, 16 correlated replays; no independent replication.',
                   'Profiling overhead prevents substituting spans for unprofiled tokens/s.',
