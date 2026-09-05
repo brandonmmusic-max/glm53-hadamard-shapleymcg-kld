@@ -41,3 +41,65 @@ class P8SmallMGeometry:
 
 def use_small_m(enabled: bool, tokens: int) -> bool:
     return bool(enabled and tokens == 1)
+
+
+@dataclass(frozen=True)
+class P8ScratchRegion:
+    name: str
+    dtype: str
+    shape: tuple[int, ...]
+    offset: int
+    nbytes: int
+
+
+@dataclass(frozen=True)
+class P8ScratchLayout:
+    regions: tuple[P8ScratchRegion, ...]
+    nbytes: int
+
+
+def p8_small_m_scratch_layout() -> P8ScratchLayout:
+    """Exact M1 buffer extents, each starting at a 16-byte-aligned offset.
+
+    The route-output allocation is intentionally excluded. Padding between
+    regions is also zeroed by the caller's single uint8 arena initialization.
+    """
+    geometry = P8SmallMGeometry()
+    rows = geometry.physical_tiles * 16
+    max_tasks = geometry.physical_tiles * (geometry.intermediate // 128)
+    specs = [
+        ("packed_a", "uint8", (rows * geometry.hidden,)),
+        ("scale_flat", "uint8",
+         ((geometry.experts + geometry.topk + 1) * 16 * (geometry.hidden // 8),)),
+        ("intermediate_u32", "int32",
+         (rows * (geometry.intermediate + geometry.intermediate // 32) // 4,)),
+    ]
+    specs.extend((name, "int32", (1,)) for name in (
+        "barrier_count", "barrier_epoch", "pair_head", "producers_done",
+        "all_published", "task_head", "task_tail",
+    ))
+    specs.extend((name, "int32", (max_tasks,)) for name in (
+        "task_ready", "task_expert", "task_m_tile", "task_slice_begin",
+        "task_slice_count", "task_valid_rows",
+    ))
+    specs.extend([
+        ("tile_write_count", "int32", (geometry.physical_tiles,)),
+        ("row_counts", "int32", (geometry.experts,)),
+        ("expert_write_rows", "int32", (geometry.experts,)),
+        ("expert_tile_base", "int32", (geometry.experts + 1,)),
+        ("token_map", "int32", (rows,)),
+        ("token_weights", "float32", (rows,)),
+        ("output", "bfloat16", (1, geometry.hidden)),
+    ])
+    sizes = {"uint8": 1, "int32": 4, "float32": 4, "bfloat16": 2}
+    regions = []
+    cursor = 0
+    for name, dtype, shape in specs:
+        cursor = (cursor + 15) // 16 * 16
+        elements = 1
+        for extent in shape:
+            elements *= extent
+        nbytes = elements * sizes[dtype]
+        regions.append(P8ScratchRegion(name, dtype, shape, cursor, nbytes))
+        cursor += nbytes
+    return P8ScratchLayout(tuple(regions), (cursor + 15) // 16 * 16)

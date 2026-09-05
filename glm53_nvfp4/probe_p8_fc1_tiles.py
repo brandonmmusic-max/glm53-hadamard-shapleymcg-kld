@@ -91,7 +91,7 @@ def run(args):
         raise FileExistsError(args.output)
     if not re.fullmatch(r'sha256:[a-f0-9]{64}',args.image_id):
         raise ValueError('requires immutable launched image identity')
-    source_modules = ('p8_native_kernel','b12x.moe._shared.kernels.dynamic',
+    source_modules = ('p8_native_kernel','p8_smallm_schedule','b12x.moe._shared.kernels.dynamic',
                       'b12x.moe._shared.kernels.p8_narrow_fc1',
                       'b12x.moe._shared.kernels.p8_small_m',
                       'b12x.moe._shared.kernels.w4a8_phase1')
@@ -111,7 +111,8 @@ def run(args):
         tile: P8NativeTPMoE(args.sidecar, device=device, tp_rank=args.rank,
                            layer=3, expected_design_sha256=sha(args.design),
                            deterministic_output=True, small_m_scheduler=True,
-                           fc1_tile_n=tile, debug_capture=True)
+                           fc1_tile_n=tile, debug_capture=True,
+                           fuse_scratch_zero=args.fused_scratch_candidates and tile != 128)
         for tile in args.tiles
     }
 
@@ -129,7 +130,7 @@ def run(args):
         dispatch = runtime.debug_dispatch
         m = output.shape[0]
         if m > 1:
-            if dispatch != {'small_m':False,'materialized':False,'fc1_tile_n':128,'tile_m':16}:
+            if dispatch != {'small_m':False,'materialized':False,'fc1_tile_n':128,'tile_m':16,'fused_scratch_zero':False}:
                 raise ValueError('fallback did not resolve to unchanged N128 monolithic path')
             counts = buffers['row_counts'].cpu().tolist()
             bases = buffers['expert_tile_base'].cpu().tolist()
@@ -139,7 +140,8 @@ def run(args):
             result['packed_a'] = tensor_hash(buffers['packed_a'].cpu().reshape(-1,4096).index_select(0,selected))
             result['scale_flat'] = tensor_hash(buffers['scale_flat'].cpu()[:len(mapping)*128].reshape(-1,128).index_select(0,selected))
             result['canonical_physical_row_order'] = order
-        elif dispatch != {'small_m':True,'materialized':True,'fc1_tile_n':runtime.fc1_tile_n,'tile_m':16}:
+        elif dispatch != {'small_m':True,'materialized':True,'fc1_tile_n':runtime.fc1_tile_n,'tile_m':16,
+                          'fused_scratch_zero':args.fused_scratch_candidates and runtime.fc1_tile_n != 128}:
             raise ValueError('M1 did not resolve to requested FC1 tile')
         result['resolved_dispatch'] = dispatch
         return result
@@ -246,6 +248,7 @@ def run(args):
         'schema':'glm53-p8-fc1-tiles-probe.v2', 'decision':decision,
         'fallback_input_comparison':'canonical logical route order from token_map, row_counts and expert_tile_base; raw physical hashes retained',
         'image_id':args.image_id,'executed_sources':sources,
+        'fused_scratch_candidates':args.fused_scratch_candidates,
         'sidecar_sha256':sha(args.sidecar), 'design_sha256':sha(args.design),
         'probe_sha256':sha(__file__), 'rank':args.rank, 'seed':args.seed,
         'device':torch.cuda.get_device_name(), 'payloads':payloads, 'cells':cells,
@@ -269,6 +272,7 @@ if __name__ == '__main__':
     p.add_argument('--design',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--image-id',required=True)
+    p.add_argument('--fused-scratch-candidates',action='store_true')
     p.add_argument('--rank',type=int,default=0)
     p.add_argument('--seed',type=int,default=20260905)
     p.add_argument('--tiles',type=int,nargs='+',default=[128,64,32])

@@ -16,7 +16,7 @@ import torch
 from cutlass.base_dsl.compiler import OptLevel
 from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
-from p8_smallm_schedule import P8SmallMGeometry, use_small_m
+from p8_smallm_schedule import P8SmallMGeometry, p8_small_m_scratch_layout, use_small_m
 
 from b12x._lib.compiler import KernelCompileSpec, compile as b12x_compile
 from b12x._lib.utils import get_max_active_clusters
@@ -76,6 +76,7 @@ class P8NativeTPMoE:
         small_m_scheduler: bool = False,
         fc1_tile_n: int = 128,
         debug_capture: bool = False,
+        fuse_scratch_zero: bool = False,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -94,6 +95,10 @@ class P8NativeTPMoE:
         self.small_m_scheduler = bool(small_m_scheduler)
         self.fc1_tile_n = int(fc1_tile_n)
         self.debug_capture = bool(debug_capture)
+        self.fuse_scratch_zero = bool(fuse_scratch_zero)
+        self._scratch_layout = (
+            p8_small_m_scratch_layout() if self.fuse_scratch_zero else None
+        )
         self.debug_tensors = {}
         if self.fc1_tile_n not in (32, 64, 128):
             raise ValueError("FC1 tile N must be 32, 64, or 128")
@@ -358,36 +363,72 @@ class P8NativeTPMoE:
         rows_padded = physical_tiles * tile_m
         gate_tile_count = ((2 * self.intermediate) // 128) // 2
         max_tasks = physical_tiles * max(gate_tile_count, 1)
-        packed_a = torch.zeros(rows_padded * self.hidden, dtype=torch.uint8, device=self.device)
-        scale_flat = torch.zeros(
-            (self.experts + m * self.topk + 1) * tile_m * (self.hidden // 8),
-            dtype=torch.uint8,
-            device=self.device,
-        )
-        intermediate_u32 = torch.zeros(
-            rows_padded * (self.intermediate + self.intermediate // 32) // 4,
-            dtype=torch.int32,
-            device=self.device,
-        )
+        fused_scratch_zero = self.fuse_scratch_zero and small_m
+        if fused_scratch_zero:
+            layout = self._scratch_layout
+            assert layout is not None
+            # A single GPU fill initializes all original bytes plus alignment
+            # padding. The views add no casts, copies, or device kernels.
+            arena = torch.zeros(layout.nbytes, dtype=torch.uint8, device=self.device)
+            buffers = {
+                region.name: arena.narrow(0, region.offset, region.nbytes)
+                .view(getattr(torch, region.dtype)).reshape(region.shape)
+                for region in layout.regions
+            }
+            packed_a = buffers["packed_a"]
+            scale_flat = buffers["scale_flat"]
+            intermediate_u32 = buffers["intermediate_u32"]
+            barrier_count = buffers["barrier_count"]
+            barrier_epoch = buffers["barrier_epoch"]
+            pair_head = buffers["pair_head"]
+            producers_done = buffers["producers_done"]
+            all_published = buffers["all_published"]
+            task_head = buffers["task_head"]
+            task_tail = buffers["task_tail"]
+            task_ready = buffers["task_ready"]
+            task_expert = buffers["task_expert"]
+            task_m_tile = buffers["task_m_tile"]
+            task_slice_begin = buffers["task_slice_begin"]
+            task_slice_count = buffers["task_slice_count"]
+            task_valid_rows = buffers["task_valid_rows"]
+            tile_write_count = buffers["tile_write_count"]
+            row_counts = buffers["row_counts"]
+            expert_write_rows = buffers["expert_write_rows"]
+            expert_tile_base = buffers["expert_tile_base"]
+            token_map = buffers["token_map"]
+            token_weights = buffers["token_weights"]
+            output = buffers["output"]
+        else:
+            packed_a = torch.zeros(rows_padded * self.hidden, dtype=torch.uint8, device=self.device)
+            scale_flat = torch.zeros(
+                (self.experts + m * self.topk + 1) * tile_m * (self.hidden // 8),
+                dtype=torch.uint8,
+                device=self.device,
+            )
+            intermediate_u32 = torch.zeros(
+                rows_padded * (self.intermediate + self.intermediate // 32) // 4,
+                dtype=torch.int32,
+                device=self.device,
+            )
 
-        def z1():
-            return torch.zeros(1, dtype=torch.int32, device=self.device)
+            def z1():
+                return torch.zeros(1, dtype=torch.int32, device=self.device)
 
-        def ztask():
-            return torch.zeros(max_tasks, dtype=torch.int32, device=self.device)
+            def ztask():
+                return torch.zeros(max_tasks, dtype=torch.int32, device=self.device)
 
-        barrier_count, barrier_epoch = z1(), z1()
-        pair_head, producers_done, all_published = z1(), z1(), z1()
-        task_head, task_tail = z1(), z1()
-        task_ready, task_expert, task_m_tile = ztask(), ztask(), ztask()
-        task_slice_begin, task_slice_count, task_valid_rows = ztask(), ztask(), ztask()
-        tile_write_count = torch.zeros(physical_tiles, dtype=torch.int32, device=self.device)
-        row_counts = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
-        expert_write_rows = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
-        expert_tile_base = torch.zeros(self.experts + 1, dtype=torch.int32, device=self.device)
-        token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
-        token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
-        output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
+            barrier_count, barrier_epoch = z1(), z1()
+            pair_head, producers_done, all_published = z1(), z1(), z1()
+            task_head, task_tail = z1(), z1()
+            task_ready, task_expert, task_m_tile = ztask(), ztask(), ztask()
+            task_slice_begin, task_slice_count, task_valid_rows = ztask(), ztask(), ztask()
+            tile_write_count = torch.zeros(physical_tiles, dtype=torch.int32, device=self.device)
+            row_counts = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
+            expert_write_rows = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
+            expert_tile_base = torch.zeros(self.experts + 1, dtype=torch.int32, device=self.device)
+            token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
+            token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
+            output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
         kernel_output = (
             torch.empty(
                 m * self.topk,
@@ -462,6 +503,7 @@ class P8NativeTPMoE:
                 "expert_tile_base": expert_tile_base,
             }
             self.debug_dispatch = {"small_m": small_m, "materialized": materialized,
+                                   "fused_scratch_zero": fused_scratch_zero,
                                    "fc1_tile_n": self.fc1_tile_n if small_m else 128,
                                    "tile_m": tile_m}
         return output

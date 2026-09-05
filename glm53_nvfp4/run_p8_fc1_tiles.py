@@ -18,7 +18,7 @@ DESIGN = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-all42-runtime/ex
 SIDECAR = Path('/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/sidecars/p8-layer-003-tp4-rank-0.safetensors')
 
 
-def argv(image, uuid, out, name):
+def argv(image, uuid, out, name, fused_scratch=False):
     return [
         'docker','create','--name',name,'--gpus',f'device={uuid}',
         '--network','none','--ipc','private','--shm-size','1g',
@@ -32,7 +32,7 @@ def argv(image, uuid, out, name):
         '--runtime-patch','/runtime-patch','--sidecar','/inputs/sidecar.safetensors',
         '--design','/inputs/design.json','--output','/out/result.json',
         '--image-id',image,
-    ]
+    ] + (['--fused-scratch-candidates'] if fused_scratch else [])
 
 
 def run(plan_path, out):
@@ -90,7 +90,7 @@ def run(plan_path, out):
             cell_out = out/f'gpu{gpu}'
             cell_out.mkdir()
             name = f'glm53-p8-fc1tiles-{out.name}-gpu{gpu}'
-            launch = argv(image,uuid_by_index[gpu],cell_out,name)
+            launch = argv(image,uuid_by_index[gpu],cell_out,name,plan.get('fused_scratch_candidates',False))
             save(cell_out/'launch.json',{'argv':launch,'physical_gpu':gpu,'uuid':uuid_by_index[gpu]})
             cid = command(launch).stdout.strip()
             if not re.fullmatch('[a-f0-9]{64}',cid):
@@ -124,6 +124,7 @@ def run(plan_path, out):
             if (result['image_id'] != image or result['sidecar_sha256'] != plan['sidecar_sha256']
                     or result['design_sha256'] != plan['design_sha256']
                     or result['probe_sha256'] != plan['source_sha256']['glm53_nvfp4/probe_p8_fc1_tiles.py']
+                    or result.get('fused_scratch_candidates',False) != plan.get('fused_scratch_candidates',False)
                     or len(observed_cells) != len(expected_cells) or set(observed_cells) != expected_cells):
                 raise RuntimeError('probe output identity or cell inventory differs')
             record['devices'].append({'gpu':gpu,'result_sha256':sha(cell_out/'result.json'),
