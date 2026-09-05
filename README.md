@@ -187,6 +187,9 @@ device outputs were bitwise identical for each tested monolithic/materialized
 M3/M33 case; full-model five-run determinism and speed remain open.
 Receipts: [deterministic KLD closure](evidence/opened/codec-v2/p8-native-kld-closure-v2/analysis.json)
 and [contextual GPTQ comparison](evidence/opened/codec-v2/p8-native-kld-closure-v2/native-deterministic-vs-decoded-gptq-diagnostic.json).
+The historical plan has an inconsistent `written_at` field; see the
+[chronology caveat](experiments/p8-native-deterministic-kld-closure-v2-chronology-note.md)
+for the verified local commit/run ordering and its limitations.
 
 ### Native product boundary
 
