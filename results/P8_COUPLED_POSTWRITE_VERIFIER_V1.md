@@ -99,3 +99,9 @@ Chunk retirement becomes eligible only after: this verifier passes; the real run
 loader closes all four ranks for the layer; a fresh storage ledger passes; and
 an explicit retirement receipt identifies the exact chunk hashes removed.
 Until then, no chunk is redundant and none is authorized for deletion.
+# Verification scope clarification
+
+The verifier independently reopens written files, but shares the packer's
+`_load_rank_coupled` reconstruction logic. It catches serialization corruption
+and disagreement with source chunks; it is not an independent implementation
+of the packing algorithm. Real loader/device closure remains a separate gate.
