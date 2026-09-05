@@ -29,3 +29,15 @@ Conditions: attention and KV N/A for encoding/CPU packing; MoE target P8
 coupled K4 MCG E4M3/UE8M0, target activation E4M3, approximately 4.25398 bpw
 including transform metadata. P8 uses twice the NVFP4 MMA issue count.
 Production remains off; protected roles remain unopened. No new KLD result.
+
+5. Before the layer20 loader result, pin its explicit protocol and command in
+   `experiments/p8-layer20-loader-execution-v1.json`, conditional on all chunk,
+   pack/postwrite, fresh storage and idle-GPU gates. Reserve 16 MiB evidence.
+   No production restoration or source retirement follows this loader check.
+6. Integration validation after analysis/helper changes: `python3 -m pytest
+   -q tests/test_p8*.py` completed with 815 passed in 24.74 seconds. Actual
+   production is a user service: `systemctl --user is-active
+   klc-backend.service` returned inactive; the system model-stack timer was
+   inactive, Docker had no running containers, and port8000 had no listener.
+   The legacy tail product runner's automatic restoration entrypoint must not
+   be reused by the new coupled campaign.
