@@ -27,6 +27,8 @@ ORDER = ({"stage": "control", "arm": "stock"}, {"stage": "control", "arm": "exl3
 WINDOW_IDS = prior.WINDOW_IDS
 ROLES, TEACHER = prior.ROLES, prior.TEACHER
 PREREG = REPO / "experiments/p8-exl3-fp8-ds-mla-forced-decode-v1-prereg.json"
+AMENDMENT = REPO / "experiments/p8-exl3-fp8-ds-mla-forced-decode-v2-amendment.json"
+ATTENTION_BACKEND = "FLASHINFER_MLA_SPARSE_SM120"
 P8_RECEIPT = ROOT / "p8-smallm-scheduler-v1/decode-capture-image-v2/receipt.json"
 EXL3_RECEIPT = ROOT / "decode-path-control-images-v1/exl3/receipt.json"
 P8_RECIPE = ROOT / "p8-smallm-scheduler-v1/fc1-integrated-v1/container-final.private.json"
@@ -64,6 +66,7 @@ def source_files() -> set[str]:
         "glm53_nvfp4/p8_decode_protocol.py",
         "glm53_nvfp4/p8_decode_analysis.py",
         "experiments/p8-exl3-fp8-ds-mla-forced-decode-v1-prereg.json",
+        "experiments/p8-exl3-fp8-ds-mla-forced-decode-v2-amendment.json",
     }
 
 
@@ -105,7 +108,7 @@ def make_plan(path: Path, output: Path) -> dict:
     receipts, windows = image_receipts(), selected_windows()
     recipes()
     plan = {
-        "schema": "glm53.p8-exl3-fp8-ds-mla-control-plan.v1",
+        "schema": "glm53.p8-exl3-fp8-ds-mla-control-plan.v2",
         "created_at": base.pilot.now(), "output": str(output), "order": list(ORDER), "port": PORT,
         "windows": windows, "roles": str(ROLES), "roles_sha256": sha(ROLES),
         "teacher_root": str(TEACHER), "input_stats": input_stats(windows),
@@ -120,23 +123,25 @@ def make_plan(path: Path, output: Path) -> dict:
         },
         "source_sha256": {name: sha(REPO / name) for name in sorted(source_files())},
         "prereg": str(PREREG), "prereg_sha256": sha(PREREG),
+        "amendment": str(AMENDMENT), "amendment_sha256": sha(AMENDMENT),
         "product_labels": PRODUCT, "baseline_window_kld": BASELINES,
         "baseline_mean_kld": BASELINE_MEANS, "raw_capture_bytes": RAW_BYTES,
         "headroom_bytes": HEADROOM, "ready_timeout_seconds": 2400,
         "request_timeout_seconds": 900, "capture_artifact_owner": {"uid": os.getuid(), "gid": os.getgid()},
         "runtime": {
-            "kv_cache_dtype": "fp8_ds_mla", "attention_backend": "B12X_MLA_SPARSE",
+            "kv_cache_dtype": "fp8_ds_mla", "attention_backend": ATTENTION_BACKEND,
             "cuda_graphs": True, "mtp": False, "max_num_seqs": 1,
             "stock": {"product": "p8", "tp": 4, "ep": False, "dcp": 1, "tile_n": 64, "fused_scratch": True},
             "exl3": {"product": "exl3", "tp": 4, "ep": True, "dcp": 4, "moe_backend": "b12x"},
         },
         "decision": {
-            "nvfp4_mla_implicated": "both relative improvements >=0.20 and both FP8 means <0.09",
-            "kv_format_exonerated": "both relative improvements <0.20 and both FP8 means >=0.09",
+            "nvfp4_production_mla_stack_implicated": "both relative improvements >=0.20 and both FP8 means <0.09",
+            "fp8_path_does_not_exonerate_stack": "both relative improvements <0.20 and both FP8 means >=0.09",
             "otherwise": "arm-specific-or-inconclusive",
         },
         "opened_roles": ["conditional-fit"], "protected_roles_opened": [],
-        "speed_measurement_valid": False, "retry_policy": "no silent retry or substitution",
+        "speed_measurement_valid": False, "retry_policy": "one amended v2 execution; no silent retry or substitution",
+        "causal_boundary": "FP8-compatible attention-plus-KV path versus the B12X/NVFP4 production baseline; not KV dtype alone",
     }
     base.pilot.save(path, plan)
     base.pilot.save(path.with_suffix(".sha256"), sha(path) + "  " + path.name + "\n")
@@ -148,12 +153,13 @@ def authenticate(path: Path) -> dict:
         raise ValueError("canonical sealed FP8 control plan required")
     plan = json.loads(path.read_text())
     if (
-        plan.get("schema") != "glm53.p8-exl3-fp8-ds-mla-control-plan.v1"
+        plan.get("schema") != "glm53.p8-exl3-fp8-ds-mla-control-plan.v2"
         or plan.get("order") != list(ORDER) or plan.get("product_labels") != PRODUCT
         or plan.get("baseline_window_kld") != BASELINES or plan.get("baseline_mean_kld") != BASELINE_MEANS
         or plan.get("raw_capture_bytes") != RAW_BYTES or plan.get("headroom_bytes") != HEADROOM
         or plan.get("opened_roles") != ["conditional-fit"] or plan.get("protected_roles_opened") != []
         or plan.get("runtime", {}).get("kv_cache_dtype") != "fp8_ds_mla"
+        or plan.get("runtime", {}).get("attention_backend") != ATTENTION_BACKEND
         or plan.get("runtime", {}).get("mtp") is not False
     ):
         raise ValueError("FP8 control fixed contract differs")
@@ -169,8 +175,9 @@ def authenticate(path: Path) -> dict:
         if sha(Path(item["path"])) != item["sha256"]:
             raise ValueError(f"{arm} capture receipt changed")
     recipes()
-    if sha(PREREG) != plan["prereg_sha256"] or sha(ROLES) != plan["roles_sha256"]:
-        raise ValueError("preregistration or role identity changed")
+    if (sha(PREREG) != plan["prereg_sha256"] or sha(AMENDMENT) != plan["amendment_sha256"]
+            or sha(ROLES) != plan["roles_sha256"]):
+        raise ValueError("preregistration, amendment, or role identity changed")
     windows = selected_windows()
     if windows != plan["windows"] or input_stats(windows) != plan["input_stats"]:
         raise ValueError("fixed window inputs changed")
@@ -209,11 +216,13 @@ def clone_argv(_recipe: dict, image: str, entry: dict, out: Path, windows: list[
     else:
         raise ValueError("unknown FP8 control arm")
     argv[-1] = replace_option(argv[-1], "--kv-cache-dtype", "fp8_ds_mla")
+    argv[-1] = replace_option(argv[-1], "--attention-backend", ATTENTION_BACKEND)
     return argv
 
 
 def runtime_audit(log: str, arm: str, completed_windows=None) -> dict:
-    for marker in ("Using V2 Model Runner", "tensor_parallel_size=4", "speculative_config=None", "kv_cache_dtype=fp8_ds_mla"):
+    for marker in ("Using V2 Model Runner", "tensor_parallel_size=4", "speculative_config=None",
+                   "kv_cache_dtype=fp8_ds_mla", ATTENTION_BACKEND):
         if marker not in log:
             raise ValueError(f"missing runtime marker: {marker}")
     if arm == "stock":
@@ -236,7 +245,9 @@ def runtime_audit(log: str, arm: str, completed_windows=None) -> dict:
     closed = re.findall(r"GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED tp_rank=(\d+) registrations=(\d+) samples=(\d+)", log)
     if len(closed) != 4 or set(closed) != {(str(rank), "1", "2") for rank in range(4)}:
         raise ValueError("capture warmup closure differs")
-    result = {**proof, "arm": arm, "product": PRODUCT[arm], "tp": 4, "kv_cache_dtype": "fp8_ds_mla", "mtp": False, "cuda_graphs": True}
+    result = {**proof, "arm": arm, "product": PRODUCT[arm], "tp": 4,
+              "kv_cache_dtype": "fp8_ds_mla", "attention_backend": ATTENTION_BACKEND,
+              "mtp": False, "cuda_graphs": True}
     if completed_windows is not None:
         completed = re.findall(r"GLM53_P8_DECODE_CAPTURE_V2_COMPLETE window=(conditional-fit-\d{4}) rows=(\d+) tp_rank=(\d+)", log)
         expected = {(row["id"], str(protocol.ROWS), "0") for row in completed_windows}
@@ -320,12 +331,13 @@ def analyze(path: Path, output: Path) -> dict:
                          "true_decode_mean_kld": float(np.mean([row["true_decode_mean_kld"] for row in rows]))}
     implicated = all(row["relative_improvement"] >= 0.20 and row["fp8_mean_kld"] < 0.09 for row in arms.values())
     exonerated = all(row["relative_improvement"] < 0.20 and row["fp8_mean_kld"] >= 0.09 for row in arms.values())
-    verdict = "nvfp4-mla-implicated" if implicated else "kv-format-exonerated" if exonerated else "arm-specific-or-inconclusive"
+    verdict = ("nvfp4-production-mla-stack-implicated" if implicated else
+               "fp8-path-does-not-exonerate-stack" if exonerated else "arm-specific-or-inconclusive")
     result = {"schema": "glm53.p8-exl3-fp8-ds-mla-control-analysis.v1", "status": "complete", "verdict": verdict,
               "plan_sha256": sha(path), "metric": "KL(teacher || student), nats, FP64 CPU, all154880 entries",
               "windows": 4, "arms": arms, "records": records, "opened_roles": ["conditional-fit"],
               "protected_roles_opened": [], "speed_measurement_valid": False, "mtp": False,
-              "claim_boundary": "Targeted within-product KV-format diagnostic; not full32 quality or speed qualification."}
+              "claim_boundary": "FP8-compatible attention-plus-KV path versus B12X/NVFP4 within product; not KV dtype alone, full32 quality, or speed qualification."}
     result["files"] = {item.name: sha(item) for item in output.iterdir() if item.is_file()}
     base.pilot.save(output / "analysis.json", result)
     return result
