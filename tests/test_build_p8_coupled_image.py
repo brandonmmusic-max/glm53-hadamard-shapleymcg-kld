@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +27,7 @@ def _sha(path: Path) -> str:
 
 def test_manifest_hashes_every_declared_source() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text())
-    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v2"
+    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v3"
     for relative, expected in manifest["source_sha256"].items():
         assert _sha(ROOT / relative) == expected
 
@@ -74,10 +75,42 @@ def test_manifest_encodes_exact_parent_and_candidate_call_abis() -> None:
     candidates = manifest["candidate_launch_abi"]
     assert len(candidates["prefill_fc1"]["call_parameters"]) == 18
     assert candidates["prefill_fc1"]["call_parameters"][12] == "scale_component"
-    assert candidates["prefill_fc1"]["shared_bytes"] == 65536
+    assert candidates["prefill_fc1"]["constructor_parameters"] == []
+    assert candidates["prefill_fc1"]["instance_attributes"]["shared_bytes"] == 65536
     assert len(candidates["prefill_fc2"]["call_parameters"]) == 17
     assert candidates["prefill_fc2"]["call_parameters"][12] == "scale_component"
-    assert candidates["prefill_fc2"]["shared_bytes"] == 34816
+    assert candidates["prefill_fc2"]["constructor_parameters"] == []
+    assert candidates["prefill_fc2"]["instance_attributes"]["shared_bytes"] == 34816
+
+
+def test_fc1_constructed_resource_contract_proves_disjoint_epilogue() -> None:
+    verifier = _load(
+        "verify_p8_coupled_image",
+        ROOT / "runtime_patch/p8_coupled_image/verify_image.py",
+    )
+    # The class-level inherited value is 35,328 bytes. The actual no-argument
+    # constructor specializes tile_m=64/full_coupled and allocates 65,536.
+    instance = SimpleNamespace(
+        tile_m=64,
+        owned_n=128,
+        stage_bytes=17664,
+        shared_bytes=65536,
+    )
+    contract = verifier._fc1_resource_contract(instance)
+    assert contract == {
+        "pipeline_start": 0,
+        "pipeline_end": 35328,
+        "gate_fp16_start": 0,
+        "gate_fp16_end": 16384,
+        "up_fp16_start": 16384,
+        "up_fp16_end": 32768,
+        "full_output_fp32_start": 32768,
+        "full_output_fp32_end": 65536,
+        "allocation_end": 65536,
+    }
+    assert contract["gate_fp16_end"] == contract["up_fp16_start"]
+    assert contract["up_fp16_end"] == contract["full_output_fp32_start"]
+    assert contract["full_output_fp32_end"] <= contract["allocation_end"]
 
 
 def test_verifier_checks_phase_hash_abi_owner_and_launch_contract() -> None:
@@ -87,9 +120,11 @@ def test_verifier_checks_phase_hash_abi_owner_and_launch_contract() -> None:
         'manifest["candidate_launch_abi"]',
         "inspect.signature",
         "inspect.getsource",
+        "instance = cls()",
+        "_fc1_resource_contract(instance)",
         "stale build/lib donor is present on sys.path",
         "call owner mismatch",
-        "shared bytes mismatch",
+        "constructed attributes mismatch",
         "launch source missing",
     ):
         assert required in verifier
@@ -129,7 +164,7 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert "--pull=false" in command
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
-    assert builder.TAG == "klc/glm53-p8-coupled:v2"
+    assert builder.TAG == "klc/glm53-p8-coupled:v3"
     assert builder.INTEGRATION_BASE == "53e0b45c57b9946ae3a7ef5dbdc376400d9a1a96"
 
 

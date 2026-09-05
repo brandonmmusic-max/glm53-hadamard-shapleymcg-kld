@@ -62,7 +62,7 @@ RUN test -n "$KLC_SOURCE_COMMIT" \
 
 LABEL org.opencontainers.image.title="GLM-5.3 P8 coupled research runtime" \
       org.opencontainers.image.licenses="LicenseRef-ShapleyMCG-1.0" \
-      org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v2" \
+      org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v3" \
       org.klc.qualification="research-only-not-device-qualified" \
       org.klc.parent.digest="sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745" \
       org.klc.tail-v2.sha256="494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251" \

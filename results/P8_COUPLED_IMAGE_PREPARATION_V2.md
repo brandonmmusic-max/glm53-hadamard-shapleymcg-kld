@@ -1,6 +1,14 @@
 # P8 coupled image v2 preparation
 
-Status: **prepared source only; image not built; device closure not run**.
+Status: **superseded after a CPU-only image build failed closed; no image was
+produced and device closure was not run**.
+
+The later v2 build reached verifier step 27 and failed because the verifier
+read FC1's inherited class-level `shared_bytes` value (35,328) instead of the
+constructed M64/full-coupled instance value (65,536). The complete failed log
+and plan are preserved under
+`/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-image-v2-build/`.
+The v3 receipt documents the bounded correction.
 
 Date: 2026-09-05
 

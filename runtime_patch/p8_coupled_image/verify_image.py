@@ -43,6 +43,31 @@ def _call_owner(cls: type) -> str | None:
     return None
 
 
+def _fc1_resource_contract(instance: object) -> dict[str, int]:
+    """Calculate the physical M64 FC1 shared-memory intervals.
+
+    The two-stage MMA pipeline aliases the epilogue only after the kernel's
+    wait/fence/barrier.  Within the epilogue, gate FP16, up FP16, and the
+    transformed FP32 output must be pairwise disjoint.
+    """
+
+    tile_elements = int(instance.tile_m) * int(instance.owned_n)
+    gate_end = tile_elements * 2
+    up_end = gate_end + tile_elements * 2
+    full_output_end = up_end + tile_elements * 4
+    return {
+        "pipeline_start": 0,
+        "pipeline_end": 2 * int(instance.stage_bytes),
+        "gate_fp16_start": 0,
+        "gate_fp16_end": gate_end,
+        "up_fp16_start": gate_end,
+        "up_fp16_end": up_end,
+        "full_output_fp32_start": up_end,
+        "full_output_fp32_end": full_output_end,
+        "allocation_end": int(instance.shared_bytes),
+    }
+
+
 def verify(manifest_path: Path) -> dict[str, object]:
     manifest = json.loads(manifest_path.read_text())
     errors: list[str] = []
@@ -115,15 +140,32 @@ def verify(manifest_path: Path) -> dict[str, object]:
     for candidate_name, candidate in manifest["candidate_launch_abi"].items():
         module = importlib.import_module(candidate["module"])
         cls = getattr(module, candidate["class"])
+        constructor_parameters = list(inspect.signature(cls).parameters)
         actual_parameters = _parameters(cls.__call__)
         owner = _call_owner(cls)
         source = "".join(inspect.getsource(cls.__call__).split())
-        shared_bytes = getattr(cls, "shared_bytes", None)
+        instance = cls()
+        instance_attributes = {
+            name: getattr(instance, name, None)
+            for name in candidate["instance_attributes"]
+        }
+        resource_contract = (
+            _fc1_resource_contract(instance)
+            if "resource_contract" in candidate
+            else None
+        )
         candidate_abis[candidate_name] = {
+            "constructor_parameters": constructor_parameters,
             "call_parameters": actual_parameters,
             "call_owner": owner,
-            "shared_bytes": shared_bytes,
+            "instance_attributes": instance_attributes,
+            "resource_contract": resource_contract,
         }
+        if constructor_parameters != candidate["constructor_parameters"]:
+            errors.append(
+                f"candidate {candidate_name} constructor ABI mismatch: expected "
+                f"{candidate['constructor_parameters']}, got {constructor_parameters}"
+            )
         if actual_parameters != candidate["call_parameters"]:
             errors.append(
                 f"candidate {candidate_name} call ABI mismatch: expected "
@@ -134,10 +176,15 @@ def verify(manifest_path: Path) -> dict[str, object]:
                 f"candidate {candidate_name} call owner mismatch: expected "
                 f"{candidate['call_owner']}, got {owner}"
             )
-        if shared_bytes != candidate["shared_bytes"]:
+        if instance_attributes != candidate["instance_attributes"]:
             errors.append(
-                f"candidate {candidate_name} shared bytes mismatch: expected "
-                f"{candidate['shared_bytes']}, got {shared_bytes}"
+                f"candidate {candidate_name} constructed attributes mismatch: expected "
+                f"{candidate['instance_attributes']}, got {instance_attributes}"
+            )
+        if resource_contract != candidate.get("resource_contract"):
+            errors.append(
+                f"candidate {candidate_name} resource contract mismatch: expected "
+                f"{candidate.get('resource_contract')}, got {resource_contract}"
             )
         for snippet in candidate["normalized_launch_source"]:
             if snippet not in source:
@@ -153,7 +200,7 @@ def verify(manifest_path: Path) -> dict[str, object]:
             errors.append(f"py_compile failed: {target}: {error.msg}")
 
     result: dict[str, object] = {
-        "schema": "glm53.p8-coupled-image-verification.v2",
+        "schema": "glm53.p8-coupled-image-verification.v3",
         "status": "pass" if not errors else "fail",
         "parent_image_id": manifest["parent_image_id"],
         "tail_v2_sha256": tail_actual,
