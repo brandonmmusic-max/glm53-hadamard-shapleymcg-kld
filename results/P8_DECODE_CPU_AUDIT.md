@@ -89,3 +89,17 @@ KLD result does not automatically transfer.
 
 Existing ExLlamaV3, KQuant, QSRT and w4a8_trellis attribution remains in
 force. This audit introduces no new codec port and no measured speedup.
+
+## Prepared diagnostic client (not yet executed)
+
+`glm53_nvfp4.p8_profile_client` uses only a freshly tokenized synthetic seed,
+expanded to exactly 32,768 valid IDs. It checks model identity and usage,
+preserves failures and attempts profiler cleanup even after an ambiguous
+start response. Thirty CPU mock tests passed; no serving endpoints were
+called during implementation. The combined focused suite has 52 passing tests.
+
+[The diagnostic plan](../experiments/p8-decode-profile-v1.json) declares
+expected chunked-prefill P=16 and CUDA profiler delay=33/max=16. The pinned
+worker advances its profiler before model work; actual recorded iterations
+and rank coverage still require trace verification. Client success alone
+explicitly reports `client-completed-trace-unverified`, not a valid profile.
