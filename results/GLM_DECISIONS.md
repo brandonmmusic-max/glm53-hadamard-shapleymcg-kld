@@ -1243,6 +1243,14 @@ confirmation, and final roles remained unopened for this redesign branch.
   count, and the separate five-cold speed pass is unchanged.
 - Outcome at preregistration: v1 failure preserved; v2 implementation and
   CPU validation pending. No evaluation result has been observed for v2.
+- Prelaunch update, 08:13 UTC: implementation and independent CPU review
+  completed; 155 focused tests pass. Dedicated image
+  `sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9`
+  built without GPU work; receipt SHA-256
+  `fdd57fa758d33f81d88706487232e2f68b89a24f5c1e398e83516e212f14ffd6`.
+  The exact image imports the patched warmup and accepts the actual pinned
+  synthetic sampling signature. These are structural checks only; the next
+  authorized action is sealing and executing the unchanged numerical gate.
 
 ## 2026-09-03: uniform rotation
 

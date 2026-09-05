@@ -14,11 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTEXT = ROOT / "runtime_patch/p8_decode_capture"
 PARENT_TAG = "klc/glm53-p8-fc1tiles:cropped-v1"
 PARENT_ID = "sha256:6c08dffb4184c2704173a12909f4bbfaaa866351e55cbf03a2182741baf81141"
-SOURCE_NAMES = ("Dockerfile", "__init__.py", "processor.py", "v2_hook.py", "sampler-v2-hook.patch")
+SOURCE_NAMES = ("Dockerfile", "__init__.py", "processor.py", "v2_hook.py", "sampler-v2-hook.patch", "warmup-v2-hook.patch")
 SAMPLERS = (
     "/opt/infernal-invocation/vllm/vllm/v1/worker/gpu/sample/sampler.py",
     "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py",
 )
+SAMPLER_PATCHED_SHA = "717bdd2203c8977205e16ca63385027f7e7ec8acd54afd962ada3e611cf7b958"
+WARMUPS = (
+    "/opt/infernal-invocation/vllm/vllm/v1/worker/gpu/warmup.py",
+    "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py",
+)
+WARMUP_ORIGINAL_SHA = "696cdd462f58908f3511e9983fe18aa3811acecdd6da1ff580bbab99aed08dcc"
+WARMUP_PATCHED_SHA = "de321498f305e2f61d5cfe4701d19a066ebfec83147f527b2ec82bfb653ea8c7"
 PACKAGE = "/opt/venv/lib/python3.12/site-packages/p8_decode_capture/"
 INHERITED_FC2 = "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py"
 INHERITED_FC2_SHA = "a0c398e9d412672d1138c69a5c0c3677bb29b7215379c701062d29b8b9b9265f"
@@ -39,7 +46,7 @@ def image_id(tag: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--tag", default="klc/glm53-p8-capture:v2-v1")
+    parser.add_argument("--tag", default="klc/glm53-p8-capture:v2-v2")
     args = parser.parse_args()
     if not args.output.is_absolute() or args.output.exists():
         raise ValueError("output must be an absolute, fresh directory")
@@ -53,7 +60,7 @@ def main() -> None:
     sources = {name: sha(CONTEXT / name) for name in SOURCE_NAMES}
     args.output.mkdir(parents=True)
     receipt = {
-        "schema": "glm53-p8.decode-capture-image.v1",
+        "schema": "glm53-p8.decode-capture-image.v2",
         "status": "started", "started_unix_ns": time.time_ns(),
         "parent_tag": PARENT_TAG, "parent_image_id": PARENT_ID,
         "tag": args.tag, "source_sha256": sources,
@@ -73,16 +80,16 @@ def main() -> None:
             raise ValueError("parent tag changed during build")
         if sources != {name: sha(CONTEXT / name) for name in SOURCE_NAMES}:
             raise ValueError("capture sources changed during build")
-        paths = [*SAMPLERS, *(PACKAGE + name for name in SOURCE_NAMES if name.endswith(".py")), INHERITED_FC2]
+        paths = [*SAMPLERS, *WARMUPS, *(PACKAGE + name for name in SOURCE_NAMES if name.endswith(".py")), INHERITED_FC2]
         # No GPU device allocation and no serving entrypoint. Network is disabled.
         output = command(["docker", "run", "--rm", "--network=none", "--runtime=runc",
                           "-e", "NVIDIA_VISIBLE_DEVICES=void", "--entrypoint", "sha256sum", built, *paths])
         (args.output / "image-source-sha256.txt").write_text(output + "\n")
         hashes = {line.split(maxsplit=1)[1].strip(): line.split()[0] for line in output.splitlines()}
-        if hashes[SAMPLERS[0]] != hashes[SAMPLERS[1]]:
-            raise ValueError("editable and installed sampler differ")
-        if hashes[SAMPLERS[0]] == "0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711":
-            raise ValueError("sampler patch was not installed")
+        if any(hashes[path] != SAMPLER_PATCHED_SHA for path in SAMPLERS):
+            raise ValueError("exact sampler patch was not installed in both copies")
+        if any(hashes[path] != WARMUP_PATCHED_SHA for path in WARMUPS):
+            raise ValueError("warmup patch was not installed in both copies")
         for name in SOURCE_NAMES:
             if name.endswith(".py") and hashes[PACKAGE + name] != sources[name]:
                 raise ValueError(f"package source mismatch: {name}")

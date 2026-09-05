@@ -1,0 +1,45 @@
+diff --git a/vllm/v1/worker/gpu/warmup.py b/vllm/v1/worker/gpu/warmup.py
+--- a/vllm/v1/worker/gpu/warmup.py
++++ b/vllm/v1/worker/gpu/warmup.py
+@@ -228,11 +228,41 @@ def run_mixed_prefill_decode_warmup(
+ 
+ 
+ @torch.inference_mode()
+ def warmup_kernels(
+     model_runner: GPUModelRunner,
+     worker_execute_model: Callable[[SchedulerOutput], Any],
+     worker_sample_tokens: Callable[[GrammarOutput | None], Any],
+ ) -> None:
++    """Run the pinned warmup inside the capture helper's lexical scope."""
++    sampler = getattr(model_runner, "sampler", None)
++    capture = getattr(sampler, "p8_decode_capture", None)
++    if capture is None:
++        _warmup_kernels_impl(
++            model_runner, worker_execute_model, worker_sample_tokens
++        )
++        return
++
++    expected_prompt_len = max(
++        model_runner.decode_query_len + 1,
++        max(
++            1,
++            getattr(model_runner, "dcp_size", 1)
++            * getattr(model_runner, "cp_interleave", 1),
++        ),
++    )
++    with capture.pinned_startup_warmup_scope(
++        expected_prompt_len=expected_prompt_len
++    ):
++        _warmup_kernels_impl(
++            model_runner, worker_execute_model, worker_sample_tokens
++        )
++
++
++def _warmup_kernels_impl(
++    model_runner: GPUModelRunner,
++    worker_execute_model: Callable[[SchedulerOutput], Any],
++    worker_sample_tokens: Callable[[GrammarOutput | None], Any],
++) -> None:
+     """Run scheduler-realistic prefill and decode steps to JIT compile kernels.
+ 
+     We must call the provided worker's execute_model for pipeline parallel

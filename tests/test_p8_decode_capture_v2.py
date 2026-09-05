@@ -45,6 +45,7 @@ class FakeSamplingParams:
         self.stop = []
         self.stop_token_ids = []
         self.bad_words = []
+        self._bad_words_token_ids = None
         self.allowed_token_ids = None
         self.logit_bias = None
         self.structured_outputs = None
@@ -108,6 +109,23 @@ def _params(processor, forced=(2, 3, 4), start=0):
     return FakeSamplingParams(extra, len(forced))
 
 
+def _warmup_params():
+    params = FakeSamplingParams(None, 16)
+    params.temperature = 0.9
+    params.top_p = 0.9
+    params.top_k = 50
+    params.min_p = 0.1
+    params.frequency_penalty = 0.5
+    params.presence_penalty = 0.5
+    params.repetition_penalty = 1.2
+    params.min_tokens = 2
+    params.logit_bias = {0: -1.0, 1: 0.5}
+    params._bad_words_token_ids = [[0], [1, 2]]
+    params.logprobs = 5
+    params.prompt_logprobs = 1
+    return params
+
+
 def _input(position, token, *, req_id="cmpl-proof"):
     return SimpleNamespace(
         req_ids=[req_id],
@@ -122,6 +140,17 @@ def _input(position, token, *, req_id="cmpl-proof"):
         input_ids=torch.tensor([token], dtype=torch.int32),
         is_padding=torch.tensor([False]),
     )
+
+
+def _warmup_input(sample, *, prompt_len=2, req_id="_warmup_0_"):
+    batch = _input(
+        prompt_len - 1 + sample,
+        prompt_len - 1 if sample == 0 else 17,
+        req_id=req_id,
+    )
+    batch.max_query_len = prompt_len if sample == 0 else 1
+    batch.num_tokens = prompt_len if sample == 0 else 1
+    return batch
 
 
 def _helper(v2, *, req_states=None, max_reqs=1, vocab=154_880, spec=1):
@@ -362,6 +391,201 @@ def test_disabled_v2_helper_is_strict_noop(monkeypatch):
     assert helper.capture_and_force(logits, object()) is logits
     helper.add_request(9, 99, object())
 
+    with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+        pass
+
+
+def _empty_req_states():
+    return SimpleNamespace(
+        num_reqs=0,
+        req_id_to_index={},
+        index_to_req_id={},
+    )
+
+
+def _register_warmup_request(req_states):
+    req_states.num_reqs = 1
+    req_states.req_id_to_index["_warmup_0_"] = 0
+    req_states.index_to_req_id[0] = "_warmup_0_"
+
+
+def _finish_warmup_request(req_states):
+    req_states.num_reqs = 0
+    req_states.req_id_to_index.clear()
+    req_states.index_to_req_id.clear()
+
+
+def test_pinned_warmup_scope_allows_exact_lifecycle_once(
+    loaded, capsys
+):
+    _, v2, output = loaded
+    req_states = _empty_req_states()
+    helper = _helper(v2, req_states=req_states)
+    with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+        _register_warmup_request(req_states)
+        helper.add_request(0, 2, _warmup_params())
+        for sample in range(2):
+            logits = torch.arange(154_880, dtype=torch.float32).reshape(1, -1)
+            before = logits.clone()
+            assert helper.capture_and_force(logits, _warmup_input(sample)) is logits
+            torch.testing.assert_close(logits, before)
+        _finish_warmup_request(req_states)
+
+    assert helper._pinned_warmup is None
+    assert helper._pinned_warmup_terminal == "complete"
+    assert list(output.iterdir()) == []
+    assert (
+        "GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED "
+        "tp_rank=0 registrations=1 samples=2"
+    ) in capsys.readouterr().out
+    with pytest.raises(RuntimeError, match="cannot be replayed after complete"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            pass
+
+
+def test_pinned_warmup_exception_resets_and_permanently_poison_scope(loaded):
+    _, v2, _ = loaded
+    helper = _helper(v2, req_states=_empty_req_states())
+    with pytest.raises(ValueError, match="synthetic failure"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            raise ValueError("synthetic failure")
+    assert helper._pinned_warmup is None
+    assert helper._pinned_warmup_terminal == "failure"
+    with pytest.raises(RuntimeError, match="cannot be replayed after failure"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            pass
+    with pytest.raises(RuntimeError, match="poisoned capture helper"):
+        helper.add_request(0, 1, object())
+    with pytest.raises(RuntimeError, match="poisoned capture helper"):
+        helper.capture_and_force(torch.ones((1, 154_880)), object())
+
+
+def test_real_capture_guards_and_path_are_unchanged_after_warmup(loaded):
+    processor, v2, output = loaded
+    req_states = _empty_req_states()
+    helper = _helper(v2, req_states=req_states)
+    with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+        _register_warmup_request(req_states)
+        helper.add_request(0, 2, _warmup_params())
+        for sample in range(2):
+            helper.capture_and_force(
+                torch.ones((1, 154_880)), _warmup_input(sample)
+            )
+        _finish_warmup_request(req_states)
+
+    req_states.num_reqs = 1
+    req_states.req_id_to_index["cmpl-proof"] = 0
+    req_states.index_to_req_id[0] = "cmpl-proof"
+    with pytest.raises(RuntimeError, match="one prompt token"):
+        helper.add_request(0, 2, _params(processor))
+    helper.add_request(0, 1, _params(processor))
+    for position, input_token in enumerate((1, 2, 3)):
+        helper.capture_and_force(
+            torch.ones((1, 154_880)), _input(position, input_token)
+        )
+    assert (output / "conditional-fit-0003.capture.json").is_file()
+
+
+def test_pinned_warmup_rejects_nested_or_incomplete_lifecycle(loaded):
+    _, v2, _ = loaded
+    helper = _helper(v2, req_states=_empty_req_states())
+    with pytest.raises(RuntimeError, match="nested"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+                pass
+    assert helper._pinned_warmup_terminal == "failure"
+
+    helper = _helper(v2, req_states=_empty_req_states())
+    with pytest.raises(RuntimeError, match="lifecycle mismatch"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            pass
+    assert helper._pinned_warmup is None
+    assert helper._pinned_warmup_terminal == "failure"
+
+
+@pytest.mark.parametrize(
+    "mutate,match",
+    [
+        (
+            lambda req_states, params: req_states.req_id_to_index.clear(),
+            "identity mismatch",
+        ),
+        (
+            lambda req_states, params: setattr(params, "extra_args", {"x": 1}),
+            "sampling parameters changed",
+        ),
+        (
+            lambda req_states, params: setattr(params, "top_k", 49),
+            "sampling parameters changed",
+        ),
+    ],
+)
+def test_pinned_warmup_registration_is_exact(loaded, mutate, match):
+    _, v2, _ = loaded
+    req_states = _empty_req_states()
+    helper = _helper(v2, req_states=req_states)
+    params = _warmup_params()
+    with pytest.raises(RuntimeError, match=match):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            _register_warmup_request(req_states)
+            mutate(req_states, params)
+            helper.add_request(0, 2, params)
+    assert helper._pinned_warmup is None
+    assert helper._pinned_warmup_terminal == "failure"
+
+
+def test_pinned_warmup_rejects_wrong_prompt_geometry(loaded):
+    _, v2, _ = loaded
+    req_states = _empty_req_states()
+    helper = _helper(v2, req_states=req_states)
+    with pytest.raises(RuntimeError, match="request geometry mismatch"):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            _register_warmup_request(req_states)
+            helper.add_request(0, 3, _warmup_params())
+
+
+@pytest.mark.parametrize(
+    "mutate,match",
+    [
+        (
+            lambda batch: setattr(batch, "idx_mapping_np", np.array([1])),
+            "mapping mismatch",
+        ),
+        (
+            lambda batch: setattr(batch, "max_query_len", 1),
+            "sequence mismatch",
+        ),
+        (
+            lambda batch: batch.input_ids.fill_(9),
+            "prompt token sequence changed",
+        ),
+    ],
+)
+def test_pinned_warmup_prefill_sample_is_exact(loaded, mutate, match):
+    _, v2, _ = loaded
+    req_states = _empty_req_states()
+    helper = _helper(v2, req_states=req_states)
+    with pytest.raises(RuntimeError, match=match):
+        with helper.pinned_startup_warmup_scope(expected_prompt_len=2):
+            _register_warmup_request(req_states)
+            helper.add_request(0, 2, _warmup_params())
+            batch = _warmup_input(0)
+            mutate(batch)
+            helper.capture_and_force(torch.ones((1, 154_880)), batch)
+
+
+def test_warmup_name_cannot_bypass_real_guards_outside_scope(loaded):
+    _, v2, _ = loaded
+    req_states = _empty_req_states()
+    _register_warmup_request(req_states)
+    helper = _helper(v2, req_states=req_states)
+    with pytest.raises(RuntimeError, match="one prompt token"):
+        helper.add_request(0, 2, _warmup_params())
+    with pytest.raises(RuntimeError, match="without a registered"):
+        helper.capture_and_force(
+            torch.ones((1, 154_880)), _warmup_input(0)
+        )
+
 
 def test_patch_is_three_call_seam_against_pinned_source():
     patch = (PATCH_ROOT / "p8_decode_capture/sampler-v2-hook.patch").read_text()
@@ -370,3 +594,12 @@ def test_patch_is_three_call_seam_against_pinned_source():
     assert patch.count("+        self.p8_decode_capture.add_request") == 1
     assert patch.count("+        logits = self.p8_decode_capture.capture_and_force") == 1
     assert "vllm/v1/worker/gpu/sample/sampler.py" in patch
+
+
+def test_warmup_patch_is_a_lexical_scope_at_the_pinned_entrypoint():
+    patch = (PATCH_ROOT / "p8_decode_capture/warmup-v2-hook.patch").read_text()
+    assert "vllm/v1/worker/gpu/warmup.py" in patch
+    assert patch.count("+def _warmup_kernels_impl(") == 1
+    assert patch.count("+    with capture.pinned_startup_warmup_scope(") == 1
+    assert "_warmup_0_" not in patch
+    assert "os.environ" not in patch
