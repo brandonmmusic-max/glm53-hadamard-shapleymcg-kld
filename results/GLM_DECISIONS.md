@@ -670,6 +670,27 @@ confirmation, and final roles remained unopened for this redesign branch.
   for selected P8 methods; all experimental inputs and decisions are unchanged.
   The amendment is separately sealed and preserves the original plan.
 
+## 2026-09-04: Decision 26 — reconcile P4 structurally without delaying P8
+
+- The P4 encoder/TP4 bridge and GLM serving/kernel lines were composed only
+  after resolving their independent decoder-law and container mismatch. The
+  canonical ABI is procedural MCG alpha-1, RNE E2M1, signed zero, positive
+  physical E4M3/16 scales, six TP-rank tensors, and exact per-layer capture
+  identities. No LDLQ or BlockLDLQ is present.
+- The opt-in backend now enters through the actual GLM `FusedMoEFactory` and
+  `RoutedExperts.forward_modular` call path for both routed projections while
+  leaving router, shared-expert, and TP-reduction behavior with the stock
+  runner. It fails closed on unsupported topology, malformed sidecars,
+  DBO/microbatching, duplicate model ownership, and overlapping host dispatch.
+- After integration, 185 combined CPU/static tests passed with CUDA hidden.
+  Offline assembly retains 15 `mxf4nvf4` E2M1 K64 sites, 62 registers, 1,728
+  bytes shared memory, and zero spills. These are structural/compiler receipts,
+  not device, KLD, graph, determinism, or speed evidence.
+- P4 remains side work. No P4 GPU run may contend with the all-42-layer P8
+  build or its sealed 32-window full-model KLD follow-on. Device closure begins
+  only after that critical path releases the GPUs. Exact reconciliation:
+  `docs/P4_V2_INTEGRATION_RECONCILIATION.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
