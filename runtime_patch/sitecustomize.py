@@ -25,6 +25,8 @@ ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
 P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
 P8_NATIVE = os.environ.get("GLM53_P8_NATIVE", "").strip().lower()
 P8_SMALL_M = os.environ.get("GLM53_P8_SMALL_M", "").strip().lower()
+P8_FC1_TILE_N = os.environ.get("GLM53_P8_FC1_TILE_N", "128").strip()
+P8_FUSED_SCRATCH = os.environ.get("GLM53_P8_FUSED_SCRATCH", "").strip().lower()
 P4_NATIVE = os.environ.get("GLM53_P4_NATIVE", "").strip().lower()
 
 
@@ -53,6 +55,14 @@ if P8_NATIVE:
     if P8_SMALL_M and P8_SMALL_M not in {"1", "true", "yes", "on"}:
         raise RuntimeError(f"invalid GLM53_P8_SMALL_M={P8_SMALL_M!r}")
     _P8N_SMALL_M = bool(P8_SMALL_M)
+    if P8_FC1_TILE_N not in {"128", "64", "32"}:
+        raise RuntimeError("GLM53_P8_FC1_TILE_N must be 128, 64 or 32")
+    if P8_FUSED_SCRATCH and P8_FUSED_SCRATCH not in {"1", "true", "yes", "on"}:
+        raise RuntimeError("invalid GLM53_P8_FUSED_SCRATCH")
+    _P8N_FC1_TILE_N = int(P8_FC1_TILE_N)
+    _P8N_FUSED_SCRATCH = bool(P8_FUSED_SCRATCH)
+    if (_P8N_FC1_TILE_N != 128 or _P8N_FUSED_SCRATCH) and not _P8N_SMALL_M:
+        raise RuntimeError("narrow FC1 and fused scratch require GLM53_P8_SMALL_M")
     import torch as _p8n_torch
     import vllm.models.glm5next.nvidia.model as _p8n_glm_model
     from p8_native_kernel import P8NativeTPMoE as _P8NativeTPMoE
@@ -137,6 +147,8 @@ if P8_NATIVE:
             intermediate=512,
             swiglu_limit=10.0,
             small_m_scheduler=_P8N_SMALL_M,
+            fc1_tile_n=_P8N_FC1_TILE_N,
+            fuse_scratch_zero=_P8N_FUSED_SCRATCH,
         )
         released = _p8n_release_carrier_parameters(layer)
         print(
@@ -167,6 +179,16 @@ if P8_NATIVE:
 
     def _p8n_run(layer, x, topk_weights, topk_ids):
         output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
+        if (_P8N_SMALL_M and x.shape[0] == 1
+                and not getattr(layer, "_glm53_p8_m1_dispatch_logged", False)):
+            print(
+                "GLM53_P8_M1_DISPATCH "
+                f"layer={layer._glm53_p8_layer} rank={layer._glm53_p8_tp_rank} "
+                f"fc1_tile_n={_P8N_FC1_TILE_N} "
+                f"fused_scratch_zero={str(_P8N_FUSED_SCRATCH).lower()}",
+                flush=True,
+            )
+            layer._glm53_p8_m1_dispatch_logged = True
         if not getattr(layer, "_glm53_p8_native_forward_logged", False):
             print(
                 "GLM53_P8_NATIVE_FORWARD "
@@ -247,6 +269,7 @@ if P8_NATIVE:
         routed._glm53_p8_layer = layer_id
         routed._glm53_p8_tp_rank = tp_rank
         routed._glm53_p8_native_forward_logged = False
+        routed._glm53_p8_m1_dispatch_logged = False
         return runner
 
     _p8n_glm_model.FusedMoEFactory = _p8n_factory

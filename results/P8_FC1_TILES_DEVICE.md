@@ -1,7 +1,33 @@
 # P8 narrower FC1 device campaign
 
-Status: **N64/N32 bit-exact on four GPUs; both fail the frozen 35% speed gate.**
+Status: **V4 N64/N32 with fused scratch passes the frozen device gate on all four GPUs.**
 No integrated serving or full-model KLD result is claimed for these candidates.
+
+## V4 single-clear arena result
+
+| GPU | N128 control ms | N64 + arena ms | Reduction | N32 + arena ms | Reduction |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0.144224 | 0.080608 | 44.11% | 0.080672 | 44.06% |
+| 1 | 0.117488 | 0.064256 | 45.31% | 0.064288 | 45.28% |
+| 2 | 0.145920 | 0.080640 | 44.74% | 0.080640 | 44.74% |
+| 3 | 0.117840 | 0.064320 | 45.42% | 0.066272 | 43.76% |
+
+All 30 exact-closure cells passed on every GPU under the V2 logical-row
+protocol. N64 was at least as fast as N32 on every GPU and is selected for the
+next integrated TP4 diagnostic. Neither the device result nor this selection
+establishes serving tokens/s or restarts allocation.
+
+V4 uses the same cropped kernel image as V3. Only opted-in M1 candidate
+allocations change: 23 zero allocations become one 3,038,496-byte arena, with
+3,038,400 original bytes plus 96 alignment bytes. Typed views are disjoint and
+16-byte aligned; no initialization is omitted. The N128 control and M2/M3
+fallback keep the original allocations. The returned output view retains its
+approximately 3.04 MB arena until released, instead of only an 8 KiB output;
+integrated serving must account for this memory-lifetime difference.
+
+The plan is `experiments/p8-fc1-tiles-device-v4.json`; raw receipts are under
+`evidence/opened/codec-v2/p8-fc1tiles-device-v4/`. Earlier failed gates remain
+unchanged below. No new KLD measurement is claimed.
 
 ## V2 measured result
 
@@ -61,10 +87,8 @@ or decoder costs. V3 image is
 `sha256:6c08dffb4184c2704173a12909f4bbfaaa866351e55cbf03a2182741baf81141`;
 plan and raw evidence are versioned alongside V1/V2.
 
-The next bounded candidate combines the existing zero-initialized scratch
-buffers into one aligned arena. It must preserve every initialized byte and
-all typed view shapes. The integrated trace's approximately 0.55 ms/token in
-fills motivates testing fewer clear nodes; it does not predict the gain.
+The integrated trace's approximately 0.55 ms/token in fills motivated the
+single-clear arena candidate, whose measured V4 result is recorded above.
 
 ## Implementation and next test
 
