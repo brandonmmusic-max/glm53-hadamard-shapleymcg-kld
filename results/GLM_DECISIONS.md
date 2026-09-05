@@ -1067,6 +1067,19 @@ confirmation, and final roles remained unopened for this redesign branch.
   Observe the arena's output-storage lifetime in serving. P8 remains native
   mxf8f6f4 at twice NVFP4 MMA issue count.
 
+## 2026-09-05: Decision 49 — seal one N64/fused-scratch serving pilot
+
+- Freeze `experiments/p8-fc1-integrated-v1.json` before launch. Recompute the
+  V4 all-device analysis and authenticate the previous 75.5962 tok/s serving
+  recipe, image, runtime sources, benchmark and raw prerequisite receipts.
+- Run one TP4 32K C1 decode plus standalone-prefill diagnostic, with N64 and
+  fused scratch enabled. Require exactly 168 native-forward and 168 actual
+  M1-dispatch layer/rank pairs, FULL graph capture, correct model endpoint,
+  thermal limits and independent restoration of prior service states.
+- Compare historical speeds descriptively only. This is not a five-cold-run
+  qualification or a codec-only EXL3 comparison. Allocation remains stopped.
+  No protected data is opened and no new KLD claim follows from this pilot.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
