@@ -1052,6 +1052,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   frozen speed threshold in a fresh V4 plan. No threshold relaxation, protected
   role opening, KLD claim or allocation restart.
 
+## 2026-09-05: Decision 48 — advance N64 with fused scratch to integrated diagnostic
+
+- V4 passes all 30 exact-closure cells per GPU, including every strict M1
+  buffer and canonical fallback inputs. N64 reduces total block medians by
+  44.11%, 45.31%, 44.74%, 45.42%; N32 also clears 35% on all GPUs.
+- Select N64: it is at least as fast as N32 on every tested GPU. Freeze it
+  before one integrated 32K C1/standalone-prefill TP4 pilot. Require native
+  forward and actual M1 dispatch receipts for all 42 layers x 4 ranks and
+  completed FULL graph capture. Preserve exact prior serving regime except
+  the candidate image, explicit FC1/scratch flags, name and port.
+- This is device-gate advancement only. No serving speed, five-cold product
+  pass, full-model numerical closure or allocation restart follows from it.
+  Observe the arena's output-storage lifetime in serving. P8 remains native
+  mxf8f6f4 at twice NVFP4 MMA issue count.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
