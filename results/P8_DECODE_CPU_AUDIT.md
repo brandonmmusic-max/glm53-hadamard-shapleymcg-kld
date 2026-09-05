@@ -55,8 +55,10 @@ constructor-only (wrapper lines 152-173), not per-token overhead.
    steps on the unchanged P8 runtime using a dedicated synthetic or fit-only
    input, not qualification windows. Record source/environment identities,
    actual M, graph replay, fills/casts, MoE, attention and communication.
-   Nsight Systems 2025.6.3 is installed; `ncu` is not currently on host PATH.
-   Verify profiler availability and capture permissions before launch.
+   Nsight Systems 2025.6.3 is installed on the host; `ncu` is not on host
+   PATH. CPU-only inspection subsequently verified that the pinned P8 image
+   already contains Nsight Systems 2026.3.1 and Nsight Compute 2026.2.1.
+   Use those in-image tools; verify capture permissions before launch.
 3. If available, profile one representative M1 monolithic kernel for
    occupancy, stalls, memory throughput, instruction mix, registers/spills
    and SASS. Profiler runs are diagnostic, never product throughput samples.
