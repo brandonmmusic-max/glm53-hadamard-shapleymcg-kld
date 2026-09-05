@@ -169,6 +169,8 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
                 'nodes_per_replay':len(chunks[0]), 'graph_span':ms_summary(spans),
                 'categories':summaries, 'top_kernels':top, 'replays':per_replay,
             })
+    if len({worker['uuid'] for worker in workers_result}) != 4:
+        raise ValueError('expected four distinct physical GPUs')
     distributed = [max(bounds[i][1] for bounds in bounds_by_worker)-min(bounds[i][0] for bounds in bounds_by_worker) for i in range(n)]
     return {
         'schema':'glm53-p8-smallm-nsys-analysis.v1', 'status':'pass',
