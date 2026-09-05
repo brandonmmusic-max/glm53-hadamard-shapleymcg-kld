@@ -45,7 +45,11 @@ def main() -> None:
     parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--analyzer", type=Path, required=True)
     parser.add_argument("--runtime-manifest", type=Path, required=True)
+    parser.add_argument("--teacher-subset-receipt", type=Path, required=True)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--attempt", default="v1")
+    parser.add_argument("--prior-execution", type=Path)
+    parser.add_argument("--amendment-reason")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
@@ -86,8 +90,10 @@ def main() -> None:
         ["docker", "image", "inspect", args.image, "--format", "{{.Id}}"],
         text=True,
     ).strip()
+    if (args.prior_execution is None) != (args.amendment_reason is None):
+        raise RuntimeError("prior execution and amendment reason are required together")
     run_ids = {
-        arm: f"rotation-v8-shared-mid-butterfly-l3-{arm}-train32-v1"
+        arm: f"rotation-v8-shared-mid-butterfly-l3-{arm}-train32-{args.attempt}"
         for arm in RUN_ORDER
     }
     result = {
@@ -113,6 +119,8 @@ def main() -> None:
             "runner": _record(args.runner),
             "analyzer": _record(args.analyzer),
             "runtime_manifest": _record(args.runtime_manifest),
+            "teacher_subset_receipt": _record(args.teacher_subset_receipt),
+            "preparer": _record(Path(__file__)),
             "analysis_python": _record(Path("/usr/bin/python3.12")),
         },
         "runtime": {
@@ -133,13 +141,19 @@ def main() -> None:
         "stopping_rule": search_plan["search"]["stopping"],
         "outputs": {
             "run_root": "/media/brandonmusic/klcstore/bmxfp4-glm53/kld-v3",
-            "analysis": str((args.root / "results" / "train32-analysis.json").resolve()),
-            "execution_receipt": str((args.root / "results" / "train32-execution.json").resolve()),
+            "analysis": str((args.root / "results" / f"train32-analysis-{args.attempt}.json").resolve()),
+            "execution_receipt": str((args.root / "results" / f"train32-execution-{args.attempt}.json").resolve()),
         },
         "protected_roles_opened": [],
         "claim_boundary": "adaptive fit-role evidence only; selection, confirmation, final, and reserved confirmation logits remain unopened",
         "ldlq": False,
     }
+    if args.prior_execution is not None:
+        result["amendment"] = {
+            "prior_execution": _record(args.prior_execution),
+            "reason": args.amendment_reason,
+            "changed_decision_fields": [],
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"output": str(args.output), "sha256": sha256_file(args.output), "image_id": image_id}, sort_keys=True))
