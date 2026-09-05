@@ -6,6 +6,12 @@ Base: `fe1df7a2695a975bce632a613a12756405ed2c84`
 Scope: CPU/source audit and immutable geometry only. No CUDA build, GPU run,
 service action, model artifact, or large allocation was performed.
 
+Implementation update: the source plan was implemented at commit
+`4c73139964ad84ca18b9581a4a1cd1ac47536584`; see
+`P8_FULL_COUPLED_PREFILL_CPU_STATIC.md`. Statements below that the M>1 guard
+"remains" describe the pre-implementation baseline preserved by plan commit
+`63b486bee8862528d4117c1573ef160c42c5a64b`.
+
 ## Verdict
 
 M>1 support is feasible without another GEMM and without changing the native
