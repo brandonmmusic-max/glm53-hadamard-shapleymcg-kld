@@ -88,6 +88,7 @@ def main() -> None:
     parser.add_argument("--mac", type=int)
     parser.add_argument("--tokens", type=int, nargs="+", default=(3, 33))
     parser.add_argument("--deterministic-output", action="store_true")
+    parser.add_argument("--small-m-scheduler", action="store_true")
     parser.add_argument("--repeats", type=int, default=1)
     args = parser.parse_args()
     if args.output.exists():
@@ -106,9 +107,12 @@ def main() -> None:
         topk=8,
         hidden=4096,
         intermediate=512,
-        force_materialized=args.mode == "materialized",
+        force_materialized=(
+            None if args.small_m_scheduler else args.mode == "materialized"
+        ),
         mac_override=args.mac,
         deterministic_output=args.deterministic_output,
+        small_m_scheduler=args.small_m_scheduler,
     )
     gate, up, down = load_dense(
         args.dense, layer=args.layer, rank=args.rank, experts=args.experts
@@ -170,6 +174,7 @@ def main() -> None:
         "mode": args.mode,
         "max_active_clusters": args.mac,
         "deterministic_output": args.deterministic_output,
+        "small_m_scheduler": args.small_m_scheduler,
         "repeats": args.repeats,
         "experts": list(range(args.experts)),
         "physical_bpw": 4.25,

@@ -83,6 +83,10 @@ def test_dynamic_calls_route_ids_and_bypasses_old_fc2():
     assert "p8_small_m=small_m" in wrapper
     assert "_launch_dynamic_topk_sum(" in wrapper
     assert '("small_m_scheduler", int(small_m))' in wrapper
+    probe = (ROOT / "glm53_nvfp4/probe_p8_native_tp_runtime.py").read_text()
+    assert '"--small-m-scheduler"' in probe
+    assert "None if args.small_m_scheduler" in probe
+    assert "small_m_scheduler=args.small_m_scheduler" in probe
 
 
 def _bf16(value):
