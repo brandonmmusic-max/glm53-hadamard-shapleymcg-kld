@@ -123,6 +123,14 @@ def canonical_sha256(value: object) -> str:
 PROTOCOL_SHA256 = canonical_sha256(PROTOCOL)
 
 
+def _write_partial(path: Path, record: dict[str, object]) -> None:
+    """Atomically preserve completed graph observations before any later gate."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    temporary.replace(path)
+
+
 def _expected_dispatch(m: int) -> dict[str, object]:
     return {
         "small_m": m == 1,
@@ -275,8 +283,22 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
     if not runtime.full_coupled or runtime.scale_component is None:
         raise RuntimeError("actual wrapper did not resolve full-coupled mode")
 
-    cases = []
     observed_payload = dict(prefill_payload)
+    partial_path = args.output.with_name("partial.json")
+    partial = {
+        "schema": "glm53.p8-full-coupled-cudagraph-partial.v1",
+        "status": "running",
+        "protocol_sha256": PROTOCOL_SHA256,
+        "image_id": args.image_id,
+        "harness_sha256": args.harness_sha256,
+        "identities": identities,
+        "payload": observed_payload,
+        "completed_cases": [],
+        "active_case": None,
+    }
+    _write_partial(partial_path, partial)
+
+    cases = []
     for m in M_CASES:
         x_cpu, weights_cpu, ids_cpu, reference = _case_material(
             m,
@@ -309,6 +331,13 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
         eager = _observe(
             runtime, eager_output, m=m, ids_cpu=ids_cpu, reference=reference
         )
+        partial["payload"] = observed_payload
+        partial["active_case"] = {
+            "m": m,
+            "eager": eager,
+            "graph_replays": [],
+        }
+        _write_partial(partial_path, partial)
 
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
@@ -326,15 +355,27 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
                     f"M{m} graph replay {repeat} is not byte-exact to eager"
                 )
             graph_runs.append(observed)
+            partial["active_case"] = {
+                "m": m,
+                "eager": eager,
+                "graph_replays": list(graph_runs),
+            }
+            _write_partial(partial_path, partial)
         comparable = [
             {key: value for key, value in run.items() if key != "repeat"}
             for run in graph_runs
         ]
         if any(run != comparable[0] for run in comparable[1:]):
             raise RuntimeError(f"M{m} five graph replays are not bitwise deterministic")
-        cases.append({"m": m, "eager": eager, "graph_replays": graph_runs})
+        case_receipt = {"m": m, "eager": eager, "graph_replays": graph_runs}
+        cases.append(case_receipt)
+        partial["completed_cases"] = list(cases)
+        partial["active_case"] = None
+        _write_partial(partial_path, partial)
         del graph_output, graph, eager_output, x, weights, topk_ids
 
+    partial["status"] = "complete"
+    _write_partial(partial_path, partial)
     return {
         "schema": PROTOCOL["schema"],
         "decision": "pass",
@@ -497,6 +538,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         try:
             result = run_probe(args)
         except BaseException as error:
+            partial_path = args.output.with_name("partial.json")
             result = {
                 "schema": PROTOCOL["schema"], "decision": "fail",
                 "protocol": PROTOCOL, "protocol_sha256": PROTOCOL_SHA256,
@@ -504,6 +546,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "traceback": traceback.format_exc(), "gpu_used": True,
                 "cuda_graph_tested": True,
             }
+            if partial_path.is_file():
+                result["partial_receipt"] = {
+                    "path": str(partial_path),
+                    "sha256": M1.sha256_file(partial_path),
+                }
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
             print(json.dumps(result, sort_keys=True))

@@ -142,6 +142,26 @@ def test_capture_sequence_warms_then_eager_then_captures_and_replays() -> None:
     assert "observed[\"hashes\"] != eager[\"hashes\"]" in source
 
 
+def test_partial_receipt_is_atomic_and_replaces_prior_progress(tmp_path: Path) -> None:
+    module = _module()
+    path = tmp_path / "partial.json"
+    module._write_partial(path, {"status": "running", "replays": [0]})
+    assert json.loads(path.read_text()) == {"status": "running", "replays": [0]}
+    module._write_partial(path, {"status": "running", "replays": [0, 1]})
+    assert json.loads(path.read_text()) == {"status": "running", "replays": [0, 1]}
+    assert not (tmp_path / "partial.json.tmp").exists()
+
+
+def test_evidence_retry_preserves_original_whole_receipt_failure_predicate() -> None:
+    source = SCRIPT.read_text()
+    append = source.index("graph_runs.append(observed)")
+    durable = source.index("_write_partial(partial_path, partial)", append)
+    compare = source.index("comparable = [", durable)
+    failure = source.index("five graph replays are not bitwise deterministic", compare)
+    assert append < durable < compare < failure
+    assert '{key: value for key, value in run.items() if key != "repeat"}' in source
+
+
 def test_probe_command_reuses_v9_without_network_or_image_build(tmp_path: Path) -> None:
     module = _module()
     args = argparse.Namespace(
