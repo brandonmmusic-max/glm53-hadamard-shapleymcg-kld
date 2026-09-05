@@ -1418,6 +1418,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   allocation restart or KLD qualification follows. See
   results/P8_INDEX_ORDER_DEVICE_V1.md and the sealed device plan.
 
+## 2026-09-05: Decision 63 — preserve UUID-format stop, amend parsing only
+
+- V1 first probe passed all460 declared calls. Host identity validation then
+  rejected the optional `GPU-` prefix difference between NVIDIA and PyTorch
+  UUID strings. Root23b973... stays failed; resultfe6f56... stays preserved.
+  No second process ran; old services restored and no owned container remains.
+- New v2 worktree/plan/output uses strict UUID parsing with optional NVIDIA
+  prefix and authenticates all old source/failure/result receipts. Kernel,
+  probe inputs, case inventory, exact numerical rules and safety gates do not
+  change.99CPUtests pass. This correction is not a tolerance relaxation.
+- Authorize five new GPU0 processes under the existing bounded local mandate;
+  do not count v1's first process toward the new gate. Preserve any new failure
+  without retry. Full-model KLD/allocation remain gated separately.
+- See results/P8_INDEX_ORDER_DEVICE_V2.md.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
