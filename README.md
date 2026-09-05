@@ -86,6 +86,11 @@ the N128 canary's 2,047 rows, but v2 stopped before N64 at a TCP port preflight.
 The [v3 port-probe amendment](results/P8_FORCED_M1_PORT_V3.md) preserves that
 partial result and changes no numerical gate. No optimized decode-path KLD
 or paired full-model closure is available yet.
+V3 then completed both canaries but **failed exact closure**. Repeating N128
+also diverges at the same causal row259, despite matched source/config/tokens;
+the failure cannot be isolated to N64. The full panel remains stopped while
+shared-path repeatability is diagnosed. See the
+[canary outcome and repeated-control diagnostic](results/P8_FORCED_M1_CANARY_V3.md).
 
 ### Earlier codec redesign results (2026-09-04)
 

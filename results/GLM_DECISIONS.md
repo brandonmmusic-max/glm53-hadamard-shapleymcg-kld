@@ -1289,6 +1289,42 @@ confirmation, and final roles remained unopened for this redesign branch.
   all32 teacher files byte-verified again. Proceed with the explicitly amended
   attempt under the existing maintenance lock, preserving the previous run.
 
+## 2026-09-05: Decision 58 — exact canary fails; diagnose baseline repeatability
+
+- V3 completed both canary arms and passed the port transition. The primary
+  exact comparison fails: rows0–258 match, all1,788 rows259–2046 differ,
+  maximum absolute logit difference7.37451171875. Preserve the failed gate,
+  `canary-exact.json` SHA-256
+  `6d6a16679528bbe6890bfb4a1df1b88d7f4a37607e1902a5eae1995310e98bb2`.
+  Neither full stage started. Root exited1 with services restored and no
+  owned containers. No full KLD result or allocation advancement.
+- A separately labeled post-hoc comparison of the already captured v2 and
+  v3 N128 controls ALSO first differs at row259, through the remaining1,788
+  rows; max absolute difference7.9140625. Independent audit found identical
+  image, numerical config, runtime Python sources and forced token sequence.
+  The primary failure cannot therefore be attributed specifically to N64.
+- Next action: read-only trace of the shared serving path at260inputtokens.
+  Actual index_topk is2048, with compressed kpool4 and tail inclusion;65
+  completed pools is a candidate page boundary, not a proven cause. Keep
+  the current gate failed and do not silently restart or loosen it. Any GPU
+  localization diagnostic needs a new frozen plan; no teacher KLD scoring
+  or protected opening is authorized by this one-window post-hoc comparison.
+- See `results/P8_FORCED_M1_CANARY_V3.md`. P8 still has twice NVFP4's MMA
+  issue count. Existing speed measurements do not establish repeatability.
+- Terminal snapshot SHA-256
+  `25718eed8bfc87f42ac1cafc9001c11cbb3c12d2fc6f3f2bd1c2fb451e5e7f49`;
+  nine new snapshot tests pass and all51 current/prior-control stage-file
+  hashes verify. No raw logits were copied into GitHub.
+- The exact-image source audit identifies an arrival-ordered short-sequence
+  indexer relay:64-row virtual pool pages, a second page becoming nonempty
+  at65 pools, atomic CTA output allocation without canonical ordering, then
+  order-preserving token expansion and physical-slot mapping. Fused-indexer
+  SHA69110dcf9d54d4e14ee4d501990245a2cbad7621d0a3d84f035f93d368add7af.
+  This is a source-backed candidate, not device causation. The next frozen
+  diagnostic should observe index order/set/cache and layer3 attention seams
+  across same-N128 repeats near rows255–263, not change the failed gate or
+  blame the trellis law from aggregate logit differences.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
