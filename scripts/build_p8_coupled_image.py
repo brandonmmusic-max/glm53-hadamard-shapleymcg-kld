@@ -18,8 +18,8 @@ DOCKERFILE = REPO / "runtime_patch/p8_coupled_image/Dockerfile"
 MANIFEST = REPO / "runtime_patch/p8_coupled_image/image_manifest.json"
 VERIFY_IN_IMAGE = "/opt/p8-coupled-runtime/verify_image.py"
 PARENT = "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745"
-TAG = "klc/glm53-p8-coupled:v8"
-INTEGRATION_BASE = "506733eef38309e5ddbe87d64c02e666f60b6e30"
+TAG = "klc/glm53-p8-coupled:v9"
+INTEGRATION_BASE = "336e082785904e4c0c2bd887fe437ae14adad209"
 TAIL_V2_SHA256 = "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
 
 
@@ -54,7 +54,7 @@ def git(*args: str) -> str:
 
 def load_manifest() -> dict[str, object]:
     manifest = json.loads(MANIFEST.read_text())
-    if manifest["schema"] != "glm53.p8-coupled-image-sources.v8":
+    if manifest["schema"] != "glm53.p8-coupled-image-sources.v9":
         raise ValueError("unexpected coupled image source-manifest schema")
     if manifest["parent_image_id"] != PARENT:
         raise ValueError("manifest parent image differs from the pinned parent")
@@ -150,7 +150,7 @@ def preflight(*, output_dir: Path, source_commit: str, tag: str) -> dict[str, ob
     if staged_hashes != expected_staged:
         raise RuntimeError("minimal Docker context differs from pinned source hashes")
     return {
-        "schema": "glm53.p8-coupled-image-build.v8",
+        "schema": "glm53.p8-coupled-image-build.v9",
         "status": "prepared",
         "prepared_unix_ns": time.time_ns(),
         "parent_image_id": PARENT,
@@ -224,7 +224,7 @@ def execute(plan: dict[str, object], output_dir: Path) -> None:
         )
     )
     required_labels = {
-        "org.klc.experiment": "glm53-p8-coupled-h512-h128-suh-svh-v8",
+        "org.klc.experiment": "glm53-p8-coupled-h512-h128-suh-svh-v9",
         "org.klc.parent.digest": PARENT,
         "org.klc.tail-v2.sha256": TAIL_V2_SHA256,
         "org.klc.source.commit": plan["source_commit"],
