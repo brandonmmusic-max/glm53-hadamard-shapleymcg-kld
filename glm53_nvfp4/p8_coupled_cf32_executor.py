@@ -157,20 +157,19 @@ def _privileged_modified_bytes(paths: list[Path]) -> int:
 
 
 def _coupled_outside_bytes() -> int:
-    exclusions = {path.resolve() for path in (*WORKTREES, WORKSPACE / "bmxfp4-glm53/.git")}
-    total = 0
-    def fail(error):
-        raise error
-    for base, directories, files in os.walk(WORKSPACE, topdown=True, followlinks=False, onerror=fail):
-        base_path = Path(base)
-        directories[:] = [name for name in directories
-                           if (base_path / name).resolve() not in exclusions]
-        for name in files:
-            path = base_path / name
-            info = path.lstat()
-            if ("coupled" in str(path).lower() and info.st_mtime_ns >= LEDGER_CUTOFF * 1_000_000_000):
-                total += info.st_size
-    return total
+    exclusions = [*WORKTREES, WORKSPACE / "bmxfp4-glm53/.git"]
+    command = ["sudo", "-n", "find", str(WORKSPACE), "-xdev", "("]
+    for index, path in enumerate(exclusions):
+        if index:
+            command.append("-o")
+        command += ["-path", str(path)]
+    command += [")", "-prune", "-o", "-type", "f", "-newermt", f"@{LEDGER_CUTOFF}",
+                "-ipath", "*coupled*", "-printf", "%s\\n"]
+    result = subprocess.run(command, check=True, text=True, capture_output=True, timeout=180)
+    values = result.stdout.splitlines()
+    if any(not value.isdigit() for value in values):
+        raise ValueError("privileged outside-coupled inventory emitted non-numeric size")
+    return sum(map(int, values))
 
 
 def _measure_component(name: str, mode: str, paths: list[Path], output: Path) -> int:

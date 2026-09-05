@@ -96,6 +96,20 @@ def test_global_inventory_excludes_current_campaign_and_rejects_alias(tmp_path):
         executor.global_capture_inventory(tmp_path, current)
 
 
+def test_outside_coupled_inventory_is_privileged_read_only_and_fixed_exclusion(monkeypatch):
+    seen = []
+    def run(argv, **kwargs):
+        seen.append((argv, kwargs)); return SimpleNamespace(stdout="7\n11\n")
+    monkeypatch.setattr(executor.subprocess, "run", run)
+    assert executor._coupled_outside_bytes() == 18
+    argv, kwargs = seen[0]
+    assert argv[:6] == ["sudo", "-n", "find", str(executor.WORKSPACE), "-xdev", "("]
+    assert ["-ipath", "*coupled*"] == argv[argv.index("-ipath"):argv.index("-ipath") + 2]
+    assert all(str(path) in argv for path in (*executor.WORKTREES, executor.WORKSPACE / "bmxfp4-glm53/.git"))
+    assert not any(token in argv for token in ("-delete", "-exec", "-execdir"))
+    assert kwargs == {"check": True, "text": True, "capture_output": True, "timeout": 180}
+
+
 def _ledger(tmp_path, output):
     components, fixed = [], {}
     for name, mode in executor.LEDGER_COMPONENTS.items():
