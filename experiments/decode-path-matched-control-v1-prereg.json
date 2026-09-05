@@ -1,0 +1,57 @@
+{
+  "schema": "glm53.decode-path-matched-control-prereg.v1",
+  "status": "predeclared-before-control-image-build-or-GPU-run",
+  "question": "Is the roughly 0.11 KLD observed in the P8 forced-decode endpoint also present for stock NVFP4 and production EXL3 under the identical forced-token/logit-capture path?",
+  "arms": {
+    "stock": {
+      "model_root": "/home/brandonmusic/models/GLM-5.3-Flash-NVFP4",
+      "parent_image_id": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+      "quantization": "modelopt"
+    },
+    "exl3": {
+      "model_root": "/home/brandonmusic/models/GLM-5.3-Flash-EXL3-4bpw",
+      "parent_image_id": "sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf",
+      "quantization": "exl3"
+    }
+  },
+  "capture_patch": "The exact sampler, warmup, and p8_decode_capture package bytes used by p8-index-order-full-v1 are applied independently to each pinned parent image.",
+  "runtime": {
+    "topology": {"tp": 4, "ep": true, "dcp": 4},
+    "attention_backend": "B12X_MLA_SPARSE",
+    "kv_cache_dtype": "nvfp4_ds_mla",
+    "max_num_seqs": 1,
+    "speculation": false,
+    "cuda_graphs": true,
+    "mtp": false
+  },
+  "windows": [
+    {"id": "conditional-fit-0032", "domain": "axis1_general"},
+    {"id": "conditional-fit-0021", "domain": "axis2_legal"},
+    {"id": "conditional-fit-0090", "domain": "axis3_code_agentic"},
+    {"id": "conditional-fit-0003", "domain": "axis4_reasoning_termination"}
+  ],
+  "window_selection": "One per domain, deterministically chosen from already-opened P8 full32 results as the lexicographically smallest four-window combination whose P8 equal-window all-row mean is closest to the frozen P8 full32 mean. This is a targeted diagnostic, not held-out inference.",
+  "p8_reference": {
+    "full32_equal_window_mean_kld": 0.11747562624547078,
+    "selected4_equal_window_mean_kld": 0.11747408351921039,
+    "selected4_absolute_difference": 0.000001542726260392313
+  },
+  "metric": "KL(teacher || student), nats, FP64 CPU, all 154880 vocabulary entries; report all-row and true-decode-only means separately",
+  "decision_before_result": {
+    "near_0_11_interval": [0.09, 0.15],
+    "codec_exonerated_for_the_0_11_endpoint": "Both stock and EXL3 selected4 all-row means fall in [0.09,0.15].",
+    "production_serving_bug_supported": "Exoneration rule passes and neither control improves at least 20 percent relative to the paired P8 selected4 mean.",
+    "otherwise": "Do not attribute the P8 endpoint to a shared serving bug; preserve arm-specific results."
+  },
+  "storage": {
+    "destination_filesystem": "/media/brandonmusic/nvme1n1p3",
+    "raw_bytes_per_window": 1268157440,
+    "raw_bytes_per_arm": 5072629760,
+    "raw_bytes_total": 10145259520,
+    "required_additional_headroom_bytes": 21474836480,
+    "klcstore_raw_writes": 0
+  },
+  "roles": {"opened": ["conditional-fit"], "protected_opened": []},
+  "retry_policy": "No silent retry or substitution. Preserve a failed arm and amend explicitly.",
+  "claim_boundary": "Four deliberately representative windows diagnose the serving path; they do not replace the frozen full32 quality estimate."
+}
