@@ -1038,6 +1038,20 @@ confirmation, and final roles remained unopened for this redesign branch.
   image seal and output version. GPU runs remain serialized and all failed
   attempts preserved. No protected opening, KLD claim or allocation restart.
 
+## 2026-09-05: Decision 47 — combine scratch clears without omitting initialization
+
+- V3 cropped-copy kernels remain bit-exact on all four GPUs, but N64 reductions
+  are 34.11%, 34.60%, 34.06%, 34.72%. N32 is 32.76–33.35%. Both still fail
+  the 35% all-device gate; no integrated serving is launched for those arms.
+- Test one aligned uint8 zero arena with typed disjoint views instead of many
+  individual zero allocations, only for opted-in M1 candidates. Preserve every
+  buffer byte, shape, dtype, alignment and fallback behavior. The control keeps
+  the existing allocation path. This follows the measured fill-node cost, not
+  an assumption that uninitialized padding is safe.
+- Require unchanged strict M1 and canonical fallback bytes plus the same
+  frozen speed threshold in a fresh V4 plan. No threshold relaxation, protected
+  role opening, KLD claim or allocation restart.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
