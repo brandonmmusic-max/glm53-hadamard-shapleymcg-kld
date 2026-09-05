@@ -72,6 +72,12 @@ def reference(
     return out
 
 
+def tensor_sha256(value: torch.Tensor) -> str:
+    return hashlib.sha256(
+        value.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
+    ).hexdigest()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-patch", type=Path, required=True)
@@ -84,7 +90,7 @@ def main() -> None:
     parser.add_argument("--experts", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260957)
     parser.add_argument(
-        "--mode", choices=("materialized", "monolithic"), default="materialized"
+        "--mode", choices=("materialized", "monolithic"), default="monolithic"
     )
     parser.add_argument("--mac", type=int)
     parser.add_argument("--tokens", type=int, nargs="+", default=(3, 33))
@@ -93,9 +99,17 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--timing-warmups", type=int, default=0)
     parser.add_argument("--timing-repeats", type=int, default=0)
+    parser.add_argument("--cuda-graph-warmups", type=int, default=0)
+    parser.add_argument("--cuda-graph-replays", type=int, default=0)
+    parser.add_argument("--cuda-graph-timing-repeats", type=int, default=0)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
+    if args.small_m_scheduler and args.mode != "monolithic":
+        raise ValueError(
+            "small-M targets the monolithic M1 serving contract; "
+            "--mode materialized is a different arithmetic baseline"
+        )
     sys.path.insert(0, str(args.runtime_patch))
     from p8_native_kernel import P8NativeTPMoE
 
@@ -121,13 +135,32 @@ def main() -> None:
     gate, up, down = load_dense(
         args.dense, layer=args.layer, rank=args.rank, experts=args.experts
     )
+    # Runtime construction may initialize a different number of CUDA-side
+    # objects in different scheduler arms.  Isolate payload generation from
+    # that global RNG state so an A/B always receives identical tensors.
+    input_generator = torch.Generator(device="cuda").manual_seed(args.seed)
     cells: list[dict[str, object]] = []
     for tokens in args.tokens:
-        x = (torch.randn(tokens, 4096, device="cuda") * 0.01).to(torch.bfloat16)
+        x = (
+            torch.randn(
+                tokens, 4096, device="cuda", generator=input_generator
+            )
+            * 0.01
+        ).to(torch.bfloat16)
         ids = torch.stack(
-            [torch.randperm(args.experts, device="cuda")[:8] for _ in range(tokens)]
+            [
+                torch.randperm(
+                    args.experts, device="cuda", generator=input_generator
+                )[:8]
+                for _ in range(tokens)
+            ]
         ).to(torch.int32)
-        weights = torch.softmax(torch.randn(tokens, 8, device="cuda"), -1).float()
+        weights = torch.softmax(
+            torch.randn(
+                tokens, 8, device="cuda", generator=input_generator
+            ),
+            -1,
+        ).float()
         expected = reference(x.float(), ids, weights, gate, up, down)
         actual_runs = []
         output_hashes = []
@@ -135,11 +168,7 @@ def main() -> None:
             actual = runtime(x, weights, ids).float()
             torch.cuda.synchronize()
             actual_runs.append(actual)
-            output_hashes.append(
-                hashlib.sha256(
-                    actual.cpu().contiguous().view(torch.uint8).numpy().tobytes()
-                ).hexdigest()
-            )
+            output_hashes.append(tensor_sha256(actual))
         actual = actual_runs[0]
         timing = None
         if args.timing_repeats:
@@ -165,12 +194,62 @@ def main() -> None:
                 "min_ms": min(samples),
                 "max_ms": max(samples),
             }
+        graph_result = None
+        if args.cuda_graph_replays or args.cuda_graph_timing_repeats:
+            if args.cuda_graph_warmups < 1:
+                raise ValueError("CUDA graph capture requires at least one warmup")
+            if args.cuda_graph_replays < 5:
+                raise ValueError("CUDA graph closure requires at least five replays")
+            if args.cuda_graph_timing_repeats < 0:
+                raise ValueError("CUDA graph timing count must be nonnegative")
+            warmup_stream = torch.cuda.Stream()
+            warmup_stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(warmup_stream):
+                for _ in range(args.cuda_graph_warmups):
+                    runtime(x, weights, ids)
+            torch.cuda.current_stream().wait_stream(warmup_stream)
+            torch.cuda.synchronize()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                graph_output = runtime(x, weights, ids)
+            graph_hashes = []
+            for _ in range(args.cuda_graph_replays):
+                graph.replay()
+                torch.cuda.synchronize()
+                graph_hashes.append(tensor_sha256(graph_output.float()))
+            graph_samples = []
+            for _ in range(args.cuda_graph_timing_repeats):
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                start.record()
+                graph.replay()
+                end.record()
+                end.synchronize()
+                graph_samples.append(float(start.elapsed_time(end)))
+            graph_result = {
+                "warmups": args.cuda_graph_warmups,
+                "replays": args.cuda_graph_replays,
+                "output_sha256_runs": graph_hashes,
+                "bitwise_deterministic": len(set(graph_hashes)) == 1,
+                "matches_eager_output": graph_hashes[0] == output_hashes[0],
+                "timing_repeats": args.cuda_graph_timing_repeats,
+                "samples_ms": graph_samples,
+                "median_ms": statistics.median(graph_samples) if graph_samples else None,
+                "min_ms": min(graph_samples) if graph_samples else None,
+                "max_ms": max(graph_samples) if graph_samples else None,
+            }
         cosine = float(F.cosine_similarity(actual.reshape(1, -1), expected.reshape(1, -1)))
         relative_l2 = float((actual - expected).norm() / expected.norm().clamp_min(1e-9))
         bitwise_deterministic = len(set(output_hashes)) == 1
         cells.append(
             {
                 "tokens": tokens,
+                "payload_sha256": {
+                    "x": tensor_sha256(x),
+                    "topk_ids": tensor_sha256(ids),
+                    "topk_weights": tensor_sha256(weights),
+                    "dense_reference": tensor_sha256(expected),
+                },
                 "cosine": cosine,
                 "relative_l2": relative_l2,
                 "finite": bool(torch.isfinite(actual).all()),
@@ -178,11 +257,19 @@ def main() -> None:
                 "output_sha256_runs": output_hashes,
                 "bitwise_deterministic": bitwise_deterministic,
                 "timing": timing,
+                "cuda_graph": graph_result,
                 "pass": bool(
                     torch.isfinite(actual).all()
                     and cosine > 0.995
                     and relative_l2 < 0.12
                     and (args.repeats == 1 or bitwise_deterministic)
+                    and (
+                        graph_result is None
+                        or (
+                            graph_result["bitwise_deterministic"]
+                            and graph_result["matches_eager_output"]
+                        )
+                    )
                 ),
             }
         )
@@ -200,11 +287,15 @@ def main() -> None:
             if args.design is not None
             else None
         ),
+        "requested_mode": args.mode,
+        "resolved_mode": "small_m" if args.small_m_scheduler else args.mode,
         "mode": args.mode,
         "max_active_clusters": args.mac,
         "deterministic_output": args.deterministic_output,
         "small_m_scheduler": args.small_m_scheduler,
         "repeats": args.repeats,
+        "cuda_graph": bool(args.cuda_graph_replays),
+        "input_rng": "dedicated CUDA generator seeded after runtime construction",
         "experts": list(range(args.experts)),
         "physical_bpw": 4.25,
         "compute": "mxf8f6f4 E4M3 x E4M3 with physical UE8M0/32 scales",
