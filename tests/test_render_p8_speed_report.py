@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from glm53_nvfp4.render_p8_speed_report import render
+from glm53_nvfp4.render_p8_speed_report import figure_svg, render
 
 
 def sample():
@@ -30,6 +30,16 @@ def test_renders_all_runs_and_claim_boundaries():
     assert '| 5 | P8 |' in report and '| 5 | EXL3 |' in report
     assert 'twice the NVFP4 MMA issue count' in report
     assert 'not a matched NVFP4 win' in report
+
+
+def test_svg_is_repeatable_and_not_rendered_for_partial_evidence():
+    pytest.importorskip('matplotlib')
+    a, b = sample()
+    first, second = figure_svg(a, b), figure_svg(a, b)
+    assert first == second
+    assert b'<svg' in first
+    b['status'] = 'incomplete'
+    with pytest.raises(ValueError): figure_svg(a, b)
 
 
 @pytest.mark.parametrize('failure', ['partial', 'duplicate', 'hash', 'median', 'decision'])

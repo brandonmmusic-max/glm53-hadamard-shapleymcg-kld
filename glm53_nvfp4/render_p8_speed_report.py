@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import os
 from pathlib import Path
 import statistics
 
@@ -90,13 +92,58 @@ def render(analysis: dict, audit: dict) -> str:
     return '\n'.join(lines)
 
 
+def figure_svg(analysis: dict, audit: dict) -> bytes:
+    """Deterministic scientific figure; all cold runs, zero-based axes."""
+    validate(analysis, audit)
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    with matplotlib.rc_context({'svg.hashsalt': 'uniform-p8-speed-v2', 'font.size': 9}):
+        fig, axes = plt.subplots(2, 2, figsize=(10, 6))
+        for row, context in enumerate(('32768', '65536')):
+            for col, (metric, field) in enumerate((('prefill', 'server_tps'), ('decode', 'aggregate_tps'))):
+                ax = axes[row, col]
+                maximum = 0.
+                for arm, label, color in (('p8', 'P8 TP4/no-EP/DCP1', '#2369A8'),
+                                          ('exl3', 'EXL3 TP4/EP4/DCP4', '#C16C22')):
+                    values = [r[metric][context][field] for r in analysis[arm]['runs']]
+                    ax.plot(range(1, 6), values, marker='o', label=label, color=color)
+                    ax.axhline(statistics.median(values), color=color, alpha=.55, linestyle='--')
+                    maximum = max(maximum, max(values))
+                ax.set_title(f'{int(context)//1024}K {metric}'+ (' (primary)' if row == 0 else ' (secondary)'))
+                ax.set(xlabel='Cold-process round', ylabel='Tokens/s', xticks=range(1, 6),
+                       ylim=(0, maximum*1.12))
+                ax.grid(axis='y', alpha=.2)
+        axes[0, 0].legend(fontsize=8)
+        fig.suptitle('Uniform native P8 vs EXL3 — all five cold runs; dashed lines = medians')
+        fig.text(.5, .02, 'Different-topology, target-only system comparison. P8: E4M3, 2× NVFP4 MMA issue count.\n'
+                 'Node-profiler timings are not included. This is not a KLD or matched-codec claim.', ha='center', fontsize=8)
+        fig.tight_layout(rect=(0, .07, 1, .95))
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format='svg', metadata={'Date': None})
+        plt.close(fig)
+        return buffer.getvalue()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--analysis', type=Path, required=True)
     parser.add_argument('--audit', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--figure', type=Path, help='optional new SVG path')
     args = parser.parse_args()
-    report = render(json.loads(args.analysis.read_text()), json.loads(args.audit.read_text()))
+    if args.output.exists() or (args.figure and args.figure.exists()):
+        raise SystemExit('refusing to overwrite an existing report or figure')
+    if args.figure and args.figure.suffix != '.svg':
+        raise SystemExit('figure must use .svg')
+    analysis, audit = json.loads(args.analysis.read_text()), json.loads(args.audit.read_text())
+    report = render(analysis, audit)
+    if args.figure:
+        data = figure_svg(analysis, audit)
+        with args.figure.open('xb') as handle:
+            handle.write(data)
+        relative = os.path.relpath(args.figure, args.output.parent)
+        report += f'\n![All five cold runs]({relative})\n'
     with args.output.open('x') as handle:
         handle.write(report)
     print(json.dumps({'report': str(args.output),
