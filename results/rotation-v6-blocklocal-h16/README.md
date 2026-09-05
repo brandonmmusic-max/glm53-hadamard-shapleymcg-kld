@@ -43,6 +43,20 @@ FP8 MLA KV cache, eager execution, and no MTP for both arms.
   +0.0013890440843033775]
 - Decision: fail; do not open protected selection
 
+The candidate improved 13 of 32 windows. Post-hoc domain means of the paired
+delta were:
+
+| Domain | Windows | Mean candidate - stock KLD |
+| --- | ---: | ---: |
+| General | 8 | -0.00007642319309426188 |
+| Legal | 8 | -0.00039484783991359466 |
+| Code/agentic | 8 | +0.002172029605298759 |
+| Reasoning/termination | 8 | -0.00047065869276827427 |
+
+Thus three domain means favored the candidate, but the code/agentic regression
+dominated the overall result. This breakdown is descriptive and post-hoc; it was
+not used to alter or reroll v6.
+
 This is a wrong-direction null, not evidence that the candidate improves KLD.
 The conditional-fit32 panel was already-open adaptive data, so even a favorable
 result would not have constituted protected qualification.
