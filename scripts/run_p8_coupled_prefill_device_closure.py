@@ -460,6 +460,31 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
                 "middle_scale": torch.equal(middle_sf, reference["middle_scale"]),
             }
             if not all(exact.values()):
+                # Preserve the first failed carriers before the outer failure
+                # handler replaces the result. Diagnostic only: no gate change.
+                import numpy as np
+                actual_carriers = {
+                    "input_payload": input_payload, "input_scale": input_sf,
+                    "middle_payload": middle_payload, "middle_scale": middle_sf,
+                }
+                arrays = {}
+                details = {"m": m, "repeat": repeat, "schedule": schedule, "carriers": {}}
+                for name, actual in actual_carriers.items():
+                    expected_carrier = reference[name]
+                    arrays[name + "_actual"] = actual.numpy()
+                    arrays[name + "_expected"] = expected_carrier.numpy()
+                    details["carriers"][name] = {
+                        "actual_shape": list(actual.shape),
+                        "expected_shape": list(expected_carrier.shape),
+                        "mismatches": int((actual != expected_carrier).sum()) if actual.shape == expected_carrier.shape else None,
+                        "actual_nonzero": int(torch.count_nonzero(actual)),
+                        "expected_nonzero": int(torch.count_nonzero(expected_carrier)),
+                    }
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                np.savez(args.output.parent / "first-carrier-failure.npz", **arrays)
+                (args.output.parent / "first-carrier-failure.json").write_text(
+                    json.dumps(details, indent=2, sort_keys=True) + "\n"
+                )
                 raise RuntimeError(f"observable activation carrier byte mismatch: {exact}")
             route_metric = M1._metric(route_actual, reference["routes"])
             final_metric = M1._metric(final_actual, reference["final"])
