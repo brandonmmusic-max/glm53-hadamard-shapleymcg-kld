@@ -269,6 +269,12 @@ def test_postwrite_verifier_reopens_every_rank_and_source_closes_all_tensors(
     assert result["runtime_loader_closure"] == "not tested"
     assert [row["tensor_count"] for row in result["ranks"]] == [8, 8, 8, 8]
     assert all(row["source_exact"] is True for row in result["ranks"])
+    assert all(len(row["shapes"]) == 8 for row in result["ranks"])
+    assert all(
+        row["dtypes"]["w13_trellis"] == "int16"
+        and row["dtypes"]["gate_up_suh_fp16"] == "float16"
+        for row in result["ranks"]
+    )
 
 
 def test_postwrite_verifier_rejects_self_consistent_file_hash_with_bad_tensor(

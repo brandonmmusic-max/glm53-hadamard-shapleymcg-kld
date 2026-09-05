@@ -116,6 +116,10 @@ def verify_postwrite(
         expected_shapes = {
             name: list(value.shape) for name, value in expected.items()
         }
+        expected_dtypes = {
+            name: str(value.dtype).removeprefix("torch.")
+            for name, value in expected.items()
+        }
         if entry.get("tensor_sha256") != expected_hashes:
             _fail(f"rank {rank} receipt tensor hashes differ from source chunks")
         if entry.get("shapes") != expected_shapes:
@@ -163,6 +167,8 @@ def verify_postwrite(
                 "sha256": actual_file_sha256,
                 "tensor_count": len(expected),
                 "tensor_sha256": expected_hashes,
+                "shapes": expected_shapes,
+                "dtypes": expected_dtypes,
                 "source_exact": True,
             }
         )
