@@ -18,10 +18,12 @@ def test_carrier_failure_capture_is_exact_bounded_and_create_only(tmp_path):
     import numpy as np
     module = _module()
     actual = torch.tensor([[1, 2, 4]], dtype=torch.uint8)
-    expected = torch.tensor([[1, 3, 4]], dtype=torch.uint8)
+    expected = torch.tensor([[[1, 3, 4]]], dtype=torch.uint8)
     record = module._save_carrier_failure(tmp_path, {"input": (actual, expected)}, {})
     assert record["gate_changed"] is False
     assert record["carriers"]["input"]["mismatches"] == 1
+    assert record["carriers"]["input"]["actual_shape"] == [1, 3]
+    assert record["carriers"]["input"]["expected_shape"] == [1, 1, 3]
     assert record["carriers"]["input"]["first_flat_indices"] == [1]
     with np.load(tmp_path / "carrier-failure.npz") as saved:
         assert np.array_equal(saved["input_actual"], actual.numpy())

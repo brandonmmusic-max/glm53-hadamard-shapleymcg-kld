@@ -458,11 +458,12 @@ def _save_carrier_failure(directory: Path, pairs, extras) -> dict[str, object]:
     summary = {}
     for name, (actual, expected) in pairs.items():
         actual, expected = actual.detach().cpu(), expected.detach().cpu()
-        if actual.shape != expected.shape:
-            raise RuntimeError(f"diagnostic shape mismatch for {name}")
+        if actual.numel() != expected.numel():
+            raise RuntimeError(f"diagnostic element-count mismatch for {name}")
         indices = torch.nonzero(actual.reshape(-1) != expected.reshape(-1)).flatten()
         sample = indices[:32]
         summary[name] = {
+            "actual_shape": list(actual.shape), "expected_shape": list(expected.shape),
             "elements": actual.numel(), "mismatches": indices.numel(),
             "first_flat_indices": sample.tolist(),
             "actual_at_first": actual.reshape(-1)[sample].tolist(),
