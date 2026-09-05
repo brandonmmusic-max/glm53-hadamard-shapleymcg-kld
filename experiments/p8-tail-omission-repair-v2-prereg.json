@@ -1,0 +1,58 @@
+{
+  "schema": "glm53.p8-tail-omission-repair-prereg.v2",
+  "status": "predeclared-before-v2-tail-source-implementation-image-build-device-closure-or-kld-run",
+  "created_at": "2026-09-05T13:42:00-04:00",
+  "question": "Does placing each incomplete KPool tail immediately after that row's valid complete-pool history improve the four-window P8 forced-decode KLD?",
+  "v1_intervention_integrity_failure": {
+    "verdict": "inconclusive-not-negative",
+    "cause": "v1 placed the tail at topk-tail_count instead of after the row's valid history",
+    "observed_final_logit_diff_rows": {
+      "conditional-fit-0032": {"total": 2047, "L_mod_4": {"0": 511, "1": 512, "2": 512, "3": 512}},
+      "conditional-fit-0021": {"total": 1, "rows_zero_based": [2046]},
+      "conditional-fit-0090": {"total": 1, "rows_zero_based": [2046]},
+      "conditional-fit-0003": {"total": 1, "rows_zero_based": [2046]}
+    }
+  },
+  "single_variable_change": {
+    "baseline": "Emit expanded selected complete pools in columns 0:2048 and append the incomplete tail in columns 2048:2051, which the consumer does not read.",
+    "candidate": "When all complete pools fit, emit exactly floor(L/4)*4 valid history tokens, then L mod 4 causal tail tokens, then -1 padding. If more than 512 complete pools exist, retain v1's explicit lowest-priority displacement rule.",
+    "unchanged": [
+      "compressed-pool scorer and fixed logical-short-v1 pool ordering",
+      "K4 procedural-MCG P8 codec bytes, native fused MoE path, and exact 4.25 payload bpw",
+      "B12X sparse attention after selected-index construction, TP4/no-EP/DCP1, NVFP4 MLA KV, CUDA graphs, and MTP off",
+      "four opened windows, forced-token capture, teachers, CPU KLD, storage boundary, and decision thresholds"
+    ]
+  },
+  "mandatory_intervention_integrity_gate": {
+    "level": "device output of expand_pools_and_append_tail",
+    "rows": "all sequence lengths L=1..2047",
+    "pass": "candidate differs bitwise from the pinned baseline exactly when L mod 4 is in 1..3; it is bit-identical when L mod 4 is 0; each changed row preserves all complete-pool tokens, appends exactly its causal tail, then only -1 padding",
+    "failure": "Do not run KLD; repair implementation and predeclare another version.",
+    "final_logit_note": "Autoregressive KV carry can propagate an earlier changed row into later L mod 4 = 0 logits, so downstream final-logit row selectivity is reported but is not the selector-integrity gate."
+  },
+  "windows": [
+    {"id": "conditional-fit-0032", "domain": "axis1_general"},
+    {"id": "conditional-fit-0021", "domain": "axis2_legal"},
+    {"id": "conditional-fit-0090", "domain": "axis3_code_agentic"},
+    {"id": "conditional-fit-0003", "domain": "axis4_reasoning_termination"}
+  ],
+  "baseline": {
+    "selected4_equal_window_mean_kld": 0.11747408351921039,
+    "window_kld": {
+      "conditional-fit-0032": 0.097427959573676,
+      "conditional-fit-0021": 0.20159250798813763,
+      "conditional-fit-0090": 0.09817271669377985,
+      "conditional-fit-0003": 0.07270314982124808
+    }
+  },
+  "decision_before_result": {
+    "material_tail_cause_supported": "Candidate mean is at least 20 percent lower than baseline and at least three windows improve.",
+    "material_tail_cause_rejected": "Candidate relative improvement is at most 5 percent after the intervention-integrity gate passes.",
+    "otherwise": "Directional but inconclusive; preserve the point estimate without rerolling."
+  },
+  "storage": {"destination_filesystem": "/media/brandonmusic/nvme1n1p3", "raw_bytes_new": 5072629760, "required_additional_headroom_bytes": 21474836480, "klcstore_raw_writes": 0},
+  "roles": {"opened": ["conditional-fit"], "protected_opened": []},
+  "retry_policy": "One sealed execution after device closure; no silent retry, window substitution, threshold change, or reuse of the invalid v1 candidate.",
+  "claim_boundary": "Targeted serving-path causal diagnostic, not full32 product qualification.",
+  "ldlq": false
+}
