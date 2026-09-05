@@ -87,6 +87,7 @@ def test_canonical_decomposition_is_bit_exact_to_cpu_hadamard_reference():
 def test_both_full_coupled_input_owners_use_canonical_operation_order():
     source = DYNAMIC.read_text()
     assert "div_rn_f32," in source
+    assert '"mul.rn.f32 $0, $1, $2;"' in source
     assert "_P8_SQRT128_F32 = 11.313708305358887" in source
     assert "_P8_SQRT512_F32 = 22.627416610717773" in source
 
@@ -96,6 +97,9 @@ def test_both_full_coupled_input_owners_use_canonical_operation_order():
     assert source.count("_p8_had128_quad_unnormalized(") == 4
     assert source.count("_p8_h512_mix_reference_order(") == 3
     assert source.count("_p8_had128_quad_reference_order(") == 3
+    # Definition plus four separately-rounded H512*suh products in each of
+    # the materialized/prefill and monolithic M1 owners.
+    assert source.count("_p8_mul_rn_f32(") == 9
 
     materialized = source[
         source.index("def _store_p8_full_coupled_input_row(") :
@@ -103,3 +107,7 @@ def test_both_full_coupled_input_owners_use_canonical_operation_order():
     ]
     assert "cutlass.Float32(0.5)" not in materialized
     assert "_w4a8_had128_quad(" not in materialized
+    assert materialized.count("_p8_mul_rn_f32(") == 4
+
+    kernel = source[source.index("    @cute.kernel\n    def kernel(") :]
+    assert kernel.count("_p8_mul_rn_f32(") == 4

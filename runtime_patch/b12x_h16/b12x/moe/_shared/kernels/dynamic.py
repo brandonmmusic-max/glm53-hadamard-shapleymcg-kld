@@ -179,6 +179,34 @@ _P8_SQRT128_F32 = 11.313708305358887  # 0x413504f3
 _P8_SQRT512_F32 = 22.627416610717773  # 0x41b504f3
 
 
+@dsl_user_op
+def _p8_mul_rn_f32(
+    a: cutlass.Float32,
+    b: cutlass.Float32,
+    *,
+    loc=None,
+    ip=None,
+) -> cutlass.Float32:
+    """One separately rounded FP32 multiply, opaque to FMA contraction."""
+
+    return cutlass.Float32(
+        llvm.inline_asm(
+            T.f32(),
+            [
+                cutlass.Float32(a).ir_value(loc=loc, ip=ip),
+                cutlass.Float32(b).ir_value(loc=loc, ip=ip),
+            ],
+            "mul.rn.f32 $0, $1, $2;",
+            "=f,f,f",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
 @cute.jit
 def _p8_had128_quad_unnormalized(
     v0: cutlass.Float32,
@@ -2549,18 +2577,22 @@ class MoEDynamicKernelBackend:
                     + Int32(quarter * 128)
                     + lane * Int32(4)
                 )
-                h0 = quarters[quarter][0] * scale_component[output_col].to(
-                    cutlass.Float32
+                h0 = _p8_mul_rn_f32(
+                    quarters[quarter][0],
+                    scale_component[output_col].to(cutlass.Float32),
                 )
-                h1 = quarters[quarter][1] * scale_component[
-                    output_col + Int32(1)
-                ].to(cutlass.Float32)
-                h2 = quarters[quarter][2] * scale_component[
-                    output_col + Int32(2)
-                ].to(cutlass.Float32)
-                h3 = quarters[quarter][3] * scale_component[
-                    output_col + Int32(3)
-                ].to(cutlass.Float32)
+                h1 = _p8_mul_rn_f32(
+                    quarters[quarter][1],
+                    scale_component[output_col + Int32(1)].to(cutlass.Float32),
+                )
+                h2 = _p8_mul_rn_f32(
+                    quarters[quarter][2],
+                    scale_component[output_col + Int32(2)].to(cutlass.Float32),
+                )
+                h3 = _p8_mul_rn_f32(
+                    quarters[quarter][3],
+                    scale_component[output_col + Int32(3)].to(cutlass.Float32),
+                )
                 h0, h1, h2, h3 = _p8_had128_quad_reference_order(
                     h0, h1, h2, h3, lane
                 )
@@ -3558,10 +3590,22 @@ class MoEDynamicKernelBackend:
                                 + Int32(quarter * 128)
                                 + m1_lane_id * Int32(4)
                             )
-                            h0 = quarters[quarter][0] * trellis_rotations[output_col].to(cutlass.Float32)
-                            h1 = quarters[quarter][1] * trellis_rotations[output_col + Int32(1)].to(cutlass.Float32)
-                            h2 = quarters[quarter][2] * trellis_rotations[output_col + Int32(2)].to(cutlass.Float32)
-                            h3 = quarters[quarter][3] * trellis_rotations[output_col + Int32(3)].to(cutlass.Float32)
+                            h0 = _p8_mul_rn_f32(
+                                quarters[quarter][0],
+                                trellis_rotations[output_col].to(cutlass.Float32),
+                            )
+                            h1 = _p8_mul_rn_f32(
+                                quarters[quarter][1],
+                                trellis_rotations[output_col + Int32(1)].to(cutlass.Float32),
+                            )
+                            h2 = _p8_mul_rn_f32(
+                                quarters[quarter][2],
+                                trellis_rotations[output_col + Int32(2)].to(cutlass.Float32),
+                            )
+                            h3 = _p8_mul_rn_f32(
+                                quarters[quarter][3],
+                                trellis_rotations[output_col + Int32(3)].to(cutlass.Float32),
+                            )
                             h0, h1, h2, h3 = _p8_had128_quad_reference_order(
                                 h0, h1, h2, h3, m1_lane_id
                             )
