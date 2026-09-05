@@ -38,7 +38,7 @@ P4_NATIVE_MANIFEST=${GLM53_P4_NATIVE_MANIFEST:-}
 P4_NATIVE_MANIFEST_SHA256=${GLM53_P4_NATIVE_MANIFEST_SHA256:-}
 P4_NATIVE_BUILD_DIR=${GLM53_P4_NATIVE_BUILD_DIR:-}
 DISABLE_EP=${GLM53_DISABLE_EP:-0}
-[ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be conditional-fit, selection, or confirmation" >&2; exit 2; }
+[ "$ROLE" = fit ] || [ "$ROLE" = conditional-fit ] || [ "$ROLE" = selection ] || [ "$ROLE" = confirmation ] || { echo "role must be fit, conditional-fit, selection, or confirmation" >&2; exit 2; }
 [ "$ROTATION" = identity ] || [ "$ROTATION" = had16 ] || [ "$ROTATION" = had32 ] || [ "$ROTATION" = had64 ] || [ "$ROTATION" = learned ] || { echo "invalid rotation" >&2; exit 2; }
 [ "$ROTATION" != learned ] || [ -n "$ROTATION_FILE" ] || { echo "learned requires ROTATION_FILE" >&2; exit 2; }
 [ "$ROLE" != selection ] || [ -n "$SELECTION_WAVE" ] || { echo "selection requires wave" >&2; exit 2; }

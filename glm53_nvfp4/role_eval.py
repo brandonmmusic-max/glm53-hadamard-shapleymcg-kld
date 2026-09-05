@@ -56,7 +56,11 @@ def _load_teacher(path: Path, window: dict) -> np.ndarray:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--role", choices=("conditional-fit", "selection", "confirmation"), required=True)
+    parser.add_argument(
+        "--role",
+        choices=("fit", "conditional-fit", "selection", "confirmation"),
+        required=True,
+    )
     parser.add_argument("--selection-wave", type=int)
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--teacher-root", type=Path, required=True)
