@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import signal
+import socket
 import subprocess
 
 import numpy as np
@@ -153,6 +154,51 @@ def test_canary_is_first_window_full_stage_is_all32():
     assert launcher.stage_windows(plan, 'full') == windows
     assert launcher.ORDER == [{'stage': s, 'arm': a} for s in ('canary', 'full') for a in ('n128', 'n64')]
     assert launcher.FIXED['rows_per_window'] == 2047
+
+
+def test_port_probe_rejects_a_real_listener_even_if_it_uses_reuseaddr(monkeypatch):
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        monkeypatch.setattr(launcher, 'PORT', listener.getsockname()[1])
+        with pytest.raises(OSError):
+            launcher.check_port_available()
+        assert listener.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN) == 1
+
+
+def test_port_probe_accepts_closed_server_connection_time_wait(monkeypatch):
+    # Server actively closes first, putting its accepted connection into
+    # TIME_WAIT after the client acknowledges/finishes. No external service.
+    with socket.socket() as listener, socket.socket() as client:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', 0))
+        number = listener.getsockname()[1]
+        listener.listen(1)
+        client.settimeout(2)
+        client.connect(('127.0.0.1', number))
+        accepted, _ = listener.accept()
+        accepted.close()
+        assert client.recv(1) == b''
+    monkeypatch.setattr(launcher, 'PORT', number)
+    launcher.check_port_available()
+
+
+def test_port_probe_only_sets_reuseaddr_and_never_listens(monkeypatch):
+    calls = []
+    class Probe:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            calls.append('closed')
+        def setsockopt(self, *args):
+            calls.append(('setsockopt', args))
+        def bind(self, *args):
+            calls.append(('bind', args))
+    monkeypatch.setattr(launcher.socket, 'socket', Probe)
+    launcher.check_port_available()
+    assert calls == [('setsockopt', (socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)),
+                     ('bind', (('127.0.0.1', launcher.PORT),)), 'closed']
 
 
 def test_historical_cold_prerequisite_replays_original_worktree(tmp_path, monkeypatch):

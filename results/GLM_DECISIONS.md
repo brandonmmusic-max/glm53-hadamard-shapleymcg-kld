@@ -1258,6 +1258,37 @@ confirmation, and final roles remained unopened for this redesign branch.
   model-stack lock and restore prior service states. This entry precedes
   execution; no canary pass or full KLD result is claimed by the seal.
 
+## 2026-09-05: Decision 57 — preserve real N128 capture; correct port preflight
+
+- V2 passed the registered startup warmup on all four ranks and captured all
+  2,047 canary rows for N128. Its raw capture SHA-256 is
+  `051ee7210a3321ec66c239022a7af9e0bd18ae54cf9d1bf2ed4775b7289932b9`.
+  N128 exited 0 with validated request/response, row metadata, runtime proofs
+  and cleanup. The N64 stage failed before container creation with Errno98
+  at the plain localhost port-bind probe. No pair comparison or KLD result.
+- Preserve the entire v2 attempt and successful N128 capture. Diagnostics
+  observed zero listeners, one local8023 TIME_WAIT socket, and successful
+  SO_REUSEADDR bind. Fix only the non-listening preflight probe to tolerate
+  that closed-connection state while still rejecting a real listener. Never
+  enable SO_REUSEPORT or stop an unrelated process to take the port.
+- Preregister fresh v3 source/plan/output/unit with unchanged image0f1eae,
+  weights, warmup code, arm order, exact-byte canary threshold, all32 balanced
+  conditional-fit windows and analysis. Repeat the complete pair rather
+  than silently substituting the prior N128 capture. No model result has
+  informed this infrastructure amendment; no tolerance or role relaxation.
+- At decision time: port-probe tests pass, prior unit terminal-failed and
+  restored. V3 has not launched. See `results/P8_FORCED_M1_PORT_V3.md`.
+  P8 still has twice NVFP4's MMA issue count; allocation remains stopped.
+
+- Prelaunch validation: 158 focused existing/port tests and 11 new terminal
+  snapshot tests pass. Independent review authenticated all 19 raw stage
+  files and N128's finite, aligned 2,047-row capture. Snapshot SHA-256
+  `8077d19f119c2bbb79e609b79ca484dfdb6ad04d41e06cc700f614ce93d59e6f`.
+  Fresh v3 plan SHA-256
+  `7b675117a4a2c8a5abe87056dae6a3b6bcd1db2d44d8d0b5c45ad0f33b219085`;
+  all32 teacher files byte-verified again. Proceed with the explicitly amended
+  attempt under the existing maintenance lock, preserving the previous run.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
