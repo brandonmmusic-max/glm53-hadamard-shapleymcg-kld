@@ -7,6 +7,7 @@ runtime so encoder artifacts can be rejected before any device work starts.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,77 +158,87 @@ def _expert_bases(keys: list[str], layer: int) -> dict[int, str]:
     return found
 
 
-def load_exact_exl3_scales(
-    path: Path,
+def _canonical_json(value: object) -> bytes:
+    return (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+
+
+def _verify_json_seal(value: dict[str, object], field: str) -> str:
+    digest = value.get(field)
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise RuntimeError(f"EXL3 checkpoint receipt lacks {field}")
+    body = dict(value)
+    del body[field]
+    if hashlib.sha256(_canonical_json(body)).hexdigest() != digest:
+        raise RuntimeError(f"EXL3 checkpoint {field} seal differs")
+    return digest
+
+
+def _scale_set_from_tensors(
+    tensors_by_name: dict[str, torch.Tensor],
     *,
     layer: int,
-    expected_experts: int | None = None,
-    expected_hidden: int | None = None,
-    expected_intermediate: int | None = None,
+    source_path: Path,
+    source_sha256: str,
+    source_metadata: dict[str, str],
+    expected_experts: int | None,
+    expected_hidden: int | None,
+    expected_intermediate: int | None,
 ) -> CoupledScaleSet:
-    """Load and hash the exact EXL3 scale tensors for one GLM layer.
-
-    Shared vectors must be byte-identical across every expert.  The function
-    deliberately rejects dimension mismatch rather than resizing, repeating,
-    or learning a substitute vector.
-    """
-    path = Path(path).resolve()
-    if layer not in SUPPORTED_LAYERS:
-        raise ValueError(f"coupled-scale preparation is limited to layers {SUPPORTED_LAYERS}")
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    with safe_open(path, framework="pt", device="cpu") as src:
-        metadata = src.metadata() or {}
-        if metadata.get("codec") not in {None, "exl3-mcg"}:
-            raise RuntimeError("EXL3 scale source has an unexpected codec")
-        if metadata.get("layer") not in {None, str(layer)}:
-            raise RuntimeError("EXL3 scale source layer metadata mismatch")
-        bases = _expert_bases(list(src.keys()), layer)
-        if not bases or sorted(bases) != list(range(len(bases))):
-            raise RuntimeError("EXL3 scale source does not contain contiguous experts from zero")
-        if expected_experts is not None and len(bases) != expected_experts:
-            raise RuntimeError(
-                f"EXL3 scale source has {len(bases)} experts, expected {expected_experts}"
-            )
-        shared_gate: torch.Tensor | None = None
-        shared_down: torch.Tensor | None = None
-        gate_private: list[torch.Tensor] = []
-        up_private: list[torch.Tensor] = []
-        down_private: list[torch.Tensor] = []
-        raw_hashes: dict[str, str] = {}
-        for expert, base in sorted(bases.items()):
-            tensors = {
-                "gate_suh": src.get_tensor(f"{base}.gate_proj.suh").contiguous(),
-                "gate_svh": src.get_tensor(f"{base}.gate_proj.svh").contiguous(),
-                "up_suh": src.get_tensor(f"{base}.up_proj.suh").contiguous(),
-                "up_svh": src.get_tensor(f"{base}.up_proj.svh").contiguous(),
-                "down_suh": src.get_tensor(f"{base}.down_proj.suh").contiguous(),
-                "down_svh": src.get_tensor(f"{base}.down_proj.svh").contiguous(),
-            }
-            hidden = int(tensors["gate_suh"].numel())
-            intermediate = int(tensors["gate_svh"].numel())
-            for name, shape in (
-                ("gate_suh", (hidden,)),
-                ("up_suh", (hidden,)),
-                ("gate_svh", (intermediate,)),
-                ("up_svh", (intermediate,)),
-                ("down_suh", (intermediate,)),
-                ("down_svh", (hidden,)),
-            ):
-                _validate_scale(f"expert {expert} {name}", tensors[name], shape)
-                raw_hashes[f"expert.{expert}.{name}"] = _tensor_sha256(tensors[name])
-            if not torch.equal(tensors["gate_suh"], tensors["up_suh"]):
-                raise RuntimeError(f"expert {expert} gate/up suh are not byte-identical")
-            if shared_gate is None:
-                shared_gate = tensors["gate_suh"]
-                shared_down = tensors["down_svh"]
-            elif not torch.equal(shared_gate, tensors["gate_suh"]):
-                raise RuntimeError("gate/up suh is not shared across every expert")
-            elif not torch.equal(shared_down, tensors["down_svh"]):
-                raise RuntimeError("down svh is not shared across every expert")
-            gate_private.append(tensors["gate_svh"])
-            up_private.append(tensors["up_svh"])
-            down_private.append(tensors["down_suh"])
+    bases = _expert_bases(list(tensors_by_name), layer)
+    if not bases or sorted(bases) != list(range(len(bases))):
+        raise RuntimeError("EXL3 scale source does not contain contiguous experts from zero")
+    if expected_experts is not None and len(bases) != expected_experts:
+        raise RuntimeError(
+            f"EXL3 scale source has {len(bases)} experts, expected {expected_experts}"
+        )
+    shared_gate: torch.Tensor | None = None
+    shared_down: torch.Tensor | None = None
+    gate_private: list[torch.Tensor] = []
+    up_private: list[torch.Tensor] = []
+    down_private: list[torch.Tensor] = []
+    raw_hashes: dict[str, str] = {}
+    for expert, base in sorted(bases.items()):
+        tensors = {
+            "gate_suh": tensors_by_name[f"{base}.gate_proj.suh"].contiguous(),
+            "gate_svh": tensors_by_name[f"{base}.gate_proj.svh"].contiguous(),
+            "up_suh": tensors_by_name[f"{base}.up_proj.suh"].contiguous(),
+            "up_svh": tensors_by_name[f"{base}.up_proj.svh"].contiguous(),
+            "down_suh": tensors_by_name[f"{base}.down_proj.suh"].contiguous(),
+            "down_svh": tensors_by_name[f"{base}.down_proj.svh"].contiguous(),
+        }
+        hidden = int(tensors["gate_suh"].numel())
+        intermediate = int(tensors["gate_svh"].numel())
+        for name, shape in (
+            ("gate_suh", (hidden,)),
+            ("up_suh", (hidden,)),
+            ("gate_svh", (intermediate,)),
+            ("up_svh", (intermediate,)),
+            ("down_suh", (intermediate,)),
+            ("down_svh", (hidden,)),
+        ):
+            _validate_scale(f"expert {expert} {name}", tensors[name], shape)
+            raw_hashes[f"expert.{expert}.{name}"] = _tensor_sha256(tensors[name])
+        if not torch.equal(tensors["gate_suh"], tensors["up_suh"]):
+            raise RuntimeError(f"expert {expert} gate/up suh are not byte-identical")
+        if shared_gate is None:
+            shared_gate = tensors["gate_suh"]
+            shared_down = tensors["down_svh"]
+        elif not torch.equal(shared_gate, tensors["gate_suh"]):
+            raise RuntimeError("gate/up suh is not shared across every expert")
+        elif not torch.equal(shared_down, tensors["down_svh"]):
+            raise RuntimeError("down svh is not shared across every expert")
+        gate_private.append(tensors["gate_svh"])
+        up_private.append(tensors["up_svh"])
+        down_private.append(tensors["down_suh"])
     assert shared_gate is not None and shared_down is not None
     found_hidden = int(shared_gate.numel())
     found_intermediate = int(gate_private[0].numel())
@@ -246,13 +257,192 @@ def load_exact_exl3_scales(
         up_svh=torch.stack(up_private).contiguous(),
         down_suh=torch.stack(down_private).contiguous(),
         down_svh=shared_down,
-        source_path=path,
-        source_sha256=sha256_file(path),
-        source_metadata=dict(metadata),
+        source_path=source_path,
+        source_sha256=source_sha256,
+        source_metadata=source_metadata,
         tensor_hashes=raw_hashes,
     )
     result.validate()
     return result
+
+
+def _load_indexed_exl3_scales(
+    root: Path,
+    *,
+    layer: int,
+    expected_experts: int | None,
+    expected_hidden: int | None,
+    expected_intermediate: int | None,
+) -> CoupledScaleSet:
+    """Load a layer from a sealed, materialized GLM-5.3 EXL3 checkpoint."""
+    receipt_path = root / "materialization-receipt.json"
+    index_path = root / "model.safetensors.index.json"
+    config_path = root / "config.json"
+    quant_path = root / "quantization_config.json"
+    for required in (receipt_path, index_path, config_path, quant_path):
+        if not required.is_file() or required.is_symlink():
+            raise FileNotFoundError(required)
+    receipt = json.loads(receipt_path.read_text())
+    receipt_sha = _verify_json_seal(receipt, "receipt_sha256")
+    if (
+        receipt.get("schema") != "quant-pipeline.glm53-k4-materialization-receipt.v1"
+        or receipt.get("complete") is not True
+        or receipt.get("codec_family") != "exl3-mcg"
+        or receipt.get("mcg_multiplier_hex") != "0xCBAC1FED"
+        or receipt.get("bits") != 4
+        or receipt.get("main_and_mtp_complete") is not True
+        or receipt.get("nonrouted_native_exact") is not True
+    ):
+        raise RuntimeError("EXL3 checkpoint materialization semantics differ")
+    for path, field in (
+        (index_path, "index_sha256"),
+        (config_path, "config_sha256"),
+        (quant_path, "quantization_config_sha256"),
+    ):
+        if sha256_file(path) != receipt.get(field):
+            raise RuntimeError(f"EXL3 checkpoint {field} differs")
+    config = json.loads(config_path.read_text())
+    text = config.get("text_config", {})
+    if not isinstance(text, dict):
+        raise RuntimeError("EXL3 checkpoint lacks GLM text geometry")
+    if expected_hidden is not None and text.get("hidden_size") != expected_hidden:
+        raise RuntimeError("EXL3 checkpoint text hidden size differs")
+    if expected_experts is not None and text.get("n_routed_experts") != expected_experts:
+        raise RuntimeError("EXL3 checkpoint routed expert count differs")
+    if (
+        expected_intermediate is not None
+        and text.get("moe_intermediate_size") != expected_intermediate
+    ):
+        raise RuntimeError("EXL3 checkpoint MoE intermediate size differs")
+    quant = json.loads(quant_path.read_text())
+    if (
+        quant.get("quant_method") != "exl3"
+        or quant.get("codebook") != "mcg"
+        or quant.get("bits") != 4
+    ):
+        raise RuntimeError("EXL3 checkpoint quantization contract differs")
+    index = json.loads(index_path.read_text())
+    weight_map = index.get("weight_map")
+    if not isinstance(weight_map, dict):
+        raise RuntimeError("EXL3 checkpoint index lacks weight_map")
+    marker = f".layers.{layer}.mlp.experts."
+    scale_names = sorted(
+        name
+        for name in weight_map
+        if marker in name and name.endswith((".suh", ".svh"))
+    )
+    if expected_experts is not None and len(scale_names) != expected_experts * 6:
+        raise RuntimeError("EXL3 checkpoint layer scale tensor census differs")
+    by_shard: dict[str, list[str]] = {}
+    for name in scale_names:
+        shard = weight_map[name]
+        if not isinstance(shard, str) or not shard:
+            raise RuntimeError("EXL3 checkpoint index contains an invalid shard")
+        by_shard.setdefault(shard, []).append(name)
+    top_shards = receipt.get("shard_sha256")
+    top_receipts = receipt.get("shard_receipt_sha256")
+    if not isinstance(top_shards, dict) or not isinstance(top_receipts, list):
+        raise RuntimeError("EXL3 checkpoint lacks shard receipt closure")
+    tensors: dict[str, torch.Tensor] = {}
+    for shard, names in sorted(by_shard.items()):
+        shard_path = root / shard
+        shard_receipt_path = root / ".materialization" / "shards" / f"{shard}.json"
+        if not shard_path.is_file() or shard_path.is_symlink():
+            raise FileNotFoundError(shard_path)
+        if not shard_receipt_path.is_file() or shard_receipt_path.is_symlink():
+            raise FileNotFoundError(shard_receipt_path)
+        shard_receipt = json.loads(shard_receipt_path.read_text())
+        shard_receipt_sha = _verify_json_seal(shard_receipt, "receipt_sha256")
+        if (
+            shard_receipt.get("schema")
+            != "quant-pipeline.glm53-k4-materialized-shard-receipt.v1"
+            or shard_receipt_sha not in top_receipts
+            or shard_receipt.get("plan_sha256") != receipt.get("plan_sha256")
+            or shard_receipt.get("shard") != shard
+            or shard_receipt.get("shard_sha256") != top_shards.get(shard)
+            or shard_receipt.get("complete") is not True
+            or shard_path.stat().st_size != shard_receipt.get("shard_bytes")
+        ):
+            raise RuntimeError(f"EXL3 checkpoint shard receipt differs: {shard}")
+        rows = {
+            row.get("name"): row
+            for row in shard_receipt.get("tensors", [])
+            if isinstance(row, dict)
+        }
+        with safe_open(shard_path, framework="pt", device="cpu") as source:
+            for name in names:
+                if name not in source.keys() or name not in rows:
+                    raise RuntimeError(f"EXL3 checkpoint scale is absent: {name}")
+                tensor = source.get_tensor(name).contiguous()
+                if (
+                    rows[name].get("origin") != "sealed_exl3_mcg_packed_choice"
+                    or rows[name].get("payload_sha256") != _tensor_sha256(tensor)
+                ):
+                    raise RuntimeError(f"EXL3 checkpoint scale payload differs: {name}")
+                tensors[name] = tensor
+    return _scale_set_from_tensors(
+        tensors,
+        layer=layer,
+        source_path=root,
+        source_sha256=receipt_sha,
+        source_metadata={
+            "format": "indexed-materialized-exl3-k4",
+            "receipt_sha256": receipt_sha,
+            "index_sha256": str(receipt["index_sha256"]),
+            "source_model_revision": str(receipt.get("source_model_revision", "")),
+        },
+        expected_experts=expected_experts,
+        expected_hidden=expected_hidden,
+        expected_intermediate=expected_intermediate,
+    )
+
+
+def load_exact_exl3_scales(
+    path: Path,
+    *,
+    layer: int,
+    expected_experts: int | None = None,
+    expected_hidden: int | None = None,
+    expected_intermediate: int | None = None,
+) -> CoupledScaleSet:
+    """Load and hash the exact EXL3 scale tensors for one GLM layer.
+
+    Shared vectors must be byte-identical across every expert.  The function
+    deliberately rejects dimension mismatch rather than resizing, repeating,
+    or learning a substitute vector.
+    """
+    path = Path(path).resolve()
+    if layer not in SUPPORTED_LAYERS:
+        raise ValueError(f"coupled-scale preparation is limited to layers {SUPPORTED_LAYERS}")
+    if path.is_dir():
+        return _load_indexed_exl3_scales(
+            path,
+            layer=layer,
+            expected_experts=expected_experts,
+            expected_hidden=expected_hidden,
+            expected_intermediate=expected_intermediate,
+        )
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    with safe_open(path, framework="pt", device="cpu") as src:
+        metadata = src.metadata() or {}
+        if metadata.get("codec") not in {None, "exl3-mcg"}:
+            raise RuntimeError("EXL3 scale source has an unexpected codec")
+        if metadata.get("layer") not in {None, str(layer)}:
+            raise RuntimeError("EXL3 scale source layer metadata mismatch")
+        tensors_by_name = {
+            name: src.get_tensor(name).contiguous() for name in src.keys()
+        }
+    return _scale_set_from_tensors(
+        tensors_by_name,
+        layer=layer,
+        source_path=path,
+        source_sha256=sha256_file(path),
+        source_metadata=dict(metadata),
+        expected_experts=expected_experts,
+        expected_hidden=expected_hidden,
+        expected_intermediate=expected_intermediate,
+    )
 
 
 def _atom_interleave(slot0: torch.Tensor, slot1: torch.Tensor) -> torch.Tensor:

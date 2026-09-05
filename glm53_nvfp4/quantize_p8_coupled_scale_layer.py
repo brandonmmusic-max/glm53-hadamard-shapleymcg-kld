@@ -23,6 +23,7 @@ from .p8_coupled_scale import (
     COUPLED_BOUNDARY,
     COUPLED_CHUNK_SCHEMA,
     SUPPORTED_LAYERS,
+    CoupledScaleSet,
     coupled_input_carrier,
     coupled_middle_carrier,
     encode_coupled_scale_weights,
@@ -46,7 +47,9 @@ def _quantize(weight: torch.Tensor, hessian: torch.Tensor):
     )
 
 
-def _validate_design(args: argparse.Namespace) -> tuple[dict, list[int]]:
+def _validate_design(
+    args: argparse.Namespace,
+) -> tuple[dict, list[int], CoupledScaleSet]:
     design = json.loads(args.design.read_text())
     if (
         design.get("schema") != "glm53-p8.coupled-scale-preparation.v1"
@@ -56,7 +59,7 @@ def _validate_design(args: argparse.Namespace) -> tuple[dict, list[int]]:
         or design.get("bits") != 4
         or design.get("weight_payload_bpw") != 4.25
         or design.get("ldlq") is not False
-        or design.get("protected_roles_opened") != []
+        or design.get("data_policy", {}).get("protected_roles_opened") != []
         or args.layer not in SUPPORTED_LAYERS
     ):
         raise RuntimeError("invalid coupled-scale P8 preparation design")
@@ -75,7 +78,14 @@ def _validate_design(args: argparse.Namespace) -> tuple[dict, list[int]]:
     scale_input = (
         design.get("inputs", {}).get("exl3_scale_sources", {}).get(str(args.layer), {})
     )
-    if scale_input.get("sha256") != sha256_file(args.exl3_scales):
+    scales = load_exact_exl3_scales(
+        args.exl3_scales,
+        layer=args.layer,
+        expected_experts=288,
+        expected_hidden=4096,
+        expected_intermediate=2048,
+    )
+    if scale_input.get("sha256") != scales.source_sha256:
         raise RuntimeError("exl3_scale_source differs from the coupled-scale design")
     draws = design.get("intermediate_draws_by_layer", {}).get(str(args.layer))
     if not isinstance(draws, list) or len(draws) != 288:
@@ -83,7 +93,7 @@ def _validate_design(args: argparse.Namespace) -> tuple[dict, list[int]]:
     normalized = [int(value) for value in draws]
     if any(not 0 <= value < 8 for value in normalized):
         raise RuntimeError("intermediate draws must lie in 0..7")
-    return design, normalized
+    return design, normalized, scales
 
 
 def main() -> None:
@@ -111,18 +121,11 @@ def main() -> None:
             raise FileExistsError(f"refusing to overwrite {path}")
     if not 0 <= args.expert_start < args.expert_end <= 288:
         raise ValueError("invalid expert range")
-    design, intermediate_draws = _validate_design(args)
+    design, intermediate_draws, scales = _validate_design(args)
     device = torch.device(args.device)
     if device.type != "cuda":
         raise ValueError("coupled P8 encoding requires CUDA")
 
-    scales = load_exact_exl3_scales(
-        args.exl3_scales,
-        layer=args.layer,
-        expected_experts=288,
-        expected_hidden=4096,
-        expected_intermediate=2048,
-    )
     torch.cuda.set_device(device)
     torch.cuda.reset_peak_memory_stats(device)
     started = time.time()

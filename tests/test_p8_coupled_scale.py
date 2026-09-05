@@ -1,7 +1,10 @@
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 import torch
+from safetensors import safe_open
 from safetensors.torch import save_file
 
 from glm53_nvfp4.p8_coupled_scale import (
@@ -14,6 +17,7 @@ from glm53_nvfp4.p8_coupled_scale import (
     source_expert_reference,
 )
 from glm53_nvfp4.prepare_p8_coupled_scale_v1 import _parse_layer_paths
+from glm53_nvfp4.shard_index import sha256_file
 
 
 def _signed_scale(length: int, offset: int = 0) -> torch.Tensor:
@@ -114,6 +118,111 @@ def _write_exl3_scales(
     save_file(tensors, path, metadata={"codec": "exl3-mcg", "layer": str(layer)})
 
 
+def _seal(value: dict, field: str) -> dict:
+    result = dict(value)
+    payload = (
+        json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        + "\n"
+    ).encode()
+    result[field] = hashlib.sha256(payload).hexdigest()
+    return result
+
+
+def _write_indexed_exl3_checkpoint(
+    root: Path,
+    *,
+    layer: int = 3,
+    experts: int = 2,
+    hidden: int = 512,
+    intermediate: int = 128,
+    corrupt_payload_receipt: bool = False,
+) -> None:
+    root.mkdir()
+    loose = root / "loose.safetensors"
+    _write_exl3_scales(
+        loose,
+        layer=layer,
+        experts=experts,
+        hidden=hidden,
+        intermediate=intermediate,
+    )
+    with safe_open(loose, framework="pt", device="cpu") as source:
+        tensors = {name: source.get_tensor(name) for name in source.keys()}
+    loose.unlink()
+    shard = root / "model-00001-of-00001.safetensors"
+    save_file(tensors, shard)
+    index = {
+        "metadata": {"total_size": sum(x.numel() * x.element_size() for x in tensors.values())},
+        "weight_map": {name: shard.name for name in tensors},
+    }
+    config = {
+        "text_config": {
+            "hidden_size": hidden,
+            "n_routed_experts": experts,
+            "moe_intermediate_size": intermediate,
+        }
+    }
+    quant = {"quant_method": "exl3", "codebook": "mcg", "bits": 4}
+    for name, value in (
+        ("model.safetensors.index.json", index),
+        ("config.json", config),
+        ("quantization_config.json", quant),
+    ):
+        (root / name).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    plan_sha = "1" * 64
+    rows = [
+        {
+            "name": name,
+            "origin": "sealed_exl3_mcg_packed_choice",
+            "payload_sha256": hashlib.sha256(
+                tensor.contiguous().view(torch.uint8).numpy().tobytes()
+            ).hexdigest(),
+        }
+        for name, tensor in tensors.items()
+    ]
+    if corrupt_payload_receipt:
+        rows[0]["payload_sha256"] = "f" * 64
+    shard_receipt = _seal(
+        {
+            "schema": "quant-pipeline.glm53-k4-materialized-shard-receipt.v1",
+            "plan_sha256": plan_sha,
+            "shard": shard.name,
+            "shard_sha256": sha256_file(shard),
+            "shard_bytes": shard.stat().st_size,
+            "complete": True,
+            "tensors": rows,
+        },
+        "receipt_sha256",
+    )
+    receipt_dir = root / ".materialization" / "shards"
+    receipt_dir.mkdir(parents=True)
+    (receipt_dir / f"{shard.name}.json").write_text(
+        json.dumps(shard_receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    )
+    receipt = _seal(
+        {
+            "schema": "quant-pipeline.glm53-k4-materialization-receipt.v1",
+            "plan_sha256": plan_sha,
+            "complete": True,
+            "codec_family": "exl3-mcg",
+            "mcg_multiplier_hex": "0xCBAC1FED",
+            "bits": 4,
+            "main_and_mtp_complete": True,
+            "nonrouted_native_exact": True,
+            "source_model_revision": "2" * 40,
+            "index_sha256": sha256_file(root / "model.safetensors.index.json"),
+            "config_sha256": sha256_file(root / "config.json"),
+            "quantization_config_sha256": sha256_file(root / "quantization_config.json"),
+            "shard_sha256": {shard.name: sha256_file(shard)},
+            "shard_receipt_sha256": [shard_receipt["receipt_sha256"]],
+        },
+        "receipt_sha256",
+    )
+    (root / "materialization-receipt.json").write_text(
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    )
+
+
 def test_exact_exl3_loader_preserves_signed_shared_and_private_scales(tmp_path: Path):
     source = tmp_path / "scales.safetensors"
     _write_exl3_scales(source)
@@ -132,6 +241,40 @@ def test_exact_exl3_loader_preserves_signed_shared_and_private_scales(tmp_path: 
     assert bool((loaded.gate_up_suh < 0).any())
     assert len(loaded.source_sha256) == 64
     assert len(loaded.tensor_hashes) == 12
+
+
+def test_exact_exl3_loader_accepts_sealed_indexed_checkpoint(tmp_path: Path):
+    source = tmp_path / "checkpoint"
+    _write_indexed_exl3_checkpoint(source)
+
+    loaded = load_exact_exl3_scales(
+        source,
+        layer=3,
+        expected_experts=2,
+        expected_hidden=512,
+        expected_intermediate=128,
+    )
+
+    assert loaded.source_path == source.resolve()
+    assert loaded.source_metadata["format"] == "indexed-materialized-exl3-k4"
+    assert loaded.source_metadata["receipt_sha256"] == loaded.source_sha256
+    assert loaded.gate_svh.shape == (2, 128)
+    assert len(loaded.tensor_hashes) == 12
+
+
+def test_indexed_exl3_loader_fails_closed_on_receipt_or_payload_drift(tmp_path: Path):
+    source = tmp_path / "checkpoint"
+    _write_indexed_exl3_checkpoint(source)
+    receipt = json.loads((source / "materialization-receipt.json").read_text())
+    receipt["bits"] = 3
+    (source / "materialization-receipt.json").write_text(json.dumps(receipt) + "\n")
+    with pytest.raises(RuntimeError, match="seal differs"):
+        load_exact_exl3_scales(source, layer=3, expected_experts=2)
+
+    payload_source = tmp_path / "payload-checkpoint"
+    _write_indexed_exl3_checkpoint(payload_source, corrupt_payload_receipt=True)
+    with pytest.raises(RuntimeError, match="scale payload differs"):
+        load_exact_exl3_scales(payload_source, layer=3, expected_experts=2)
 
 
 def test_exact_exl3_loader_fails_closed_on_nonshared_or_wrong_geometry(tmp_path: Path):

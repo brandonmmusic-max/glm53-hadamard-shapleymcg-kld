@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,40 @@ TARGET_EXPERTS = 288
 TARGET_HIDDEN = 4096
 TARGET_INTERMEDIATE = 2048
 FROZEN_INTERMEDIATE_DRAW = 0
+
+
+def _canonical_json(value: object) -> bytes:
+    return (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+
+
+def _validate_reap_capture(path: Path) -> dict[str, object]:
+    manifest = json.loads(path.read_text())
+    digest = manifest.get("capture_sha256")
+    body = dict(manifest)
+    body.pop("capture_sha256", None)
+    if (
+        not isinstance(digest, str)
+        or hashlib.sha256(_canonical_json(body)).hexdigest() != digest
+        or manifest.get("schema")
+        != "quant-pipeline.glm53-main-calibration-capture.v1"
+        or manifest.get("layers") != list(range(3, 45))
+        or manifest.get("roles")
+        != ["fit", "conditional-fit", "selection", "confirmation"]
+        or manifest.get("geometry", {}).get("hidden_size") != TARGET_HIDDEN
+        or manifest.get("geometry", {}).get("experts") != TARGET_EXPERTS
+        or manifest.get("geometry", {}).get("top_k") != 8
+    ):
+        raise RuntimeError("REAP capture seal, role partition, or Flash geometry differs")
+    return manifest
 
 
 def _file(path: Path) -> dict[str, object]:
@@ -46,12 +81,20 @@ def main() -> None:
     parser.add_argument("--source-index", type=Path, required=True)
     parser.add_argument("--capture-root", type=Path, required=True)
     parser.add_argument("--roles", type=Path, required=True)
-    parser.add_argument("--exl3-scale", action="append", required=True)
+    scale_source = parser.add_mutually_exclusive_group(required=True)
+    scale_source.add_argument("--exl3-scale", action="append")
+    scale_source.add_argument("--exl3-checkpoint", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
-    scale_paths = _parse_layer_paths(args.exl3_scale)
+    capture_manifest = args.capture_root / "capture-manifest.json"
+    capture = _validate_reap_capture(capture_manifest)
+    scale_paths = (
+        _parse_layer_paths(args.exl3_scale)
+        if args.exl3_scale is not None
+        else {layer: args.exl3_checkpoint for layer in SUPPORTED_LAYERS}
+    )
     draws = {
         str(layer): [FROZEN_INTERMEDIATE_DRAW] * TARGET_EXPERTS
         for layer in SUPPORTED_LAYERS
@@ -66,7 +109,7 @@ def main() -> None:
         "trellis_codec": _file(trellis),
         "source_index": _file(args.source_index),
         "fit_roles": _file(args.roles),
-        "capture_manifest": _file(args.capture_root / "capture-manifest.json"),
+        "capture_manifest": _file(capture_manifest),
         "exl3_scale_sources": {},
     }
     scale_receipts: dict[str, object] = {}
@@ -83,7 +126,7 @@ def main() -> None:
         resolved = path.resolve()
         inputs["exl3_scale_sources"][str(layer)] = {
             "path": str(resolved),
-            "bytes": resolved.stat().st_size,
+            "kind": "checkpoint" if resolved.is_dir() else "layer-file",
             "sha256": loaded.source_sha256,
         }
         scale_receipts[str(layer)] = {
@@ -122,6 +165,7 @@ def main() -> None:
             "protected": ["selection", "confirmation", "final"],
             "protected_roles_opened": [],
             "sampling": "domain-balanced routes per expert",
+            "capture_sha256": capture["capture_sha256"],
         },
         "execution_status": "preparation only; encoding, GPU, runtime, and KLD not launched",
         "ports": {
