@@ -10,17 +10,20 @@ from __future__ import annotations
 import cutlass
 import cutlass.cute as cute
 
-from cutlass.cutlass_dsl import Int32, Int64, Uint32
+from cutlass.cutlass_dsl import Int32, Int64, T, Uint32, dsl_user_op
+from cutlass._mlir.dialects import llvm
 
 from b12x._lib.intrinsics import (
     ld_shared_u32,
     ld_shared_v2_u32,
     shared_ptr_to_u32,
+    st_shared_u32,
 )
 from b12x._lib.intrinsics import (
     mxfp8_mma_m16n8k32_f32_e4m3,
 )
 from b12x.moe._shared.kernels.w4a8_trellis_decode import (
+    _w4a8_had128_quad,
     _w4a8_trellis_lane_geom,
 )
 from b12x.moe._shared.kernels.w4a8_mcg_decode import (
@@ -28,6 +31,43 @@ from b12x.moe._shared.kernels.w4a8_mcg_decode import (
 )
 
 from b12x.moe._shared.kernels.w4a8_phase2 import W4A8MaterializedPhase2Kernel
+
+
+@dsl_user_op
+def _p8_pack_f32x2_to_half2(x0, x1, *, loc=None, ip=None):
+    return Uint32(
+        llvm.inline_asm(
+            T.i32(),
+            [
+                cutlass.Float32(x0).ir_value(loc=loc, ip=ip),
+                cutlass.Float32(x1).ir_value(loc=loc, ip=ip),
+            ],
+            "cvt.rn.f16x2.f32 $0, $2, $1;",
+            "=r,f,f",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def _p8_ld_shared_f16_to_f32(addr, *, loc=None, ip=None):
+    return cutlass.Float32(
+        llvm.inline_asm(
+            T.f32(),
+            [Int32(addr).ir_value(loc=loc, ip=ip)],
+            "{.reg .b16 tmp; ld.shared.b16 tmp, [$1]; cvt.f32.f16 $0, tmp;}",
+            "=f,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
 
 
 class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
@@ -47,7 +87,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
     shared_bytes = sfb_storage_offset + 2 * sfb_stage_bytes
     shared_words = (shared_bytes + 3) // 4
 
-    def __init__(self):
+    def __init__(self, *, scale_sandwich: bool = False):
         # Deliberately no codec/arithmetic toggles in this P8-only arm.
         self.source_halves = 1
         self.deterministic_output = True
@@ -57,6 +97,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         self.trellis_codebook = "mcg"
         self.trellis_scaled = True
         self.trellis_identity_boundary = True
+        self.scale_sandwich = bool(scale_sandwich)
         self.trellis_lut_offset = self.shared_bytes
 
     @cute.jit
@@ -141,8 +182,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         while intermediate_slice < intermediate_tiles:
             # The serving M1 monolithic path restarts its FC2 accumulator for
             # every K128 slice and rounds the ordered running output to BF16.
-            for nt in cutlass.range_constexpr(4):
-                facc[0][nt].fill(0.0)
+            if cutlass.const_expr(not self.scale_sandwich):
+                for nt in cutlass.range_constexpr(4):
+                    facc[0][nt].fill(0.0)
             stage = intermediate_slice & Int32(1)
             a_base = smem_base + stage * Int32(self.a_stage_bytes)
             sfa_base = a_base + Int32(self.a_payload_bytes)
@@ -265,32 +307,95 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                         fragment[2] = d2
                         fragment[3] = d3
 
-            # Preserve the monolithic serving boundary exactly:
-            # BF16(down_scale * slice_dot), then route weighting, then the
-            # ordered BF16 running sum.
+            if cutlass.const_expr(not self.scale_sandwich):
+                # Preserve the identity serving boundary exactly:
+                # BF16(down_scale * slice_dot), route weight, ordered BF16 sum.
+                down_scale = down_alpha[expert_idx].to(cutlass.Float32) * global_scale[
+                    expert_idx
+                ].to(cutlass.Float32)
+                weight = token_weights[source_m_tile * Int32(16)].to(cutlass.Float32)
+                col_base = output_tile * Int32(128) + warp_idx * Int32(32) + c * Int32(2)
+                if q == Int32(0):
+                    for nt in cutlass.range_constexpr(4):
+                        col = col_base + Int32(nt * 8)
+                        for element in cutlass.range_constexpr(2):
+                            partial = cutlass.Float32(cutlass.BFloat16(
+                                down_scale * facc[0][nt][element]
+                            ))
+                            previous = cutlass.Float32(0.0)
+                            if intermediate_slice > Int32(0):
+                                previous = cutlass.Float32(scatter_output[
+                                    source_m_tile, col + Int32(element)
+                                ])
+                            weighted = weight * partial
+                            scatter_output[source_m_tile, col + Int32(element)] = (
+                                cutlass.BFloat16(previous + weighted)
+                            )
+            cute.arch.sync_threads()
+            intermediate_slice += Int32(1)
+
+        if cutlass.const_expr(self.scale_sandwich):
+            # The complete K=512 result remains FP32 until one N128 CTA owns
+            # its exact output block.  Store the physical projection as FP16,
+            # run H128, then apply shared down_svh before route weighting.
+            cute.arch.cp_async_wait_group(0)
+            cute.arch.fence_proxy("async.shared", space="cta")
+            cute.arch.sync_threads()
             down_scale = down_alpha[expert_idx].to(cutlass.Float32) * global_scale[
                 expert_idx
             ].to(cutlass.Float32)
-            weight = token_weights[source_m_tile * Int32(16)].to(cutlass.Float32)
-            col_base = output_tile * Int32(128) + warp_idx * Int32(32) + c * Int32(2)
+            physical_base = smem_base
             if q == Int32(0):
+                col_in_tile = warp_idx * Int32(32) + c * Int32(2)
                 for nt in cutlass.range_constexpr(4):
-                    col = col_base + Int32(nt * 8)
-                    for element in cutlass.range_constexpr(2):
-                        partial = cutlass.Float32(cutlass.BFloat16(
-                            down_scale * facc[0][nt][element]
-                        ))
-                        previous = cutlass.Float32(0.0)
-                        if intermediate_slice > Int32(0):
-                            previous = cutlass.Float32(scatter_output[
-                                source_m_tile, col + Int32(element)
-                            ])
-                        weighted = weight * partial
-                        scatter_output[source_m_tile, col + Int32(element)] = (
-                            cutlass.BFloat16(previous + weighted)
-                        )
+                    col = col_in_tile + Int32(nt * 8)
+                    st_shared_u32(
+                        physical_base + col * Int32(2),
+                        _p8_pack_f32x2_to_half2(
+                            down_scale * facc[0][nt][0],
+                            down_scale * facc[0][nt][1],
+                        ),
+                    )
             cute.arch.sync_threads()
-            intermediate_slice += Int32(1)
+            if warp_idx == Int32(0):
+                hcol = lane * Int32(4)
+                addr = physical_base + hcol * Int32(2)
+                h0 = _p8_ld_shared_f16_to_f32(addr)
+                h1 = _p8_ld_shared_f16_to_f32(addr + Int32(2))
+                h2 = _p8_ld_shared_f16_to_f32(addr + Int32(4))
+                h3 = _p8_ld_shared_f16_to_f32(addr + Int32(6))
+                h0, h1, h2, h3 = _w4a8_had128_quad(
+                    h0, h1, h2, h3, lane
+                )
+                output_col = output_tile * Int32(128) + hcol
+                h0 = self._scale_down_after_h128(
+                    h0, scale_component, output_col
+                )
+                h1 = self._scale_down_after_h128(
+                    h1, scale_component, output_col + Int32(1)
+                )
+                h2 = self._scale_down_after_h128(
+                    h2, scale_component, output_col + Int32(2)
+                )
+                h3 = self._scale_down_after_h128(
+                    h3, scale_component, output_col + Int32(3)
+                )
+                weight = token_weights[source_m_tile * Int32(16)].to(
+                    cutlass.Float32
+                )
+                scatter_output[source_m_tile, output_col] = cutlass.BFloat16(
+                    weight * h0
+                )
+                scatter_output[
+                    source_m_tile, output_col + Int32(1)
+                ] = cutlass.BFloat16(weight * h1)
+                scatter_output[
+                    source_m_tile, output_col + Int32(2)
+                ] = cutlass.BFloat16(weight * h2)
+                scatter_output[
+                    source_m_tile, output_col + Int32(3)
+                ] = cutlass.BFloat16(weight * h3)
+            cute.arch.sync_threads()
 
     @cute.kernel
     def kernel(

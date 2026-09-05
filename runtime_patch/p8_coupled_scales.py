@@ -113,6 +113,7 @@ def validate_scale_component(
         "world_size": "4",
         "component": COMPONENT,
         "composition_target": COMPOSITION_TARGET,
+        "boundary": "h128-suh-svh-scale-component",
         "cast_order": CAST_ORDER,
         "gate_up_suh_shared": "true",
         "down_svh_shared": "true",
@@ -186,12 +187,33 @@ def scale_sandwich_reference(
     source = had128_luke(x, suh=scales.gate_up_suh, store_fp16=True)
     gate = (source.float() @ gate_physical.float().T).to(torch.float16)
     up = (source.float() @ up_physical.float().T).to(torch.float16)
-    gate = had128_luke(gate, svh=gate_svh[0], store_fp16=False)
-    up = had128_luke(up, svh=up_svh[0], store_fp16=False)
-    activated = (gate * torch.sigmoid(gate) * up)
+    gate = had128_luke(gate, svh=gate_svh[0], store_fp16=True)
+    up = had128_luke(up, svh=up_svh[0], store_fp16=True)
+    gate_work = gate.float().clamp(max=10.0)
+    up_work = up.float().clamp(min=-10.0, max=10.0)
+    activated = (gate_work * torch.sigmoid(gate_work) * up_work).to(torch.float16)
     down_input = had128_luke(activated, suh=down_suh[0], store_fp16=True)
     down = (down_input.float() @ down_physical.float().T).to(torch.float16)
     return had128_luke(down, svh=scales.down_svh, store_fp16=False)
+
+
+def quantize_e4m3_ue8m0_per32(
+    value: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Reference native activation payload, UE8M0 bytes, and reconstruction."""
+
+    if value.ndim != 2 or value.shape[1] % 32:
+        raise ValueError("MXFP8 input must be rank 2 with width divisible by 32")
+    blocks = value.float().reshape(value.shape[0], value.shape[1] // 32, 32)
+    maximum = blocks.abs().amax(dim=-1, keepdim=True)
+    safe = torch.where(maximum > 0, maximum / 448.0, torch.ones_like(maximum))
+    exponent = torch.ceil(torch.log2(safe)).clamp(-127, 127)
+    scale = torch.pow(torch.tensor(2.0, device=value.device), exponent)
+    scale = torch.where(maximum > 0, scale, torch.ones_like(scale))
+    payload = (blocks / scale).to(torch.float8_e4m3fn)
+    scale_code = (exponent.squeeze(-1).to(torch.int16) + 127).to(torch.uint8)
+    reconstruction = payload.float().mul(scale).reshape_as(value.float())
+    return payload.view(torch.uint8).contiguous(), scale_code.contiguous(), reconstruction
 
 
 __all__ = [
@@ -202,6 +224,7 @@ __all__ = [
     "SCALE_NAMES",
     "SCHEMA",
     "had128_luke",
+    "quantize_e4m3_ue8m0_per32",
     "scale_sandwich_reference",
     "tensor_sha256",
     "validate_scale_component",

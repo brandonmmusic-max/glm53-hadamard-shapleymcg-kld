@@ -190,12 +190,20 @@ if P8_NATIVE:
             fuse_scratch_zero=_P8N_FUSED_SCRATCH,
         )
         released = _p8n_release_carrier_parameters(layer)
+        _p8n_scale_component = (
+            layer._glm53_p8_native_runtime.scale_component is not None
+        )
+        _p8n_boundary = (
+            "h128-suh-svh-scale-component"
+            if _p8n_scale_component
+            else "identity"
+        )
         print(
             "GLM53_P8_NATIVE_WEIGHTS_READY "
             f"layer={layer_id} rank={rank} sidecar={sidecar} "
             f"design_sha256={_P8N_DESIGN_SHA256} released_carrier_bytes={released} "
             "stream=K4 law=mcg alphabet=E4M3 scale=UE8M0_K32 "
-            "boundary=identity ldlq=false",
+            f"boundary={_p8n_boundary} full_coupled=false ldlq=false",
             f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
             flush=True,
         )

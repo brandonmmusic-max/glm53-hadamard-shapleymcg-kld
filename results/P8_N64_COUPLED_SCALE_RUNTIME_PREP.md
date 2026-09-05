@@ -1,5 +1,10 @@
 # P8 N64 coupled-scale runtime preparation
 
+> Superseded on 2026-09-05 by the legal N128 owner implementation documented
+> in `P8_H128_SCALE_SANDWICH_N128_OWNER.md`.  The N64 ownership objection below
+> remains valid; the follow-up resolves it by selecting N128, not by weakening
+> the ordering contract.
+
 Date: 2026-09-05
 Branch: `p8-coupled-scale-kernel-v1`
 Scope: CPU/static implementation only; no GPU run, image build, service action,

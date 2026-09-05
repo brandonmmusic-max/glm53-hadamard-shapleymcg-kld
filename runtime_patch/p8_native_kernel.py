@@ -2,8 +2,9 @@
 
 This is a direct device path: a K4 or K5 trellis stream is decoded to E4M3 inside
 the MMA kernel and physical UE8M0/32 scales are consumed by the tensor core.
-It implements the frozen TP4 identity-boundary P8 contract for any GLM routed
-layer whose sidecar carries the matching immutable layer identity.
+It implements the frozen TP4 identity-boundary P8 contract and an opt-in M1
+H128 suh/svh scale component for a GLM routed layer whose sidecar carries the
+matching immutable layer identity.
 """
 from __future__ import annotations
 
@@ -200,9 +201,9 @@ class P8NativeTPMoE:
                 hidden=hidden,
                 intermediate=intermediate,
             )
-            if not self.small_m_scheduler or self.fc1_tile_n != 64:
+            if not self.small_m_scheduler or self.fc1_tile_n != 128:
                 raise RuntimeError(
-                    "P8 scale component is prepared only for the M1 N64 path"
+                    "P8 scale component requires the M1 N128 owner path"
                 )
         # The trellis storage is byte-for-byte the same size as the packed
         # E2M1 descriptor carrier expected by the inherited W4A8 launch ABI.
@@ -291,6 +292,7 @@ class P8NativeTPMoE:
             materialize_intermediate=materialized,
             p8_small_m=small_m,
             p8_fc1_tile_n=self.fc1_tile_n if small_m else 128,
+            p8_scale_sandwich=self.scale_component is not None,
             share_input_across_experts=materialized,
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
@@ -372,6 +374,7 @@ class P8NativeTPMoE:
                 ("rank", self.tp_rank),
                 ("scaled", 1),
                 ("identity", 1),
+                ("scale_sandwich", int(self.scale_component is not None)),
                 ("codebook", "mcg"),
                 ("deterministic_output", int(self.deterministic_output)),
             ),
@@ -393,16 +396,8 @@ class P8NativeTPMoE:
         m = int(x.shape[0])
         if tuple(topk_ids.shape) != (m, self.topk) or tuple(topk_weights.shape) != (m, self.topk):
             raise RuntimeError("P8 native routing shape mismatch")
-        if self.scale_component is not None:
-            # The five scale operands are validated and plumbed, but N64's two
-            # independent CTAs do not yet have an owner for the cross-half
-            # FC1 H128.  Running the multipliers on raw accumulators would put
-            # svh on the wrong side of H128.  Fail closed until the coupled
-            # H512/H128/sign phase supplies that ownership.
-            raise RuntimeError(
-                "P8 scale component requires the coupled H512/H128/sign runtime; "
-                "the current N64 path cannot apply FC1 svh after H128"
-            )
+        if self.scale_component is not None and m != 1:
+            raise RuntimeError("P8 scale sandwich currently supports M=1 only")
         # Match the W4A8 planner's measured M16-to-M64 transition: sparse
         # decode and ordinary prefill stay monolithic; only dense routed
         # batches pay for the split materialized phase kernels.

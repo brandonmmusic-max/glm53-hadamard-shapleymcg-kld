@@ -45,6 +45,7 @@ def _fixture() -> tuple[dict[str, str], dict[str, torch.Tensor]]:
         "world_size": "4",
         "component": scales_mod.COMPONENT,
         "composition_target": scales_mod.COMPOSITION_TARGET,
+        "boundary": "h128-suh-svh-scale-component",
         "cast_order": scales_mod.CAST_ORDER,
         "gate_up_suh_shared": "true",
         "down_svh_shared": "true",
@@ -106,11 +107,84 @@ def test_luke_input_cast_is_multiply_then_fp16_then_h128() -> None:
     assert not torch.equal(actual, wrong)
 
 
+def test_post_hadamard_values_determine_e4m3_payload_and_ue8m0_bytes() -> None:
+    generator = torch.Generator().manual_seed(5332)
+    value = torch.randn(2, 256, generator=generator, dtype=torch.bfloat16)
+    suh = torch.randn(256, generator=generator, dtype=torch.float16)
+    transformed = scales_mod.had128_luke(value, suh=suh, store_fp16=True)
+    payload, scales, reconstruction = scales_mod.quantize_e4m3_ue8m0_per32(
+        transformed
+    )
+
+    blocks = transformed.float().reshape(2, 8, 32)
+    maximum = blocks.abs().amax(-1, keepdim=True)
+    exponent = torch.ceil(torch.log2(maximum / 448.0)).clamp(-127, 127)
+    power = torch.pow(torch.tensor(2.0), exponent)
+    expected_payload = (blocks / power).to(torch.float8_e4m3fn).view(torch.uint8)
+    expected_scales = (exponent.squeeze(-1).to(torch.int16) + 127).to(torch.uint8)
+    assert torch.equal(payload, expected_payload)
+    assert torch.equal(scales, expected_scales)
+    assert torch.equal(
+        reconstruction,
+        expected_payload.view(torch.float8_e4m3fn).float().mul(power).reshape(2, 256),
+    )
+
+    # Amax before suh/H128 is the prohibited ordering and changes the bytes.
+    wrong_payload, wrong_scales, _ = scales_mod.quantize_e4m3_ue8m0_per32(
+        value.to(torch.float16)
+    )
+    assert not (
+        torch.equal(payload, wrong_payload) and torch.equal(scales, wrong_scales)
+    )
+
+
+def test_complete_scale_sequence_is_bit_exact_to_explicit_luke_order() -> None:
+    generator = torch.Generator().manual_seed(53128128)
+    x = torch.randn(2, 128, generator=generator, dtype=torch.bfloat16)
+    weights = [
+        torch.randn(128, 128, generator=generator, dtype=torch.float16) / 16
+        for _ in range(3)
+    ]
+    component = scales_mod.P8ScaleSandwich(
+        gate_up_suh=torch.randn(128, generator=generator, dtype=torch.float16),
+        intermediate_scales=torch.randn(
+            1, 384, generator=generator, dtype=torch.float16
+        ),
+        down_svh=torch.randn(128, generator=generator, dtype=torch.float16),
+    )
+    actual = scales_mod.scale_sandwich_reference(
+        x, weights[0], weights[1], weights[2], component
+    )
+    gate_svh, up_svh, down_suh = component.split_intermediate()
+    source = scales_mod.had128_luke(
+        x, suh=component.gate_up_suh, store_fp16=True
+    )
+    gate = (source.float() @ weights[0].float().T).to(torch.float16)
+    up = (source.float() @ weights[1].float().T).to(torch.float16)
+    gate = scales_mod.had128_luke(
+        gate, svh=gate_svh[0], store_fp16=True
+    )
+    up = scales_mod.had128_luke(up, svh=up_svh[0], store_fp16=True)
+    gate_work = gate.float().clamp(max=10.0)
+    up_work = up.float().clamp(-10.0, 10.0)
+    activation = (
+        gate_work * torch.sigmoid(gate_work) * up_work
+    ).to(torch.float16)
+    down_input = scales_mod.had128_luke(
+        activation, suh=down_suh[0], store_fp16=True
+    )
+    down = (down_input.float() @ weights[2].float().T).to(torch.float16)
+    expected = scales_mod.had128_luke(
+        down, svh=component.down_svh, store_fp16=False
+    )
+    assert torch.equal(actual, expected)
+
+
 def test_runtime_sources_are_syntactic_and_scale_hooks_have_exact_seams() -> None:
     paths = {
         "wrapper": PATCH / "p8_native_kernel.py",
         "dynamic": PATCH / "b12x_h16/b12x/moe/_shared/kernels/dynamic.py",
-        "fc1": PATCH / "b12x_h16/b12x/moe/_shared/kernels/p8_narrow_fc1.py",
+        "fc1": PATCH / "b12x_h16/b12x/moe/_shared/kernels/p8_h128_fc1.py",
         "fc2": PATCH / "b12x_h16/b12x/moe/_shared/kernels/p8_small_m.py",
     }
     source = {}
@@ -127,17 +201,16 @@ def test_runtime_sources_are_syntactic_and_scale_hooks_have_exact_seams() -> Non
     assert "trellis_lut, scale_component, smem_base" in source["fc2"]
     assert "trellis_lut,\n                    trellis_rotations," in source["dynamic"]
 
-    # Current N64 ownership cannot close an H128 split across two CTAs.  The
-    # wrapper must reject this component before compiling or launching it.
-    tree = ast.parse(source["wrapper"])
-    call = next(node for node in tree.body if isinstance(node, ast.ClassDef)
-                and node.name == "P8NativeTPMoE")
-    invoke = next(node for node in call.body if isinstance(node, ast.FunctionDef)
-                  and node.name == "__call__")
-    statements = [ast.unparse(node) for node in invoke.body]
-    reject_index = next(i for i, text in enumerate(statements)
-                        if "requires the coupled H512/H128/sign runtime" in text)
-    compile_index = next(i for i, text in enumerate(statements)
-                         if "self._compile" in text)
-    assert reject_index < compile_index
+    # The legal implementation selects one N128 owner. N64/N32 and non-M1
+    # scale execution fail closed rather than moving svh before H128.
+    assert "One-CTA N128 owner for the H128 scale-sandwich boundary" in source["fc1"]
+    assert "P8 scale sandwich requires M1 N128 CTA ownership" in source["dynamic"]
+    assert "P8 scale sandwich currently supports M=1 only" in source["wrapper"]
+    assert "p8_scale_sandwich=self.scale_component is not None" in source["wrapper"]
+    assert "_w4a8_had128_quad" in source["fc1"]
+    assert "if cutlass.const_expr(self.scale_sandwich):" in source["fc1"]
+    assert "m1_block_max" in source["dynamic"]
+    assert source["dynamic"].index("_p8_scale_input_before_h128(") < source[
+        "dynamic"
+    ].index("m1_block_max = cutlass.Float32(0.0)", source["dynamic"].index("m1_h128 ="))
     assert '"full_coupled": "false"' in MODULE_PATH.read_text()
