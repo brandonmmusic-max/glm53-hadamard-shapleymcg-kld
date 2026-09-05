@@ -34,9 +34,18 @@ from .shard_index import IndexedCheckpoint, sha256_file
 PROJECTIONS = ("gate_proj", "up_proj", "down_proj")
 
 
-def descriptor_bank(count: int, device: torch.device) -> list[torch.Tensor]:
+def descriptor_bank(
+    count: int, device: torch.device, *, include_identity: bool = False
+) -> list[torch.Tensor]:
     if not 1 <= count <= 256:
         raise ValueError("descriptor bank must contain 1..256 transforms")
+    if include_identity:
+        if count < 2:
+            raise ValueError("identity-inclusive bank requires at least two transforms")
+        return [torch.eye(16, device=device), hadamard16(device=device)] + [
+            structured_hadamard16(f"bank-v1:{index}", device=device)
+            for index in range(2, count)
+        ]
     return [hadamard16(device=device)] + [
         structured_hadamard16(f"bank-v1:{index}", device=device)
         for index in range(1, count)
@@ -126,7 +135,10 @@ def main() -> None:
             raise FileExistsError(f"refusing to overwrite {path}")
 
     plan = json.loads(args.plan.read_text())
-    if plan.get("schema") != "glm53-rotation-v6.blocklocal-h16-layer3-plan.v1":
+    if plan.get("schema") not in {
+        "glm53-rotation-v6.blocklocal-h16-layer3-plan.v1",
+        "glm53-rotation-v7.selective-h16-layer3-plan.v1",
+    }:
         raise RuntimeError("unexpected materialization plan schema")
     if plan.get("algorithm_exclusion") != "LDLQ and BlockLDLQ are excluded":
         raise RuntimeError("plan does not preserve the no-LDLQ boundary")
@@ -164,7 +176,12 @@ def main() -> None:
         data_role=fit["role"],
         sampling_strategy=fit["strategy"],
     )
-    bank = descriptor_bank(plan["candidate"]["variants_per_block"], device)
+    include_identity = bool(plan["candidate"].get("include_identity", False))
+    bank = descriptor_bank(
+        plan["candidate"]["variants_per_block"],
+        device,
+        include_identity=include_identity,
+    )
     prefix = source.expert_prefix(plan["layer"], args.expert_start).split(
         f"layers.{plan['layer']}."
     )[0]
@@ -309,7 +326,11 @@ def main() -> None:
         "layer": "3",
         "expert_range": f"{args.expert_start}:{args.expert_end}",
         "transform": "per-expert-per-projection-per-K16 D-P-H16",
-        "descriptor_bank": "procedural structured_hadamard16 bank-v1, 256 entries",
+        "descriptor_bank": (
+            "identity plus procedural structured_hadamard16 bank-v1, 255 entries"
+            if include_identity
+            else "procedural structured_hadamard16 bank-v1, 256 entries"
+        ),
         "format": "pt",
         "weight_format": "ModelOpt NVFP4 E2M1/E4M3-per-16/FP32-global",
         "ldlq": "false",
@@ -356,7 +377,14 @@ def main() -> None:
         "physical_bpw": 8.0 * physical_bytes / logical_elements,
         "descriptor_bytes": descriptor_bytes,
         "descriptor_bank_runtime_bytes": 0,
-        "descriptor_law_sha256": hashlib.sha256(b"structured_hadamard16:bank-v1").hexdigest(),
+        "descriptor_law_sha256": hashlib.sha256(
+            (
+                b"identity+structured_hadamard16:bank-v1"
+                if include_identity
+                else b"structured_hadamard16:bank-v1"
+            )
+        ).hexdigest(),
+        "include_identity": include_identity,
         "metrics": metrics,
         "outputs": {
             "dense": {
