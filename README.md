@@ -483,6 +483,30 @@ the ShapleyMCG License 1.0 in `LICENSE`. Required attribution:
 Third-party models, runtimes, and libraries remain under their own licenses.
 See `THIRD_PARTY_NOTICES.md`.
 
+### Inspirations and method lineage
+
+This codec did not appear from nowhere. Its lineage is QTIP (Tseng, Sun, Hou,
+De Sa, NeurIPS 2024: trellis-coded quantization with incoherence processing)
+→ ExLlamaV3/EXL3 by turboderp (procedural MCG codebook, cyclic bitstream, LDLQ)
+→ Luke Alonso's KQuant/QSRT codec and b12x W4A8 trellis path (trellis decoded
+to E4M3 inside an FP8 MoE kernel, with Martin Vit on the GLM-5.2 stack) → the
+P8/TrellisMX endpoint here, which replaces the lookup table with the
+procedural law, consumes a physical UE8M0/32 MX scale plane in `mxf8f6f4`,
+and adds MoE small-M scheduling. The error-feedback encoder follows GPTQ
+(Frantar et al., ICLR 2023) and the LDLQ/incoherence analysis of QuIP and
+QuIP# (Chee et al., NeurIPS 2023; Tseng et al., ICML 2024). The runtime
+rotation experiments follow QuaRot (Ashkboos et al., NeurIPS 2024) and
+SpinQuant (Liu et al., 2024). The MX scale plane follows the OCP Microscaling
+specification (Rouhani et al., 2023) and NVIDIA's NVFP4 and block-scaled PTX
+MMA. Shapley allocation follows Shapley (1953) and the Castro, Gómez, Tejada
+(2009) sampling estimator; CoopQ (Zhao et al., 2025) is the closest published
+precedent for Shapley-based layerwise mixed precision and is cited as such.
+The KLD metric is Kullback and Leibler (1951); the intervals are Efron's BCa
+(1987); the sealed-role practice follows the preregistration literature
+(Nosek et al., PNAS 2018). Calibration data descends from the REAP corpus
+family (Lasby et al., Cerebras, 2025). Full references with identifiers are
+in `CITATIONS.md`.
+
 ## Related pinned context
 
 The surrounding Local Inference Lab documentation was inspected at
