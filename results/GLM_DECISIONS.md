@@ -748,6 +748,25 @@ confirmation, and final roles remained unopened for this redesign branch.
 - Receipts and limitations: `results/P8_FULLMODEL_CF32.md` and
   `evidence/opened/codec-v2/uniform-p8-all42-v1/`.
 
+## 2026-09-05: Decision 30 — preregister the existing-topology EXL3 product trial
+
+- Source inspection of the exact EXL3 image shows the checkpoint is unsliced;
+  `_configure_glm53_unsliced_routed_experts` synthesizes `tp=2`. The working
+  four-GPU service uses EP4/DCP4, whose explicit unsliced-EP path bypasses that
+  TP guard. Do not misrepresent this as physically TP2-only checkpoint data.
+- No speed measurement exists from v1. Preserve that failed trial; do not
+  relax or remove the reader's guard to invent a new comparison runtime.
+- Before any v2 speed result, freeze `p8-uniform-all42-tp4-vs-exl3-speed-v2.json`:
+  P8 TP4/no-EP/DCP1 versus existing EXL3 TP4/EP4/DCP4. Speculation remains off
+  in both, so this is not the production MTP5 throughput comparison.
+- Same images, models, four GPUs, requests, graph requirements, repetitions,
+  numerical speed rule and thermal limits. The exact original protocol is
+  retained; v2 explicitly abandons the matched-topology estimand. No causal
+  kernel/codec attribution from the resulting product-speed difference.
+- New output `speed-v2` and container identity; v1 is never overwritten.
+  Allocation remains stopped unless both five-run primary speed medians pass.
+  No new EXL3 kernel or P8 weight change is introduced by this amendment.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

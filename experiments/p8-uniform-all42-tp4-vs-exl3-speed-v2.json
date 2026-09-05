@@ -1,0 +1,130 @@
+{
+  "schema": "glm53-p8-uniform-all42-vs-exl3-speed-plan.v2",
+  "written_at": "2026-09-05 04:19:53 UTC",
+  "status": "preregistered-after-KLD-before-any-speed-measurement",
+  "prerequisite": {
+    "service": "glm53-uniform-p8-all42-kld-v1a2.service",
+    "requirement": "successful complete finite n=32 full-model KLD analysis; no KLD threshold is imposed before the speed measurement"
+  },
+  "question": "Is uniform all-layer native P8 TP4/no-EP/DCP1 faster than the existing EXL3 K4 TP4/EP4/DCP4 serving path with speculation disabled in both?",
+  "candidate": {
+    "name": "p8",
+    "model_name": "glm53-p8-uniform-all42-native",
+    "image_id": "sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8",
+    "runtime_commit": "efd250b002e8da5a0e603253e0cd07ba6249c7b4",
+    "runtime_patch_manifest_sha256": "e1cf316e8e969625eac6749866a12c298b5ae7fef3dde6ebba37b53ed74dc873",
+    "sidecar_manifest": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/manifest.json",
+    "layers": [
+      3,
+      44
+    ],
+    "payload_bpw": 4.25,
+    "mma": "mxf8f6f4 m16n8k32; twice NVFP4 MMA issues per equal logical K",
+    "topology": {
+      "tp": 4,
+      "ep": false,
+      "dcp": 1
+    }
+  },
+  "baseline": {
+    "name": "exl3",
+    "model_name": "GLM-5.3-Flash-EXL3-4bpw",
+    "model_root": "/home/brandonmusic/models/GLM-5.3-Flash-EXL3-4bpw",
+    "model_index_sha256": "2f64d21c67c90bbafeb36c4e9b2f06f54063ed439e9f7cf95962d425a1d8515d",
+    "materialization_receipt_sha256": "afe588284702c0676b7af5df48bc0e0568bb42b1821808ab71c6dfa1f0c48b61",
+    "image_id": "sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf",
+    "reference_compose_sha256": "5558cb276b964e78571e71ffad82c9830c3a602b559c9472bbe92e1f050860d7",
+    "codec": "uniform K4 EXL3/MCG routed experts",
+    "topology": {
+      "tp": 4,
+      "ep": true,
+      "dcp": 4
+    }
+  },
+  "common_serving_regime": {
+    "purpose": "target-weight codec comparison, not speculative-decoder product throughput",
+    "topology": "Same four GPUs and TP4, one sequence; EP/DCP intentionally differ as specified per arm.",
+    "language_only": true,
+    "speculation": "disabled in both arms",
+    "attention_backend": "B12X_MLA_SPARSE",
+    "kv_cache_dtype": "nvfp4_ds_mla",
+    "mla_scale_sha256": "f10b6ee1116d71c4b61c4603d38cb257b3f0dcfde9bcc0847839e48ac9baeb1d",
+    "cuda_graphs": "enabled in both arms; engine config and completed graph capture required in logs",
+    "prefix_cache": false,
+    "chunked_prefill": true,
+    "max_model_len": 131072,
+    "max_num_batched_tokens": 2048,
+    "max_num_seqs": 1,
+    "gpu_memory_utilization": 0.94,
+    "power_and_clocks": "do not mutate; record every run and require the same four physical GPUs",
+    "thermal_start_max_c": 75,
+    "thermal_abort_max_c": 94
+  },
+  "benchmark": {
+    "tool_commit": "42c38fdd0476cf86940268f4e098581e5b61542e",
+    "tool_tree": "86544a01e1e0faeb870cfff7ea751a000c9c6e98",
+    "tool_sha256": "c1d9b66dbf70df23545a71451b5bc2ecaaa746ed2441312e4fb77a8bf476504a",
+    "cold_process_runs_per_arm": 5,
+    "arm_order_by_round": [
+      [
+        "exl3",
+        "p8"
+      ],
+      [
+        "p8",
+        "exl3"
+      ],
+      [
+        "exl3",
+        "p8"
+      ],
+      [
+        "p8",
+        "exl3"
+      ],
+      [
+        "exl3",
+        "p8"
+      ]
+    ],
+    "concurrency": [
+      1
+    ],
+    "contexts": [
+      32768,
+      65536
+    ],
+    "duration_seconds_per_decode_cell": 20,
+    "decode_warmup_seconds": 3,
+    "max_tokens": 4096,
+    "standalone_prefill": true,
+    "prefill_metric": "auto; client headline plus uncontaminated Prometheus validation",
+    "resume": false,
+    "primary_prefill": "32K Prometheus-validated server input tokens/s; client tokens/s also reported",
+    "primary_decode": "C1 32K aggregate output tokens/s from OpenAI continuous usage",
+    "secondary_cells": "64K prefill and C1 64K decode; report but do not redefine the gate"
+  },
+  "analysis": {
+    "module": "glm53_nvfp4.analyze_p8_vs_exl3_speed",
+    "code_sha256": "dae589bbf84fcedf221c926957c7ae65684d29012ca436c997eb9478f4f1036f"
+  },
+  "decision_before_result": {
+    "pass": "median of five P8 cold runs must be strictly greater than median of five EXL3 cold runs for both primary 32K prefill and primary C1 32K decode",
+    "fail": "a tie, regression, non-finite value, missing backend/graph evidence, fewer than five valid cold runs per arm, or deviation from each arm's specified topology/requests stops the native6 Shapley allocation game",
+    "secondary": "report every run and both 64K cells without changing the primary decision",
+    "claim_boundary": "Target-only end-product comparison with different images and EP/DCP topologies; not matched-topology kernel/codec causality, and not the production MTP5 speculative-decoder throughput. KLD was measured separately in eager FP8-MLA-KV mode, so this speed run does not establish quality parity for graph/NVFP4-KV serving."
+  },
+  "operational_policy": {
+    "failures": "Preserve speed-v1 and every new failed attempt. No numerical speed result existed when v2 was registered. Any retry requires an explicit recorded amendment and new attempt destination.",
+    "cold_definition": "new server container and worker processes for every arm/run; compiled caches remain warm and are outside the cold definition, while image, source, tool, and exact cache paths are recorded",
+    "service_restore": "preserve and restore prior production timer/backend state",
+    "protected_roles_opened": [],
+    "output_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/speed-v2"
+  },
+  "prior_plan": {
+    "path": "experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json",
+    "sha256": "907882659d687043c52549ae39490c0b935982d2dc3c0f81681ee70d1ed313d8",
+    "outcome": "failed-before-measurement: EXL3 reader synthesized TP2 metadata and rejected TP4/no-EP"
+  },
+  "amendment_reason": "Use the already-serving EXL3 TP4/EP4/DCP4 topology for the requested product comparison. Do not invent an unqualified TP4/no-EP EXL3 reader or erase v1. No model, kernel, request, metric, repetition count, or speed threshold changes."
+}
