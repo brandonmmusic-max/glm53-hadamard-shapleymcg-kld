@@ -44,6 +44,7 @@ def main() -> None:
             ROOT / "results/P8_FC1_TILES_DEVICE.md",
             ROOT / "results/P8_FC1_INTEGRATED_V1.md",
             ROOT / "results/DECODE_PATH_MATCHED_CONTROL_V2.md",
+            ROOT / "results/P8_TAIL_OMISSION_REPAIR_V1.md",
             ROOT / "figures/current-layer3-kld.png",
             ROOT / "figures/current-kld.png",
             ROOT / "figures/selective-h16-generalization.png",

@@ -189,3 +189,21 @@ Before building either control image or starting a new GPU capture, freeze a fou
 Receipt: `experiments/decode-path-matched-control-v1-prereg.json`.
 
 The sealed v1 stock start failed before writing raw logits because the shared EXL3 recipe requested `b12x`, which correctly rejected stock NVFP4's `swiglu_limit=10.0` contract. V2 changes only stock's MoE backend to its clamp-correct Humming path; EXL3 remains B12X. It also corrects the runner's container-name adapter so create, cleanup, and restoration authenticate the same exact target. All measurement inputs and gates remain fixed, v1 is preserved, and no v1 raw capture bytes were written. Receipt: `experiments/decode-path-matched-control-v2-amendment.json`.
+
+## Decision 25: incomplete KPool tail is not the shared serving defect (2026-09-05)
+
+The fixed-order tail-consumed candidate completed on the four predeclared P8
+windows at the unchanged physical `4.25` bpw. Its equal-window mean KLD was
+`0.1238438916` versus frozen baseline `0.1174740835`: delta
+`+0.0063698081`, or `5.4223%` worse. Legal, code, and reasoning changed by at
+most `0.000002631`; general regressed by `+0.0254819192`. This meets the
+predeclared `material-tail-cause-rejected` rule and not the 20% improvement
+rule. Preserve the result and do not try another tail order adaptively.
+
+Proxy rotation is closed by Decision 22. The next rotation test is only inside
+the P8 encoder on exactly layers 3, 20, and 22—the strongest three-layer subset
+observed in the already-opened direct-KLD interaction pilot. K5 remains a
+separate exact `5.25`-bpw quality lever. No LDLQ or protected role is added.
+
+Receipt: `results/P8_TAIL_OMISSION_REPAIR_V1.md` and
+`evidence/opened/codec-v2/p8-tail-omission-repair-v1/`.
