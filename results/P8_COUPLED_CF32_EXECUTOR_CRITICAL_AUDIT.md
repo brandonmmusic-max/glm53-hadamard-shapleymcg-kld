@@ -6,6 +6,8 @@ Executor tree: `/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-coupled-input-o
 Audited executor commit: `2c6bb0ecd2aa9c209639a8e828a638038c3d995f`  
 Audited ledger-access delta: `6bbbdf9422441c98e726eea49499cb5e3f7c95e0`
 
+Post-audit launch repair: `ebf9591be99f7110d8366045a115da47abce6385`
+
 ## Verdict
 
 **PASS to create a fresh storage ledger and execution seal, then run the fixed
@@ -60,3 +62,17 @@ that wording.
 No result from this audit authorizes production restoration or supports a KLD,
 full-model, prefill, decode-throughput, or CUDA-graph claim. Those remain
 device-execution outcomes.
+
+## Post-audit v1 launch-failure repair
+
+The first sealed attempt preserved a zero-window failure: its actual terminal
+command began `exec exec /opt/venv/bin/python`, the owned stock container was
+cleaned successfully, and production remained off. Commit `ebf9591` strips one
+authenticated source-leading `exec`, rejects any residual `exec` or noncanonical
+serve prefix, and emits exactly one leading `exec`; it does not alter serving
+options or experimental conditions. It also adds the retained v1 attempt root
+as a fixed `tree-apparent` ledger component, disjoint from the fresh v2 capture
+root. The measured tree-apparent charge at audit time was 57,056 bytes including
+directory inode sizes. Combined runtime/executor tests passed 24/24. The repair
+requires a regenerated runtime manifest, ledger, seal, and fresh output root;
+the v1 evidence must not be reused or overwritten.
