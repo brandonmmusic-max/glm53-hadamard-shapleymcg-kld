@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import time
 from typing import Iterator, Sequence
 
 import numpy as np
@@ -378,7 +379,40 @@ def _tree_bytes(path: Path) -> int:
     return total
 
 
-def _validate_budget(output_dir: Path, budget_root: Path, plan: dict[str, object]) -> dict[str, int]:
+def _external_budget(path: Path, expected_sha256: str, budget_root: Path) -> dict[str, object]:
+    """Bind the external charge to an audited receipt; a hash alone is not an audit."""
+    if not path.is_absolute() or not path.is_file() or sha256_file(path) != expected_sha256:
+        raise ValueError("external budget receipt identity differs")
+    record = json.loads(path.read_text())
+    if record.get("schema") != "glm53.p8-coupled.external-budget.v1":
+        raise ValueError("external budget receipt schema differs")
+    if record.get("budget_root") != str(budget_root.resolve()):
+        raise ValueError("external budget receipt is for another budget root")
+    if record.get("max_aggregate_bytes") != MAX_AGGREGATE_BYTES:
+        raise ValueError("external budget ceiling differs")
+    amount = record.get("external_bytes_upper_bound")
+    if type(amount) is not int or amount < 0:
+        raise ValueError("external budget charge must be a nonnegative integer")
+    measured, expires = record.get("measured_unix"), record.get("valid_until_unix")
+    if (type(measured) not in (int, float) or type(expires) not in (int, float)
+            or not measured <= time.time() <= expires):
+        raise ValueError("external budget receipt is stale or future-dated")
+    evidence = record.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise ValueError("external budget receipt requires audited evidence")
+    for item in evidence:
+        source = Path(item["path"])
+        if not source.is_absolute() or sha256_file(source) != item["sha256"]:
+            raise ValueError("external budget evidence identity differs")
+    return {"external_bytes_upper_bound": amount,
+            "external_budget_receipt": str(path),
+            "external_budget_receipt_sha256": expected_sha256}
+
+
+def _validate_budget(output_dir: Path, budget_root: Path, plan: dict[str, object],
+                     *, external_bytes: int = 0) -> dict[str, int]:
+    if type(external_bytes) is not int or external_bytes < 0:
+        raise ValueError("external charge must be a nonnegative integer")
     if not budget_root.is_absolute() or not budget_root.is_dir():
         raise ValueError("--budget-root must be an existing absolute directory")
     if not output_dir.is_absolute() or output_dir.exists():
@@ -395,7 +429,7 @@ def _validate_budget(output_dir: Path, budget_root: Path, plan: dict[str, object
         + len(canonical_json_bytes(design_record(FULL_GEOMETRY)))
         + RECEIPT_ALLOWANCE_BYTES
     )
-    if existing + forecast_new > MAX_AGGREGATE_BYTES:
+    if external_bytes + existing + forecast_new > MAX_AGGREGATE_BYTES:
         raise RuntimeError("synthetic fixture would exceed the 30 GB aggregate budget")
     free = shutil.disk_usage(resolved_parent).free
     if free < forecast_new:
@@ -403,7 +437,8 @@ def _validate_budget(output_dir: Path, budget_root: Path, plan: dict[str, object
     return {
         "existing_budget_root_bytes": existing,
         "forecast_new_bytes_with_receipt_allowance": forecast_new,
-        "projected_aggregate_bytes": existing + forecast_new,
+        "external_bytes_upper_bound": external_bytes,
+        "projected_aggregate_bytes": external_bytes + existing + forecast_new,
         "filesystem_free_bytes_before": free,
     }
 
@@ -603,13 +638,17 @@ def _validate_written(
     }
 
 
-def generate(output_dir: Path, budget_root: Path) -> dict[str, object]:
+def generate(output_dir: Path, budget_root: Path, *, external_budget_receipt: Path,
+             external_budget_sha256: str) -> dict[str, object]:
     geometry = FULL_GEOMETRY
     geometry.validate(full=True)
     if sha256_file(TRANSFORM) != TRANSFORM_SHA256:
         raise RuntimeError("repository draw0 transform receipt differs")
     plan = forecast(geometry)
-    budget = _validate_budget(output_dir, budget_root, plan)
+    external = _external_budget(external_budget_receipt, external_budget_sha256, budget_root)
+    budget = _validate_budget(output_dir, budget_root, plan,
+                              external_bytes=external["external_bytes_upper_bound"])
+    budget.update(external)
     output_dir.mkdir(mode=0o700)
     design_path = output_dir / "synthetic-design.json"
     sidecar = output_dir / "p8-synthetic-layer-003-tp4-rank-0.safetensors"
@@ -678,19 +717,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--generate", action="store_true")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--budget-root", type=Path)
+    parser.add_argument("--external-budget-receipt", type=Path)
+    parser.add_argument("--external-budget-sha256")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     if not args.generate:
-        if args.output_dir is not None or args.budget_root is not None:
+        if any(value is not None for value in (args.output_dir, args.budget_root,
+                                               args.external_budget_receipt, args.external_budget_sha256)):
             raise ValueError("output arguments require explicit --generate")
         print(json.dumps(forecast(), sort_keys=True))
         return
     if args.output_dir is None or args.budget_root is None:
         raise ValueError("--generate requires --output-dir and --budget-root")
-    generate(args.output_dir, args.budget_root)
+    if args.external_budget_receipt is None or args.external_budget_sha256 is None:
+        raise ValueError("--generate requires a pinned campaign-wide external budget receipt")
+    generate(args.output_dir, args.budget_root,
+             external_budget_receipt=args.external_budget_receipt,
+             external_budget_sha256=args.external_budget_sha256)
 
 
 if __name__ == "__main__":

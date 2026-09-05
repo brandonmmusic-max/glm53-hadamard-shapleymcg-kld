@@ -7,11 +7,62 @@ import subprocess
 import sys
 
 import numpy as np
+import pytest
 from safetensors import safe_open
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/generate_p8_coupled_m1_synthetic_fixture.py"
+
+
+def test_external_charge_prevents_empty_root_budget_reset(tmp_path: Path) -> None:
+    module = _module()
+    with pytest.raises(RuntimeError, match="aggregate budget"):
+        module._validate_budget(tmp_path / "new", tmp_path, module.forecast(),
+                                external_bytes=29_500_000_000)
+    receipt = module._validate_budget(tmp_path / "new", tmp_path, module.forecast(),
+                                      external_bytes=4_000_000_000)
+    assert receipt["projected_aggregate_bytes"] == (
+        4_000_000_000 + receipt["existing_budget_root_bytes"]
+        + receipt["forecast_new_bytes_with_receipt_allowance"])
+
+
+def test_external_budget_receipt_binding_and_expiry(tmp_path: Path) -> None:
+    module = _module()
+    evidence = tmp_path / "audit.txt"
+    evidence.write_text("audited upper bound")
+    receipt = tmp_path / "budget.json"
+    record = {"schema": "glm53.p8-coupled.external-budget.v1",
+              "budget_root": str(tmp_path), "max_aggregate_bytes": 30_000_000_000,
+              "external_bytes_upper_bound": 4_000_000_000,
+              "measured_unix": module.time.time()-10,
+              "valid_until_unix": module.time.time()+60,
+              "evidence": [{"path": str(evidence), "sha256": module.sha256_file(evidence)}]}
+    receipt.write_text(json.dumps(record))
+    digest = module.sha256_file(receipt)
+    assert module._external_budget(receipt, digest, tmp_path)["external_bytes_upper_bound"] == 4_000_000_000
+    with pytest.raises(ValueError, match="identity"):
+        module._external_budget(receipt, "0"*64, tmp_path)
+    with pytest.raises(ValueError, match="another budget root"):
+        module._external_budget(receipt, digest, tmp_path / "other")
+    record["valid_until_unix"] = module.time.time()-1
+    receipt.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="stale"):
+        module._external_budget(receipt, module.sha256_file(receipt), tmp_path)
+    record["valid_until_unix"] = module.time.time()+60
+    receipt.write_text(json.dumps(record))
+    evidence.write_text("changed audit")
+    with pytest.raises(ValueError, match="evidence identity"):
+        module._external_budget(receipt, module.sha256_file(receipt), tmp_path)
+
+
+def test_full_generate_requires_external_receipt_before_writes(tmp_path: Path) -> None:
+    module = _module()
+    output = tmp_path / "fixture"
+    with pytest.raises(ValueError, match="campaign-wide"):
+        module.main(["--generate", "--budget-root", str(tmp_path),
+                     "--output-dir", str(output)])
+    assert not output.exists()
 
 
 def _module():
