@@ -21,11 +21,11 @@ EXL3_RECEIPT=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/re
 EXL3_COMPOSE=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/runtime/compose.sm120-tp4-vision-mtp5.yaml
 BENCH_REPO=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-r10-rebase/tooling/llm-inference-bench
 BENCH=$BENCH_REPO/llm_decode_bench.py
-OUT=$ROOT/speed-v2
+OUT=$ROOT/speed-v2a1
 ANALYSIS=$OUT/analysis.json
 EXECUTION=$OUT/execution.json
 LOG=$OUT/followon.log
-CONTAINER=glm53-p8-exl3-speed-v2
+CONTAINER=glm53-p8-exl3-speed-v2a1
 PORT=8017
 LOCK=/run/lock/klc/model-stack.lock
 P8_IMAGE=sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8
@@ -71,6 +71,7 @@ PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_speed_v2 \
   --failed-log "$ROOT/speed-v1/round-01-exl3/server.log" | tee -a "$LOG"
 
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
+(cd "$REPO/experiments" && sha256sum --check --strict p8-speed-v2-operational-a1.sha256) | tee -a "$LOG"
 (cd "$REPO/experiments" && sha256sum --check --strict p8-all42-runtime-image-amendment-2.sha256) | tee -a "$LOG"
 PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_runtime_image --amendment "$IMAGE_AMENDMENT" | tee -a "$LOG"
 [ "$P8_IMAGE" = "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_id"])' "$IMAGE_AMENDMENT")" ]
@@ -81,7 +82,7 @@ PYTHONPATH="$REPO" python3 -m glm53_nvfp4.audit_p8_fullmodel_completion \
   --analysis "$KLD_ANALYSIS" \
   --log "$CAMPAIGN/kld-v3/sessions/p8-uniform-all42-native-cf32-v1/server-final.log" \
   --records "$CAMPAIGN/kld-v3/records/p8-uniform-all42-native-cf32-v1" \
-  --output "$ROOT/fullmodel-completion-audit.json" | tee -a "$LOG"
+  --output "$OUT/fullmodel-completion-audit.json" | tee -a "$LOG"
 [ "$(sha "$ANALYZER")" = dae589bbf84fcedf221c926957c7ae65684d29012ca436c997eb9478f4f1036f ]
 [ "$(git -C "$RUNTIME_REPO" rev-parse HEAD)" = efd250b002e8da5a0e603253e0cd07ba6249c7b4 ]
 [ "$(sha "$RUNTIME_MANIFEST")" = e1cf316e8e969625eac6749866a12c298b5ae7fef3dde6ebba37b53ed74dc873 ]
@@ -110,6 +111,7 @@ static={
   'schema':'glm53-p8-uniform-all42-vs-exl3-speed-execution.v2',
   'plan_sha256':sha(plan), 'kld_analysis_sha256':sha(kld),
   'image_amendment_sha256':sha(plan.parent/'p8-all42-runtime-image-amendment-2.json'),
+  'operational_amendment_sha256':sha(plan.parent/'p8-speed-v2-operational-a1.json'),
   'p8_image_id':json.loads((plan.parent/'p8-all42-runtime-image-amendment-2.json').read_text())['image_id'],
   'runtime_manifest_sha256':sha(runtime), 'exl3_receipt_sha256':sha(exl3),
   'benchmark_tool_sha256':sha(bench), 'started_at':datetime.now(timezone.utc).isoformat(),
