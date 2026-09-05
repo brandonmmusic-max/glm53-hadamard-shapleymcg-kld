@@ -836,6 +836,29 @@ confirmation, and final roles remained unopened for this redesign branch.
   not measured attribution. Continue the isolated Nsight diagnostic while
   preserving this speed failure and allocation stop.
 
+## 2026-09-05: Decision 35 — measured P8 decode bottleneck is the fused small-M schedule
+
+- The frozen synthetic profile completed successfully, opened no experiment
+  role, restored the prior backend/timer state and stayed below the 94 C abort
+  boundary. Its four TP workers each recorded 16 generation ranges, 16
+  `cudaGraphLaunch` calls and the same 2,433-node graph inventory. FULL graph
+  replay is measured, not merely inferred from startup logs.
+- The deterministic top-k launch has `grid.x=16`, proving true M1. On critical
+  workers 2992 and 2994, the 42 fused P8 MoE kernels consume median 39.520 and
+  39.313 ms of 47.597 and 47.594 ms graph spans (83.03% and 82.60%). The two
+  faster workers spend their saved time in NCCL. Explicit fill kernels consume
+  only 0.69-0.83 ms and the separate top-k reduction about 0.03 ms.
+- Port the existing B12X M1 route/slice work decomposition before optimizing
+  workspace clears. Preserve P8 procedural MCG to E4M3, physical UE8M0/32,
+  `mxf8f6f4`, BF16 rounding boundaries and deterministic fixed-order reduction.
+  Do not enable the existing M1 FC2 unchanged: it is E2M1 MMA plus BF16 atomic
+  scatter and therefore is not the P8 arithmetic contract.
+- Require identical-payload bit-exact closure and five-run determinism before
+  an integrated serving benchmark. Nsight Systems does not prove occupancy or
+  instruction causality inside the fused kernel; use a targeted NCU comparison
+  only after a closed candidate exists. The failed product gate and allocation
+  stop remain immutable. See `results/P8_DECODE_NSYS_V1.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

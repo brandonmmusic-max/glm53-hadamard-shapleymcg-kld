@@ -1,0 +1,64 @@
+{
+  "schema": "glm53-p8-smallm-scheduler-plan.v1",
+  "status": "preregistered-not-started",
+  "created_at": "2026-09-05T01:40:00-04:00",
+  "objective": "Reduce true C1 fused-MoE latency by porting B12X small-M route/slice work decomposition without changing the P8 codec or arithmetic contract.",
+  "evidence_trigger": {
+    "analysis": "evidence/opened/codec-v2/p8-decode-profile-v1/analysis.json",
+    "trace_sha256": "f8d50d383197eb3d4eefa596a0ded1607184299bcffc9a98792ffbb9679246e0",
+    "median_distributed_graph_span_ms": 47.6143675,
+    "critical_worker_fused_moe_ms": [39.5204675, 39.313184],
+    "critical_worker_fused_moe_fraction": [0.8303167563, 0.8260183229],
+    "active_m": 1
+  },
+  "baseline": {
+    "runtime_commit": "efd250b002e8da5a0e603253e0cd07ba6249c7b4",
+    "image": "sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8",
+    "wrapper_sha256": "a1f04de129e9e088137b869182fc03ea5e2268f5123ba8a5abbceeb0534b43b4",
+    "dynamic_kernel_sha256": "2428e8a6abaec75348181e6afee37deb2edf7697c820dd762029a453c8b071e4",
+    "schedule": "deterministic monolithic M16, one all-slices task per active expert tile",
+    "useful_c1_tasks": 8
+  },
+  "candidate": {
+    "schedule": "P8-native M1 route-by-K128 FC1 tasks and route-by-N256 FC2 tasks modeled on the existing B12X M1 decomposition",
+    "expected_task_inventory": {
+      "fc1": 32,
+      "fc2": 128
+    },
+    "must_preserve": [
+      "K4 procedural MCG sliding-window decode",
+      "fully scaled E4M3 register fragments",
+      "physical UE8M0 scales per K32",
+      "mxf8f6f4 m16n8k32 MMA",
+      "E4M3 activation and intermediate contract",
+      "slice-by-slice BF16 rounding boundaries",
+      "fixed-order deterministic top-k reduction",
+      "4.25 routed payload bpw",
+      "no LDLQ or BlockLDLQ"
+    ],
+    "forbidden_shortcuts": [
+      "enable the existing E2M1 M1 FC2 unchanged",
+      "BF16 atomic output scatter",
+      "decoded-weight global materialization",
+      "change the codebook, scale law, weights, routes, activation format, or checkpoint",
+      "open selection, confirmation, final, or the 28 reserved confirmation logits"
+    ]
+  },
+  "test_order": [
+    "CPU/source ABI and launch-geometry tests",
+    "single-device identical-payload M1/M2/M3 numerical closure on full E288 geometry",
+    "five-run bitwise determinism with poisoned reusable scratch",
+    "captured-graph kernel A/B on identical payloads and routes",
+    "four-rank integrated synthetic C1 trace if the kernel A/B passes",
+    "new separately frozen whole-model product gate only after integrated closure"
+  ],
+  "promotion_rules": {
+    "numerical": "all finite and bit-exact BF16 output versus the frozen deterministic baseline for every tested row",
+    "determinism": "five of five output hashes identical for baseline and candidate",
+    "kernel_speed": "candidate median fused-MoE device time must be lower on every measured GPU; report magnitude without a post-hoc threshold",
+    "graph": "candidate must remain capturable and replay from a fixed-address workspace",
+    "serving": "no throughput claim until a fresh preregistered multi-run product comparison completes"
+  },
+  "claim_boundary": "Developmental runtime optimization only. It cannot alter the completed speed failure, authorize the stopped Shapley allocation game, or qualify codec KLD.",
+  "protected_roles_opened": []
+}
