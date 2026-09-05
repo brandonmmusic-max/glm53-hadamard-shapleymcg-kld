@@ -1,0 +1,31 @@
+{
+  "schema": "glm53-p8-smallm-n256-device-plan.v1",
+  "frozen_at_utc": "2026-09-05T06:31:00Z",
+  "purpose": "Test whether B12X-style N256 FC2 activation reuse is bit-exact and large enough to plausibly close the remaining P8-to-EXL3 decode gap.",
+  "control": {
+    "image_sha256": "c9eddeca0d9dedf210eaaff918f1bf44d5338202902143f7d646d2325ad475ed",
+    "fc2": "two serial N128 halves"
+  },
+  "candidate": {
+    "image_sha256": "d761e5b7d8447cb07466a0a0d0645b4760d96a21227f0c59f7f81d8bdee1c7c3",
+    "runtime_commit": "e817af75383d3b3bcc3522064b2e0d1cb9458b25",
+    "p8_small_m_sha256": "e99e72ab0f9b715dc5d50253ddfbe4150a2f2ca1232d2015d3543f0e94a230d7",
+    "fc2": "one N256 task; A and SFA staged once per K128"
+  },
+  "inventory": {
+    "physical_gpus": [0, 1, 2, 3],
+    "tokens": 1,
+    "layer": 3,
+    "rank": 0,
+    "eager_repeats": 5,
+    "graph_warmups": 5,
+    "graph_replays": 5,
+    "graph_timing_repeats": 100
+  },
+  "decision_rule": "Correctness requires identical payload and BF16 output hashes across arms on every GPU, five-run graph determinism, and graph/eager equality. Advance to integrated TP4 only if N256 is faster on every GPU and lowers graph median at least 35 percent on every GPU; otherwise profile or redesign without paying for another full-model run.",
+  "rationale_for_35_percent": "The integrated N128 path is 17.168 percent below EXL3 and needs about 2.27 ms/token. With roughly 42 routed-layer calls, a small FC2-only gain is insufficient; the device gate is sized to the remaining product deficit.",
+  "codec_contract": "K4 procedural MCG to E4M3, physical UE8M0/32, identity, mxf8f6f4, ordered monolithic per-K128 BF16 boundary",
+  "protected_roles_opened": [],
+  "ldlq": false,
+  "allocation_game": "stopped"
+}

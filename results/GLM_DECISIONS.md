@@ -929,6 +929,20 @@ confirmation, and final roles remained unopened for this redesign branch.
   profile, especially B12X N256 FC2 A reuse on the critical Max-Q ranks. See
   `results/P8_SMALLM_INTEGRATED_V1.md`.
 
+## 2026-09-05: Decision 40 — size the N256 device gate to the remaining product gap
+
+- Compare the closed N128x2 small-M image with the independently audited N256
+  A-reuse image on identical M1 payloads across all four GPUs. Require identical
+  payload and BF16 output hashes, five graph replays matching eager and 100
+  graph-timing samples per arm/device.
+- N256 must be faster on every GPU and reduce median graph time at least 35% on
+  every GPU before paying for another integrated TP4 run. This is intentionally
+  sized to the measured 2.27 ms/token deficit to EXL3; a cosmetic FC2 gain
+  cannot satisfy the product objective.
+- Preserve procedural MCG, E4M3, physical UE8M0/32, native `mxf8f6f4` and the
+  monolithic per-K128 BF16 boundary. Protected roles stay closed and allocation
+  stays stopped. See `experiments/p8-smallm-n256-device-v1.json`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
