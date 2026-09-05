@@ -315,7 +315,8 @@ def input_trace_rows(
             rows.append(
                 {
                     "block": block,
-                    "logical_channel": channel,
+                    "logical_channel": block * 32 + channel,
+                    "logical_within_block": channel,
                     "wire_flat_index": wire_positions[channel],
                     "raw_device": raw_device,
                     "raw_device_bits": float32_bits(raw_device),

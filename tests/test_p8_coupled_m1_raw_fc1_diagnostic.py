@@ -139,6 +139,9 @@ def test_input_trace_evidence_freezes_bits_midpoints_and_wire_map() -> None:
     rows = module.input_trace_rows(trace, trace, payload, scale, scale)
     assert len(rows) == 64
     assert rows[0]["block"] == 40 and rows[-1]["block"] == 62
+    assert rows[0]["logical_channel"] == 1280
+    assert rows[-1]["logical_channel"] == 2015
+    assert rows[-1]["logical_within_block"] == 31
     assert rows[0]["raw_device_bits"] == rows[0]["raw_reference_bits"]
     assert rows[0]["device_abs_distance_to_midpoint"] >= 0
 
