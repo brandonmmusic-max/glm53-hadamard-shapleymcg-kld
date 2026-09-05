@@ -1370,6 +1370,33 @@ confirmation, and final roles remained unopened for this redesign branch.
 - See `results/P8_INDEX_TRACE_IMPORT_V2.md`; original full KLD and allocation
   remain pending, not waived by infrastructure repair.
 
+## 2026-09-05: Decision 61 — preserve observed index-order divergence
+
+- The two-process v2 diagnostic completed under plan
+  d8e814b5a25ea7d557d2efeb297914aad4c3d98d338e1ef816c68d7c1ecddd2d.
+  Root receipt cae40d0c7d10202fbb2a4251dcb44e795f2ff56facfa1323b520aace30d03a19;
+  comparison 29111348a0ac0b1d35c6c8613400bb55ac8a545e753c3e0adc4332f40ac3fdab.
+  Both2047-row captures completed; services restored and no owned containers
+  remain. No teacher or protected roles were opened.
+- The same N128 configuration diverged again at row259;1788 logit rows differ,
+  maximum absolute difference9.375. These are raw-logit differences, not KLD.
+- First trace divergence: row259/layer7/rank1. All recorded scorer inputs,
+  attention query/cache/length and page tables match bitwise. Pool selection
+  is the same set, ordered [64,0,...,63] versus [0,...,64]; physical selection
+  order and attention output differ. All earlier recorded rows and layer3
+  at row259 match. Four same-row observations satisfy the linkage criterion;
+  they are correlated subsamples of two processes, not four independent runs.
+- This supports the proposed index-order mechanism but is not an
+  intervention-proven fix. Instrumentation changes scheduling; hidden scratch
+  state remains a rival. Preserve the failed exact gate and do not advance
+  full-panel KLD or allocation based on diagnostic completion.
+- Next intervention must have a new frozen plan and source identity, changing
+  ordering alone before testing repeatability. A separate source-audited
+  incomplete-KPool-tail omission must not be bundled into the ordering test.
+  At first-difference sequence length260 there is no incomplete tail.
+- See results/P8_INDEX_TRACE_V2.md. P8 remains E4M3 mxf8f6f4 with twice
+  NVFP4's MMA issue count; this diagnostic supplies no new speed measurement.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
