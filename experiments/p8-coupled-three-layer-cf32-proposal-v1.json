@@ -1,0 +1,72 @@
+{
+  "schema": "glm53.p8-coupled-three-layer-proposal.v1",
+  "status": "proposal-before-encoding-not-execution-authority",
+  "question": "Does fixed coupled H512/H128 with exact Flash suh/svh reduce end-to-end KLD relative to identity P8 on layers 3,20,22?",
+  "layers": [3, 20, 22],
+  "transform_sha256": "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12",
+  "preparation_sha256": "2505ffca4d74c4439c7ad89babcd9e625ff1b3e0f11bf1dec7f1ca2e70ce01ee",
+  "candidate": {
+    "sign_draw": 0,
+    "activation": "target Flash capped SiLU; gate max10 and up range -10..10",
+    "scale_source": "sealed target Flash EXL3 checkpoint; no new scale search",
+    "bits": 4,
+    "alphabet": "E4M3",
+    "weight_scales": "UE8M0/32",
+    "payload_bpw": 4.25,
+    "physical_tensor_bpw_including_scale_draw_metadata": 4.253979859528719,
+    "encoder": "existing GPTQ-style inter-group Hessian feedback with domain-balanced fit samples; no added BlockLDLQ",
+    "per_layer_tuning": false
+  },
+  "runtime": {
+    "attention": "B12X_MLA_SPARSE",
+    "kv_dtype": "nvfp4_ds_mla",
+    "tail_patch": "V2",
+    "tp": 4,
+    "dcp": 1,
+    "ep": false,
+    "mtp": false,
+    "capture": "same forced M1 decode protocol as tail-V2 product comparison",
+    "graphs": true,
+    "p8_moe": "native trellis MCG to mxf8f6f4; E4M3 activations",
+    "isa_cost": "mxf8f6f4 uses twice NVFP4 MMA issue count",
+    "stock_moe_and_activation": "must be pinned from actual stock runtime logs before execution seal"
+  },
+  "arms_in_order": [
+    {"id": "stock", "description": "fresh stock NVFP4 carrier on matched tail-fixed runtime"},
+    {"id": "identity_p8", "description": "native identity P8 on layers 3,20,22; all other weights as stock"},
+    {"id": "coupled_p8", "description": "native coupled P8 on layers 3,20,22; all other weights as stock"}
+  ],
+  "role": {
+    "name": "conditional-fit",
+    "windows": 32,
+    "per_domain": 8,
+    "manifest_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+    "teacher_presence_and_hashes_required": true,
+    "protected_roles_opened": []
+  },
+  "primary_metric": "equal-window mean true-decode teacher KLD; exclude only the first one-token prefill row by the fixed capture mask",
+  "secondary_metrics": ["mean KLD including first prefill row", "coupled minus fresh stock", "paired window wins", "per-domain means"],
+  "decision": {
+    "development_pass": "coupled mean true-decode KLD below identity P8 mean true-decode KLD",
+    "interval": "paired 95% BCa over 32 windows in manifest order, B=20000, seed=20260902; report as nonblocking development evidence",
+    "stock_win": "report separately whether coupled mean is below fresh stock",
+    "on_pass": "prepare all-42-layer build and full-model KLD/speed, subject to actual storage gate",
+    "on_fail": "consider authorized encoder-only three-layer calibrated inter-block BlockLDLQ fallback preserving P8 ABI",
+    "no_reroll": "complete all fixed windows; no exclusions, replacement draws or layer selection from results"
+  },
+  "before_execution": [
+    "finish tail-V2 product validation and speed priority",
+    "pin actual image, runtime sources, checkpoints, sidecars, control installation and teacher receipts in execution seal",
+    "bit-exact codec/scale decode and both activation-carrier checks on SM120",
+    "numerical output closure against pinned reference with criterion declared before device run",
+    "verify all selected layers and ranks dispatch native coupled or identity path as declared",
+    "verify aggregate new NVMe use stays below 30000000000 bytes; no dense-output copies"
+  ],
+  "claim_limits": [
+    "pilot has not executed; no KLD improvement established",
+    "scale and incoherence changes are tested together, so this does not isolate their individual effects",
+    "M1 closure cannot qualify prefill",
+    "existing full-42 P8-versus-EXL3 baseline cannot replace these matched three-layer controls",
+    "CF32 is already-opened development data, not final qualification"
+  ]
+}
