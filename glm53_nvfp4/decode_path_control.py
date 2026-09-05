@@ -28,6 +28,7 @@ ROOT = Path("/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6")
 PREFIX = "glm53-decode-path-control-v1"
 PORT = 8024
 PREREG = REPO / "experiments/decode-path-matched-control-v1-prereg.json"
+AMENDMENT = REPO / "experiments/decode-path-matched-control-v2-amendment.json"
 WINDOW_IDS = ("conditional-fit-0032", "conditional-fit-0021", "conditional-fit-0090", "conditional-fit-0003")
 P8_WINDOW_KLD = {
     "conditional-fit-0032": 0.097427959573676,
@@ -77,6 +78,7 @@ def source_files() -> set[str]:
         "runtime_patch/p8_decode_capture/sampler-v2-hook.patch",
         "runtime_patch/p8_decode_capture/warmup-v2-hook.patch",
         "experiments/decode-path-matched-control-v1-prereg.json",
+        "experiments/decode-path-matched-control-v2-amendment.json",
     }
 
 
@@ -129,7 +131,7 @@ def make_plan(path: Path, output: Path) -> dict:
     receipts, windows = load_image_receipts(), selected_windows()
     recipe = load_recipe()
     plan = {
-        "schema": "glm53.decode-path-matched-control-plan.v1",
+        "schema": "glm53.decode-path-matched-control-plan.v2",
         "created_at": base.pilot.now(), "output": str(output), "order": list(ORDER),
         "port": PORT, "windows": windows, "roles": str(ROLES), "roles_sha256": sha(ROLES),
         "teacher_root": str(TEACHER), "raw_capture_bytes": RAW_BYTES,
@@ -142,11 +144,13 @@ def make_plan(path: Path, output: Path) -> dict:
         "cache_roots": {arm: str(path) for arm, path in CACHE_ROOTS.items()},
         "source_sha256": {name: sha(REPO / name) for name in sorted(source_files())},
         "prereg": str(PREREG), "prereg_sha256": sha(PREREG),
+        "amendment": str(AMENDMENT), "amendment_sha256": sha(AMENDMENT),
         "p8_reference_window_kld": P8_WINDOW_KLD, "p8_reference_mean_kld": P8_MEAN,
         "near_interval": list(NEAR), "ready_timeout_seconds": 2400, "request_timeout_seconds": 900,
         "capture_artifact_owner": {"uid": os.getuid(), "gid": os.getgid()},
         "runtime": {"tp": 4, "ep": True, "dcp": 4, "attention_backend": "B12X_MLA_SPARSE",
-                    "kv_cache_dtype": "nvfp4_ds_mla", "cuda_graphs": True, "mtp": False, "max_num_seqs": 1},
+                    "kv_cache_dtype": "nvfp4_ds_mla", "cuda_graphs": True, "mtp": False, "max_num_seqs": 1,
+                    "arm_moe_backends": {"stock": "humming", "exl3": "b12x"}},
         "decision": "both all-row means in [0.09,0.15]; shared serving bug additionally requires each control to improve less than20% versus paired P8",
         "opened_roles": ["conditional-fit"], "protected_roles_opened": [],
         "speed_measurement_valid": False, "retry_policy": "no silent retry or substitution",
@@ -162,7 +166,7 @@ def authenticate(path: Path) -> dict:
     if sha(path) != path.with_suffix(".sha256").read_text().split()[0]:
         raise ValueError("control plan seal differs")
     plan = json.loads(path.read_text())
-    if (plan.get("schema") != "glm53.decode-path-matched-control-plan.v1"
+    if (plan.get("schema") != "glm53.decode-path-matched-control-plan.v2"
             or plan.get("order") != list(ORDER) or plan.get("raw_capture_bytes") != RAW_BYTES
             or plan.get("headroom_bytes") != HEADROOM or tuple(plan.get("near_interval", [])) != NEAR
             or plan.get("p8_reference_window_kld") != P8_WINDOW_KLD
@@ -174,8 +178,9 @@ def authenticate(path: Path) -> dict:
     for name, expected in plan["source_sha256"].items():
         if sha(REPO / name) != expected:
             raise ValueError(f"control source changed: {name}")
-    if sha(PREREG) != plan["prereg_sha256"] or sha(RECIPE) != plan["recipe_sha256"]:
-        raise ValueError("preregistration or recipe changed")
+    if (sha(PREREG) != plan["prereg_sha256"] or sha(AMENDMENT) != plan["amendment_sha256"]
+            or sha(RECIPE) != plan["recipe_sha256"]):
+        raise ValueError("preregistration, amendment, or recipe changed")
     receipts = load_image_receipts()
     if plan["images"] != {arm: row["image_id"] for arm, row in receipts.items()}:
         raise ValueError("control image identity differs")
@@ -213,6 +218,7 @@ def clone_argv(recipe: dict, image: str, entry: dict, out: Path, windows: list[d
         "--decode-context-parallel-size": "4", "--attention-backend": "B12X_MLA_SPARSE",
         "--kv-cache-dtype": "nvfp4_ds_mla", "--max-num-seqs": "1",
         "--quantization": "modelopt" if arm == "stock" else "exl3", "--load-format": "safetensors",
+        "--moe-backend": "humming" if arm == "stock" else "b12x",
     }
     for option, value in replacements.items():
         if tokens.count(option) != 1:
@@ -255,6 +261,9 @@ def runtime_audit(log: str, arm: str, completed_windows=None) -> dict:
     quant = "modelopt" if arm == "stock" else "exl3"
     if f"quantization={quant}" not in log and f"'quantization': '{quant}'" not in log:
         raise ValueError("quantization runtime marker missing")
+    backend = "humming" if arm == "stock" else "b12x"
+    if f"moe_backend='{backend}'" not in log and f"'moe_backend': '{backend}'" not in log:
+        raise ValueError("MoE backend runtime marker missing")
     ready = re.findall(r"GLM53_P8_DECODE_CAPTURE_V2_READY tp_rank=(\d+) max_num_reqs=(\d+) real_vocab=(\d+) expected_outputs=(\d+)", log)
     expected_ready = {(str(rank), "1", str(protocol.VOCAB_LIMIT), str(protocol.ROWS)) for rank in range(4)}
     if len(ready) != 4 or set(ready) != expected_ready:
@@ -263,7 +272,8 @@ def runtime_audit(log: str, arm: str, completed_windows=None) -> dict:
     if len(closed) != 4 or set(closed) != {(str(rank), "1", "2") for rank in range(4)}:
         raise ValueError("capture warmup closure differs")
     result = {"arm": arm, "tp": 4, "ep": True, "dcp": 4, "quantization": quant,
-              "capture_ready_ranks": list(range(4)), "mtp": False, "cuda_graphs": True}
+              "capture_ready_ranks": list(range(4)), "mtp": False, "cuda_graphs": True,
+              "moe_backend": backend}
     if completed_windows is not None:
         completed = re.findall(r"GLM53_P8_DECODE_CAPTURE_V2_COMPLETE window=(conditional-fit-\d{4}) rows=(\d+) tp_rank=(\d+)", log)
         expected = {(row["id"], str(protocol.ROWS), "0") for row in completed_windows}
@@ -301,7 +311,7 @@ def restoration_safety(plan: dict, digest: str) -> dict:
 
 @contextmanager
 def adapter(plan: dict, arm: str):
-    names = ("PREFIX", "PORT", "stage_windows", "verify_stage_identities", "clone_argv", "runtime_audit", "model_name")
+    names = ("PREFIX", "PORT", "stage_windows", "verify_stage_identities", "clone_argv", "runtime_audit", "model_name", "slot_name")
     prior = {name: getattr(base, name) for name in names}
     try:
         base.PREFIX, base.PORT = PREFIX, PORT
@@ -310,6 +320,7 @@ def adapter(plan: dict, arm: str):
         base.clone_argv = clone_argv
         base.runtime_audit = runtime_audit
         base.model_name = model_name
+        base.slot_name = slot_name
         yield
     finally:
         for name, value in prior.items():
