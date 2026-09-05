@@ -87,6 +87,9 @@ def test_dynamic_calls_route_ids_and_bypasses_old_fc2():
     assert '"--small-m-scheduler"' in probe
     assert "None if args.small_m_scheduler" in probe
     assert 'runtime_kwargs["small_m_scheduler"] = True' in probe
+    assert '"--timing-repeats"' in probe
+    assert 'torch.cuda.Event(enable_timing=True)' in probe
+    assert 'statistics.median(samples)' in probe
 
 
 def _bf16(value):
