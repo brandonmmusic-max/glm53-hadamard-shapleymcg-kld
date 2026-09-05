@@ -15,6 +15,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--roles", type=Path, required=True)
     parser.add_argument("--teacher-root", type=Path, required=True)
+    parser.add_argument("--subset-label", choices=("train32", "tune32"), default="train32")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
@@ -56,9 +57,10 @@ def main() -> None:
             }
         )
     result = {
-        "schema": "glm53-rotation-v8.fit-train32-teacher-subset.v1",
+        "schema": "glm53-rotation-v8.fit-teacher-subset.v1",
         "status": "pass",
         "role": "fit",
+        "subset": args.subset_label,
         "windows": len(files),
         "bytes": sum(row["bytes"] for row in files),
         "roles_sha256": sha256_file(args.roles),
