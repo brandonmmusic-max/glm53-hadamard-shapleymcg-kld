@@ -1466,6 +1466,24 @@ confirmation, and final roles remained unopened for this redesign branch.
   closure failure even if its KLD is favorable. Freeze the full protocol
   separately before collection. No allocation or protected qualification yet.
 
+## 2026-09-05: Decision 66 — freeze full-only corrected P8 KLD protocol
+
+- Authenticate and replay the passed external canary; do not repeat it or
+  create synthetic canary stages merely to fit the older four-stage schema.
+- Capture exactly two fresh CF32 processes in order: corrected N128/separate
+  scratch, then corrected N64/consolidated scratch. Retain eight windows per
+  domain and all2047x154880 logits. Require complete captures and clean
+  restoration before CPU scoring; preserve numerical mismatch as a closure
+  failure while still reporting valid KLD.
+- Primary quality report is absolute FP64 KL(teacher||student) for corrected
+  P8, equal-window mean, with paired20k-window BCa for N64-N128. This protocol
+  has no matched stock-NVFP4 arm and therefore cannot prove codec improvement.
+- Tail omission remains unchanged and blocks final quality qualification.
+  This is development conditional-fit evidence, opens no protected role,
+  measures no speed, uses no LDLQ, and does not restart allocation.
+- Three SOL-high reviews returned GO after removing an unenforced in-plan
+  wall-time claim. See results/P8_INDEX_ORDER_FULL32_V1.md.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
