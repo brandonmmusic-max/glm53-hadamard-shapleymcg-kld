@@ -21,6 +21,9 @@ IDENTITY_DESIGN_SHA256 = "74637836d2680d3040ef000167a052c68519f89cdbc5fdeba03231
 COUPLED_DESIGN_SHA256 = "4ebb96dd9d555fc18f24fb5f4d380216e1de30327a68d7aae89fc10f41878695"
 TRANSFORM_SHA256 = "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12"
 ROLE_SHA256 = "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+EXL3_SCALE_SOURCE_SHA256 = "092be1ffa8db66bf02d4c370d0433a57aa48d4a6e5ce89723ef6a3bb7ca32643"
+V9_PYTHONPATH = "/opt/p8-coupled-runtime:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x"
+V9_SITECUSTOMIZE_SHA256 = "2f9b1384828df9140289c09b372cd6feafc2189eba2ff628242d62655931c098"
 CAPTURE_SOURCES = {
     "__init__.py": "267c4f5a565687a18b224d04c1f5c702149ea8ac866986dc5922c084077fcb41",
     "processor.py": "4886091710d11c00641af8074332cdd19116fa41a811be1134e7dfb713b6f287",
@@ -85,20 +88,25 @@ def validate_identity_sidecars(root: Path, manifest_path: Path, design_path: Pat
     return result
 
 
-def validate_coupled_sidecars(root: Path, design_path: Path, transform_path: Path) -> list[dict]:
+def validate_coupled_sidecars(root: Path, design_path: Path, transform_path: Path,
+                              postwrite_paths: dict[int, Path],
+                              loader_paths: dict[int, Path]) -> list[dict]:
     root, design_path, transform_path = map(Path, (root, design_path, transform_path))
     if sha(design_path) != COUPLED_DESIGN_SHA256 or sha(transform_path) != TRANSFORM_SHA256:
         raise ValueError("coupled design/transform identity differs")
     result = []
     for layer in LAYERS:
-        receipt_path = root / "receipts" / f"layer-{layer:03d}-postwrite-abi-v2.json"
+        receipt_path = Path(postwrite_paths.get(layer, ""))
         if not receipt_path.is_file():
             raise ValueError(f"missing coupled postwrite closure for layer {layer}")
         receipt = json.loads(receipt_path.read_text())
-        if (receipt.get("layer") != layer
+        if (receipt.get("schema") != "glm53-p8-coupled-tp4-postwrite-closure.v1"
+                or receipt.get("status") != "pass" or receipt.get("layer") != layer
+                or receipt.get("world_size") != 4
+                or receipt.get("source_design_sha256") != COUPLED_DESIGN_SHA256
                 or receipt.get("evidence_level") != "postwrite-source-exact-structural-closure"
                 or receipt.get("chunk_retirement_gate_closed") != "postwrite-all-tensor-source-closure"
-                or receipt.get("exl3_scale_source_sha256") is None):
+                or receipt.get("exl3_scale_source_sha256") != EXL3_SCALE_SOURCE_SHA256):
             raise ValueError(f"coupled postwrite closure differs for layer {layer}")
         rows = receipt.get("ranks", [])
         if sorted(row.get("rank") for row in rows) != list(RANKS):
@@ -117,6 +125,25 @@ def validate_coupled_sidecars(root: Path, design_path: Path, transform_path: Pat
                                    "encoder_transform_sha256": TRANSFORM_SHA256})
             result.append({"layer": layer, "rank": rank, "path": str(path),
                            "bytes": row["bytes"], "sha256": row["sha256"]})
+        loader_path = Path(loader_paths.get(layer, ""))
+        if not loader_path.is_file():
+            raise ValueError(f"missing coupled real-loader closure for layer {layer}")
+        loader = json.loads(loader_path.read_text())
+        geometry = loader.get("protocol", {}).get("geometry", {})
+        identities = loader.get("identities", {})
+        loaded_ranks = loader.get("ranks", [])
+        if (loader.get("decision") != "pass" or loader.get("loader_abi_gate_closed") is not True
+                or loader.get("protocol", {}).get("schema") != "glm53.p8-full-coupled-real-sidecar-loader-closure.v1"
+                or geometry.get("layer") != layer or geometry.get("ranks") != list(RANKS)
+                or geometry.get("world_size") != 4 or geometry.get("fc1_tile_n") != 128
+                or identities.get("design") != COUPLED_DESIGN_SHA256
+                or identities.get("transform") != TRANSFORM_SHA256
+                or identities.get("runtime_manifest") != V9_MANIFEST_SHA256
+                or identities.get("postwrite") != sha(receipt_path)
+                or sorted(row.get("rank") for row in loaded_ranks) != list(RANKS)
+                or any(row.get("layer") != layer or row.get("mode") != "full-coupled"
+                       or row.get("identity_fallback") is not False for row in loaded_ranks)):
+            raise ValueError(f"coupled real-loader closure differs for layer {layer}")
     return result
 
 
@@ -125,9 +152,10 @@ def validate_capture_image_receipt(path: Path) -> dict:
     installed = value.get("installed_sha256", {})
     if (value.get("schema") != "glm53.p8-coupled-cf32-capture-image.v1"
             or value.get("status") != "complete" or value.get("parent_image_id") != V9_IMAGE
+            or value.get("image_id") != V9_IMAGE or value.get("reuse_existing_image") is not True
+            or value.get("image_built") is not False or value.get("added_image_bytes") != 0
             or value.get("runtime_manifest_sha256") != V9_MANIFEST_SHA256
             or value.get("tail_v2_sha256") != TAIL_V2_SHA256
-            or not re.fullmatch(r"sha256:[0-9a-f]{64}", value.get("image_id", ""))
             or value.get("gpu_used") is not False or value.get("speed_measurement_valid") is not False):
         raise ValueError("coupled-v9 capture image receipt differs")
     for name, expected in CAPTURE_SOURCES.items():
@@ -136,6 +164,16 @@ def validate_capture_image_receipt(path: Path) -> dict:
     if (installed.get("sampler.py") != SAMPLER_PATCHED_SHA256
             or installed.get("warmup.py") != WARMUP_PATCHED_SHA256):
         raise ValueError("capture sampler/warmup installation differs")
+    full = value.get("full_installed_sha256", {})
+    if (full.get("/usr/lib/python3.12/sitecustomize.py") != V9_SITECUSTOMIZE_SHA256
+            or full.get("/opt/p8-coupled-runtime/image-manifest.json") != V9_MANIFEST_SHA256
+            or any(full.get(path) != SAMPLER_PATCHED_SHA256 for path in (
+                "/opt/infernal-invocation/vllm/vllm/v1/worker/gpu/sample/sampler.py",
+                "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py"))
+            or any(full.get(path) != WARMUP_PATCHED_SHA256 for path in (
+                "/opt/infernal-invocation/vllm/vllm/v1/worker/gpu/warmup.py",
+                "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py"))):
+        raise ValueError("full installed v9 capture/runtime identity differs")
     return value
 
 
@@ -143,6 +181,7 @@ def arm_environment(arm: str, window_ids: list[str]) -> dict[str, str]:
     if arm not in {"stock", "identity_p8", "coupled_p8"}:
         raise ValueError("undeclared arm")
     env = {
+        "PYTHONPATH": V9_PYTHONPATH,
         "VLLM_USE_V2_MODEL_RUNNER": "1",
         "GLM53_P8_DECODE_CAPTURE_V2": "1",
         "GLM53_P8_DECODE_CAPTURE_ROOT": "/p8-captures",
@@ -158,6 +197,7 @@ def arm_environment(arm: str, window_ids: list[str]) -> dict[str, str]:
                     "GLM53_P8_NATIVE_LAYERS": "3,20,22", "GLM53_P8_NATIVE_SIDECAR_DIR": "/p8-sidecars",
                     "GLM53_P8_NATIVE_DESIGN": "/p8-design/design.json"})
     if arm == "coupled_p8":
+        env["GLM53_P8_NATIVE_SIDECAR_DIR"] = "/tmp/p8-three-layer-sidecars"
         env["GLM53_P8_NATIVE_TRANSFORM"] = "/p8-design/transform.json"
     return env
 

@@ -16,16 +16,17 @@ from glm53_nvfp4 import p8_decode_protocol as protocol
 
 def production_off(run=subprocess.run) -> dict:
     states = {}
-    for unit in ("klc-backend.service", "klc-model-stack.timer"):
-        result = run(["systemctl", "--user", "is-active", unit], text=True, capture_output=True)
+    for unit, scope in (("klc-backend.service", "user"), ("klc-model-stack.timer", "system")):
+        command = ["systemctl", "--user", "is-active", unit] if scope == "user" else ["systemctl", "is-active", unit]
+        result = run(command, text=True, capture_output=True)
         state = result.stdout.strip()
         if state != "inactive":
-            raise ValueError(f"user production unit must remain inactive: {unit}={state!r}")
-        states[unit] = state
+            raise ValueError(f"{scope} production unit must remain inactive: {unit}={state!r}")
+        states[unit] = {"scope": scope, "state": state}
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", 8000))
-    return {"systemd_scope": "user", "units": states, "port_8000": "unbound",
+    return {"units": states, "port_8000": "unbound",
             "restore_policy": "never restore or start production from this campaign"}
 
 
@@ -79,7 +80,7 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
                  "--volume", f"{transform}:/p8-design/transform.json:ro"]
         links = [f"ln -s /p8-coupled-sidecars/layer-{layer:03d}/p8-layer-{layer:03d}-tp4-rank-{rank}.safetensors /tmp/p8-three-layer-sidecars/"
                  for layer in runtime.LAYERS for rank in runtime.RANKS]
-        prelude = "set -e; rm -rf /tmp/p8-three-layer-sidecars; mkdir /tmp/p8-three-layer-sidecars; " + "; ".join(links) + "; "
+        prelude = "set -e; mkdir /tmp/p8-three-layer-sidecars; " + "; ".join(links) + "; "
     return [*argv, image, "-lc", prelude + "exec " + shlex.join(tokens)]
 
 
@@ -89,8 +90,12 @@ def main() -> None:
                  "identity-manifest", "identity-design", "coupled-root", "coupled-design", "transform",
                  "roles", "teacher-root"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--coupled-postwrite", action="append", required=True,
+                        help="explicit LAYER=/absolute/postwrite-receipt.json; exactly layers 3,20,22")
+    parser.add_argument("--coupled-loader", action="append", required=True,
+                        help="explicit LAYER=/absolute/real-loader-result.json; exactly layers 3,20,22")
     args = parser.parse_args()
-    paths = vars(args)
+    paths = {key: value for key, value in vars(args).items() if isinstance(value, Path)}
     if any(value != value.resolve() for value in paths.values()):
         raise ValueError("all preparation paths must be absolute and canonical")
     if args.output.exists() or args.output.with_suffix(".sha256").exists():
@@ -98,7 +103,24 @@ def main() -> None:
     production = production_off()
     image = runtime.validate_capture_image_receipt(args.capture_image_receipt)
     identity = runtime.validate_identity_sidecars(args.identity_root, args.identity_manifest, args.identity_design)
-    coupled = runtime.validate_coupled_sidecars(args.coupled_root, args.coupled_design, args.transform)
+    def explicit_map(values: list[str], label: str) -> dict[int, Path]:
+        result = {}
+        for value in values:
+            layer_text, separator, path_text = value.partition("=")
+            if not separator or not layer_text.isdigit():
+                raise ValueError(f"invalid explicit {label} mapping")
+            layer, path = int(layer_text), Path(path_text)
+            if layer in result or path != path.resolve():
+                raise ValueError(f"duplicate/noncanonical {label} mapping")
+            result[layer] = path
+        if set(result) != set(runtime.LAYERS):
+            raise ValueError(f"{label} mapping must name exactly layers 3,20,22")
+        return result
+    postwrites = explicit_map(args.coupled_postwrite, "postwrite")
+    loaders = explicit_map(args.coupled_loader, "loader")
+    coupled = runtime.validate_coupled_sidecars(
+        args.coupled_root, args.coupled_design, args.transform, postwrites, loaders
+    )
     if runtime.sha(args.roles) != runtime.ROLE_SHA256:
         raise ValueError("CF32 role identity differs")
     windows = protocol.load_role_inputs(args.roles, args.teacher_root, verify_teacher_bytes=True)
@@ -127,10 +149,17 @@ def main() -> None:
                           "index_sha256": runtime.sha(args.model_root / "model.safetensors.index.json")},
         "roles": {"path": str(args.roles), "sha256": runtime.ROLE_SHA256, "window_ids": ids,
                   "teacher_root": str(args.teacher_root), "teacher_bytes_verified": True},
-        "identity_sidecars": identity, "coupled_sidecars": coupled, "arms_in_order": list(arms), "arms": arms,
+        "identity_sidecars": identity, "coupled_sidecars": coupled,
+        "coupled_evidence": {str(layer): {
+            "postwrite": {"path": str(postwrites[layer]), "sha256": runtime.sha(postwrites[layer])},
+            "real_loader": {"path": str(loaders[layer]), "sha256": runtime.sha(loaders[layer])},
+        } for layer in runtime.LAYERS},
+        "arms_in_order": list(arms), "arms": arms,
         "runtime": {"tp": 4, "dcp": 1, "ep": False, "mtp": False, "graphs": True,
                     "attention_backend": "B12X_MLA_SPARSE", "kv_dtype": "nvfp4_ds_mla",
-                    "forced_decode_rows": 2047, "capture_is_speed_valid": False},
+                    "forced_decode_rows": 2047, "capture_is_speed_valid": False,
+                    "sitecustomize": "/usr/lib/python3.12/sitecustomize.py",
+                    "pythonpath": runtime.V9_PYTHONPATH},
         "lifecycle": "never calls tail_v2_product_runner._campaign; never starts/restores production; raw capture streamed one window at a time by the future executor"}
     args.output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     args.output.with_suffix(".sha256").write_text(runtime.sha(args.output) + "  " + args.output.name + "\n")

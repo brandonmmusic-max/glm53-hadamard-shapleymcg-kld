@@ -10,14 +10,16 @@ was opened or changed.
 The exact matched runtime path is recoverable, but it is not execution-ready
 yet.
 
-All three arms must use one new **numerical-capture-only child image** of the
-immutable coupled v9 image
+All three arms can use the same immutable coupled v9 image
 `sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3`.
-The child installs only the already-frozen forced-decode sampler/warmup patches
-and capture package. This is necessary because coupled v9 contains the native
-P8/Tail-V2 runtime but not the forced-decode capture installation. It also
-prevents the old `/runtime-patch` bind from masking v9 with stale all-42 N64
-sources.
+A later exact image inspection proved that v9 already inherits the frozen
+forced-decode capture package and patched sampler/warmup. The initial source
+manifest inspection missed inherited files and incorrectly called for a child
+image. That conclusion is retracted: the redundant child Dockerfile was
+removed because it expected original sampler/warmup bytes and would fail on
+the already-patched v9 image. A no-build attestation receipt must pin those
+inherited bytes before execution. The launch also prevents the old
+`/runtime-patch` bind from masking v9 with stale all-42 N64 sources.
 
 The stock, identity, and coupled arms then use the same image, stock NVFP4
 carrier, TP4/DCP1/no-EP/no-MTP/graphs, B12X_MLA_SPARSE attention,
@@ -36,17 +38,18 @@ product recipe's N64/fused-scratch values are not this candidate.
 
 ## Added fail-closed preparation path
 
-- `runtime_patch/p8_decode_capture/Dockerfile.coupled-v9-control` composes the
-  frozen capture patch directly on coupled v9 and validates v9 manifest,
-  sampler, warmup, and patched output hashes.
 - `glm53_nvfp4/p8_coupled_three_layer_runtime.py` validates all 12 sidecars per
   P8 arm, headers, design/transform identity, postwrite closure, capture-image
-  receipt, exact arm environments, and the 12 layer/rank ready+forward log
-  inventory.
+  receipt, exact arm environments, per-layer real-loader PASS receipts, and the
+  12 layer/rank ready+forward log inventory. Postwrite and loader receipt paths
+  are explicit layer-to-path inputs; the preparer does not guess historical
+  filename suffixes.
 - `scripts/prepare_p8_coupled_three_layer_cf32_runtime.py` authenticates CF32
   teacher bytes, the stock carrier config/index, the source launch recipe, and
-  user-scope production-off state before writing a sealed launch manifest. It
-  explicitly removes the stale `/runtime-patch` bind. It never starts or
+  correctly scoped production-off state before writing a sealed launch
+  manifest: backend in user scope and timer in system scope. It explicitly
+  removes the stale `/runtime-patch` bind and inherited stale `PYTHONPATH`, then
+  restores v9's `/opt/p8-coupled-runtime`-first Python path. It never starts or
   restores production and does not call `tail_v2_product_runner._campaign`.
 - Coupled sidecars currently live under per-layer directories. The launch
   mounts that tree read-only and creates a container-local flat symlink farm;
@@ -60,33 +63,40 @@ the coupled arm. Missing pairs and identity fallback fail the arm.
 
 ## Current blockers, observed rather than inferred
 
-1. The coupled capture child has not been built, so no complete
-   `glm53.p8-coupled-cf32-capture-image.v1` receipt exists. The unbuilt
-   Dockerfile is preparation, not image qualification.
-2. Coupled layer 3 is complete: four chunks, four TP4 sidecars, source-exact
+The no-build v9 capture attestation now exists at
+`/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-image-v9-build/capture-attestation-v1/receipt.json`.
+It passes the preflight validator and proves `image_id == parent_image_id ==`
+v9, `reuse_existing_image=true`, `image_built=false`, zero added image bytes,
+both installed capture copies, patched sampler/warmup copies, v9 sitecustomize,
+runtime manifest and Tail-V2.
+
+Remaining blockers:
+
+1. Coupled layer 3 is complete: four chunks, four TP4 sidecars, source-exact
    postwrite receipt, and real-loader result `decision=pass`.
-3. Coupled layer 20 currently has two of four chunks, no sidecars, no postwrite
+2. Coupled layer 20 had two of four chunks at inspection, no sidecars, no postwrite
    receipt, and no loader closure.
-4. Coupled layer 22 currently has no chunks, sidecars, postwrite receipt, or
+3. Coupled layer 22 had no chunks, sidecars, postwrite receipt, or
    loader closure.
-5. The execution seal still needs the future capture image receipt plus fresh
-   stock-arm runtime logs proving the actual stock MoE/activation selection.
+4. The execution seal still needs fresh stock-arm runtime logs proving the
+   actual stock MoE/activation selection.
    The proposal explicitly left those runtime pins unresolved; this preflight
    does not manufacture them.
-6. Teacher bytes are intentionally not rehashed by this inspection. The
+5. Teacher bytes are intentionally not rehashed by this inspection. The
    manifest builder performs that check before it can emit a seal.
 
-At inspection time, the real user units `klc-backend.service` and
-`klc-model-stack.timer` were both inactive and port 8000 was unbound. This is
-state evidence only; the builder rechecks the **user** systemd scope and never
-contains restoration logic.
+At inspection time, the real user-scoped `klc-backend.service` and
+system-scoped `klc-model-stack.timer` were both inactive and port 8000 was
+unbound. This is state evidence only; the builder rechecks each unit in its
+correct systemd scope and never contains restoration logic.
 
 ## Validation
 
 `PYTHONPATH=$PWD pytest -q tests/test_p8_coupled_three_layer_runtime.py`
-passed 7 tests. The tests cover missing layer/rank, coupled-to-identity fallback,
+passed 10 tests. The tests cover missing layer/rank, coupled-to-identity fallback,
 wrong/missing runtime log pairs, stock arm explicit disablement, N128 coupled
-settings, and capture parent-image drift. Python compilation and `git diff
---check` also passed.
+settings, capture parent-image drift, correct system/user service scopes, stale
+runtime/Python-path removal, and exact coupled link-farm/runtime path alignment.
+Python compilation and `git diff --check` also passed.
 
 No KLD, speed, full-model, or execution result is claimed by this work.
