@@ -22,7 +22,9 @@ forward paths and 65,504 causal positions. Payload is 4.25 bpw; no LDLQ was used
 It is **24.96% lower than the historical contextual comparator** (28/32 wins),
 but that comparator differs in bitrate, quantization coverage and EP/DCP
 topology, so this is **not a matched NVFP4 or protected-quality win**.
-P8 uses twice NVFP4's MMA issue count. The repaired five-cold-run product
+This first KLD used the earlier eager/FP8 MLA KV regime; it does not qualify
+the optimized V2/FULL-graph/NVFP4 MLA KV decode path below.
+P8 uses twice NVFP4's MMA issue count. The original runtime's repaired five-cold-run product
 comparison measured **+11.00% 32K prefill but -77.33% C1 decode** versus the
 existing EXL3 serving topology. It failed the predeclared two-metric gate, so
 the allocation game is stopped. This is a different-topology system result,
@@ -59,10 +61,16 @@ The subsequent B12X-derived N64 FC1 / consolidated scratch-clear pilot reached
 **100.5667 C1 tokens/s**, with 7,244 tok/s server-validated 32K prefill.
 This is a single-run diagnostic, 33.03% above the preceding P8 pilot and
 10.19% above the historical EXL3 decode median, not a completed product gate.
-The separate fresh five-cold-run-per-arm comparison is in progress; historical
-samples do not enter its medians. The earlier failed comparison remains valid
-for its older runtime. See the [N64 pilot receipts](results/P8_FC1_INTEGRATED_V1.md).
-Allocation remains stopped pending speed and full-model M1 numerical closure.
+The separate fresh five-cold-run-per-arm comparison now **passes both speed
+gates**: P8 median **100.5501 vs EXL3 91.2200 C1 tok/s (+10.23%)**, and
+server-validated prefill **6,959 vs 6,239 tok/s (+11.54%)**. All ten fresh
+process runs completed and raw receipts replayed; historical samples do not
+enter these medians. This is TP4/noEP/DCP1 P8 versus TP4/EP4/DCP4 EXL3, a
+serving-system comparison, not isolated codec causality. The earlier failed
+comparison remains valid for its older runtime. See the
+[five-cold-run report](results/P8_FC1_COLD_COMPARISON_V1.md) and
+[N64 pilot receipts](results/P8_FC1_INTEGRATED_V1.md).
+Allocation remains stopped pending full-model M1 numerical closure.
 Ordinary prompt-prefill KLD exercises the unchanged M>1 fallback, so the closure
 endpoint is built and CPU-reviewed to replay every conditional-fit causal row with M1
 under the same Model Runner V2/FULL-graph configuration. Its capture overhead
