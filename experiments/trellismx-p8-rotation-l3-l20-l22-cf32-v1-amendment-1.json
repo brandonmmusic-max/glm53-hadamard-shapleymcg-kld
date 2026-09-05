@@ -1,0 +1,37 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 1,
+  "parent_plan": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1.json",
+    "sha256": "cf3576e009031f91f1e184c96a774ebeafc9f8a54fb54b7b509314906829c8d9"
+  },
+  "trigger": "The layer-20 build preflight found that the previously published fit-only sparse calibration payload had been removed after its earlier encoder run. All four workers stopped before model-tensor access and wrote no codec, dense, sidecar, KLD, or metric output.",
+  "preserved_failure": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l20-v1/failures/preflight-missing-capture",
+  "change": "Materialize the same 64 fit-window byte ranges from the immutable Hugging Face dataset revision into a new sparse capture root on the output NVMe, then point both missing-layer builds at that root. Add a receipt and apparent-size preflight before the runner stops production or launches GPU workers.",
+  "new_capture_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/fit-capture-l20-l22-v1",
+  "unchanged": [
+    "layer set 3,20,22",
+    "p00625 angle and rotation arithmetic",
+    "physical K4 P8 encoder and exact 4.25 bpw",
+    "fit window identities and domain-balanced sampling",
+    "source checkpoint, capture manifest, roles, and published per-file hashes",
+    "three KLD arms, run order, metric, decision rules, and stopping",
+    "no LDLQ and no protected role opening"
+  ],
+  "identities": {
+    "dataset": "brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits",
+    "revision": "95f4fdd94bf29989db2e0d1054e4931f55edb6aa",
+    "capture_manifest_sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a",
+    "fit_roles_sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8",
+    "expected_fit_windows": 64,
+    "layer20_hidden_published_sha256": "da1f81b1b503036b6301f263210700e578d1ce450d87c434f4b3ec20fe013125",
+    "layer22_hidden_published_sha256": "9fdfc270d4849a31fda918ed393d1fb094ea10e3f28e5f3ff3810e7be06874cc"
+  },
+  "storage": {
+    "maximum_additional_allocated_bytes": 2300000000,
+    "sparse_apparent_bytes_per_layer": 10800332800,
+    "minimum_free_margin_bytes": 21474836480,
+    "klcstore_writes": false
+  },
+  "interpretation": "Operational input-location repair only. It does not invalidate the predeclared causal comparison because downloaded bytes and role identities remain pinned and target KLD has not been opened."
+}

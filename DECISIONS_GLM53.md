@@ -229,3 +229,11 @@ is read-only for source, calibration, roles, and teacher inputs.  Keep K5
 separate at exactly `5.25` bpw.
 
 Receipt: `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1.json`.
+
+Amendment 1 preserves the first layer-20 preflight failure and moves the
+missing, previously published fit-only sparse ranges to the fast NVMe.  The
+same 64 role windows, capture manifest, Hub revision, and per-file hashes are
+required, and the build runner now validates the receipt before stopping the
+application or launching GPUs.  No encoder, angle, layer, KLD arm, threshold,
+or protected boundary changes.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-1.json`.
