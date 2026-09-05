@@ -40,6 +40,47 @@ mkdir -p "$ROOT"/{codec,dense,receipts,logs,sidecars}
 cd "$REPO"
 
 printf -v layer3 '%03d' "$LAYER"
+PYTHONPATH="$REPO" "$PYTHON_BIN" - "$CAPTURE" "$ROLES" "$LAYER" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+
+capture, roles, layer = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
+sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+manifest_path = capture / "capture-manifest.json"
+layer_root = capture / f"layers/layer-{layer:03d}"
+receipt_path = layer_root / "partial-fit-capture.json"
+manifest = json.loads(manifest_path.read_text())
+receipt = json.loads(receipt_path.read_text())
+if (
+    receipt.get("schema") != "glm53-nvfp4-v9.partial-calibration-capture.v1"
+    or receipt.get("status") != "pass"
+    or receipt.get("layer") != layer
+    or receipt.get("role") != "fit"
+    or receipt.get("manifest_sha256") != sha(manifest_path)
+    or receipt.get("roles_sha256") != sha(roles)
+):
+    raise SystemExit("partial fit capture receipt identity mismatch")
+names = {
+    "hidden_bf16": "hidden.bf16.bin",
+    "topk_ids_u16le": "topk_ids.u16le.bin",
+    "topk_weights_f32le": "topk_weights.f32le.bin",
+}
+for key, name in names.items():
+    path = layer_root / name
+    published = manifest["files"][str(layer)][key]
+    record = receipt["files"][key]
+    if (
+        record.get("path") != str(path)
+        or record.get("mode") != "sealed-role-sparse-ranges"
+        or not record.get("ranges")
+        or not path.is_file()
+        or path.stat().st_size != published["bytes"]
+        or record.get("apparent_bytes") != published["bytes"]
+        or record.get("published_full_sha256") != published["sha256"]
+    ):
+        raise SystemExit(f"partial fit capture payload mismatch: {path}")
+print(json.dumps({"capture_preflight":"pass","layer":layer,"windows":receipt["windows"]}))
+PY
 exec 9>"$LOCK"
 flock -w 900 9
 backend_was_active=false
