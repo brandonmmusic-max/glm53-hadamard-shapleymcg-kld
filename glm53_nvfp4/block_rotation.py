@@ -87,6 +87,44 @@ def butterfly16(
     return rotation
 
 
+def apply_shared_butterfly16_staged(
+    hidden: torch.Tensor,
+    angle: float | torch.Tensor,
+    *,
+    output_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """Apply the scalar-angle butterfly with the intended fused-kernel order.
+
+    The post-SwiGLU runtime stores BF16, reloads each fixed 16-lane group as
+    FP32, executes four register-local Givens stages, and rounds only the final
+    result.  Keeping this reference separate from a dense ``x @ R`` is
+    intentional: the two are mathematically equivalent, but their floating
+    point association is not bitwise identical.
+    """
+    if hidden.shape[-1] % GROUP_SIZE:
+        raise ValueError(
+            f"last dimension must be divisible by {GROUP_SIZE}, got {tuple(hidden.shape)}"
+        )
+    value = torch.as_tensor(angle, dtype=torch.float32, device=hidden.device)
+    if value.numel() != 1 or not bool(torch.isfinite(value).all()):
+        raise ValueError("shared butterfly angle must be one finite scalar")
+    cosine = torch.cos(value.reshape(()))
+    sine = torch.sin(value.reshape(()))
+    work = hidden.float().reshape(*hidden.shape[:-1], -1, GROUP_SIZE).clone()
+    for stride in (1, 2, 4, 8):
+        previous = work.clone()
+        for base in range(0, GROUP_SIZE, 2 * stride):
+            for offset in range(stride):
+                left = base + offset
+                right = left + stride
+                a = previous[..., left]
+                b = previous[..., right]
+                work[..., left] = cosine * a - sine * b
+                work[..., right] = sine * a + cosine * b
+    result = work.reshape_as(hidden)
+    return result if output_dtype is None else result.to(output_dtype)
+
+
 def signed_hadamard16(
     seed: int | str,
     *,
