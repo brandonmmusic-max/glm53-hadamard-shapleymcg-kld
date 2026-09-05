@@ -1486,6 +1486,24 @@ confirmation, and final roles remained unopened for this redesign branch.
   concurrent prepare failed on create-only output without modifying the plan.
   See results/P8_INDEX_ORDER_FULL32_V1.md.
 
+## 2026-09-05: Decision 67 — preserve the full32 analyzer failure; score once by amendment
+
+- The two fresh full32 captures completed and are bitwise identical across all
+  32 windows and 65,504 causal rows. Preserve capture plan6873cd1..., root
+  execution3a0816..., and full-exact89b628...; do not spend another GPU run.
+- The chained V1 CPU analyzer failed before output creation or teacher scoring
+  because its receipt verifier reconstructed request model names after the
+  full-campaign prefix context was restored. Preserve failed systemd invocation
+  c6509947... and invocation-journal hash423aa90e... as failure evidence.
+- Permit one analysis-only amendment which scopes that prefix around the
+  unchanged frozen V1 verifier/scorer, restores it in all outcomes, and writes
+  a fresh output. It changes no capture, window, teacher, metric, aggregation,
+  decision, or tail boundary and controls no GPU service.
+- Plan79e958c... binds the amendment sources, V1 56-source inventory, capture
+  and failure receipts. This remains conditional-fit absolute P8 KLD, with no
+  matched NVFP4 improvement or protected-role claim. See
+  results/P8_INDEX_ORDER_FULL32_ANALYSIS_V2.md.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
