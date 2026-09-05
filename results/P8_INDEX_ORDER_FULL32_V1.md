@@ -1,7 +1,9 @@
 # Corrected-index P8 full32 numerical and KLD campaign
 
-Status: design before target collection. No full32 student capture or KLD
-result exists for this corrected decode path at the time of sealing.
+Status: sealed design before target collection. No full32 student capture or
+KLD result exists for this corrected decode path at the time of sealing. The
+plan SHA256 is
+`6873cd1c066ad2845635cdb0db25df2352196240930d99ec213dc16b6a15133a`.
 
 ## Decision and prerequisite
 
@@ -63,7 +65,13 @@ Three GPT-5.6 SOL high-reasoning agents independently reviewed the runner,
 analysis and test surface. One unsupported in-plan wall-time assertion was
 removed before sealing. Final verdicts were GO with no remaining code-level
 fatal issue. The focused runner and analyzer suite passes134 CPU tests; the
-larger relevant suite will be recorded before launch.
+larger relevant suite passed285 CPU tests before launch.
+
+The first prepare process created the sealed plan. A concurrently issued
+duplicate prepare command subsequently failed closed with `FileExistsError`;
+it did not overwrite the plan and opened no target result. The successful plan
+contains56 frozen source hashes,32 unique windows, the complete teacher/input
+fingerprint inventory, and the authenticated external-canary receipt chain.
 
 Prepare with:
 
@@ -75,5 +83,5 @@ python3 -m glm53_nvfp4.p8_index_order_full plan \
 
 Execute once from a clean sealed checkout using
 `python3 -m glm53_nvfp4.p8_index_order_full run-and-analyze --plan <plan>`.
-The exact plan SHA256 and resulting receipts are appended only after they
-exist; target results never rewrite the frozen decision rule.
+Result receipts are appended only after they exist; target results never
+rewrite the frozen decision rule.
