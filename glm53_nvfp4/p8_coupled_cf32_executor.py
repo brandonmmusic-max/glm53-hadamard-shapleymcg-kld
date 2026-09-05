@@ -1,4 +1,4 @@
-"""Three-arm CF32 executor with no production restoration path.
+"""Candidate-first two-arm CF32 executor with no production restoration path.
 
 Import and ``seal`` are CPU-only. ``execute`` is the sole GPU/container entry
 point and consumes both the prepared runtime manifest and an explicit seal.
@@ -29,7 +29,7 @@ from . import tail_v2_product_validation as validation
 from .audit_speed_graphs import verify as verify_graphs
 
 
-ARMS = ("stock", "identity_p8", "coupled_p8")
+ARMS = runtime.CF32_ARMS
 LOCK = Path("/run/lock/klc/model-stack.lock")
 PORT = 8032
 GLOBAL_BUDGET = 30_000_000_000
@@ -67,7 +67,14 @@ FIXED_LEDGER_PATHS = {
     "fixture": (CAMPAIGN_ROOT / "p8-coupled-fixture-v1",),
     "three_layer_outputs": (CAMPAIGN_ROOT / "p8-coupled-three-layer-v1",),
     "quality_root": (CAMPAIGN_ROOT / "tail-v2-p8-exl3-cf32-product-validation-v1b",),
-    "historical_capture_attempts": (CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-v1-captures",),
+    "historical_capture_attempts": (
+        CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-v1-captures",
+        CAMPAIGN_ROOT / "p8-coupled-cf32-storage-v2.json",
+        CAMPAIGN_ROOT / "p8-coupled-cf32-storage-v2.sha256",
+        CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-v2.json",
+        CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-v2.sha256",
+        CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-execution-v2.json",
+        CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-execution-v2.sha256"),
 }
 CAPTURE_SUFFIXES = (".logits.f32", ".logits.f32.partial", ".capture.json.partial",
                     ".capture.inprogress.json", ".capture.failed.json")
@@ -81,6 +88,7 @@ SOURCE_FILES = (
     "glm53_nvfp4/p8_fc1_cold_compare.py",
     "scripts/prepare_p8_coupled_three_layer_cf32_runtime.py",
     "scripts/prepare_p8_coupled_cf32_storage_ledger.py",
+    "experiments/p8-coupled-three-layer-cf32-candidate-first-v3.json",
 )
 REPO = Path(__file__).resolve().parents[1]
 
@@ -275,14 +283,20 @@ def authenticate_runtime_manifest(path: Path) -> tuple[dict, list[dict]]:
     if runtime.sha(path) != path.with_suffix(".sha256").read_text().split()[0]:
         raise ValueError("prepared runtime manifest seal differs")
     value = json.loads(path.read_text())
-    if (value.get("schema") != "glm53.p8-coupled-three-layer-cf32-runtime.v1"
+    if (value.get("schema") != "glm53.p8-coupled-three-layer-cf32-runtime.v2"
             or value.get("status") != "sealed-before-execution" or value.get("execution_authority") is not False
             or value.get("arms_in_order") != list(ARMS)
+            or value.get("stock_arm") != {"status": "not-tested", "historical_only": True, "metric": None}
             or value.get("runtime") != {"tp": 4, "dcp": 1, "ep": False, "mtp": False, "graphs": True,
                 "attention_backend": "B12X_MLA_SPARSE", "kv_dtype": "nvfp4_ds_mla",
                 "forced_decode_rows": 2047, "capture_is_speed_valid": False,
                 "sitecustomize": "/usr/lib/python3.12/sitecustomize.py", "pythonpath": runtime.V9_PYTHONPATH}):
         raise ValueError("prepared runtime protocol differs")
+    amendment_path = Path(value["protocol_amendment"]["path"])
+    amendment = runtime.validate_cf32_amendment(amendment_path)
+    if (value["protocol_amendment"] != {"path": str(amendment_path),
+            "sha256": runtime.sha(amendment_path), "arms_in_order": amendment["arms_in_order"]}):
+        raise ValueError("candidate-first protocol amendment identity differs")
     attestation = Path(value["capture_attestation"]["path"])
     if runtime.sha(attestation) != value["capture_attestation"]["sha256"]:
         raise ValueError("capture attestation changed")
@@ -290,6 +304,8 @@ def authenticate_runtime_manifest(path: Path) -> tuple[dict, list[dict]]:
     if value.get("image") != image:
         raise ValueError("embedded capture attestation differs")
     carrier = Path(value["stock_carrier"]["path"])
+    if value["stock_carrier"].get("role") != "common authenticated base checkpoint for both P8 overlays; not a stock measurement":
+        raise ValueError("common carrier role differs")
     if (runtime.sha(carrier / "config.json") != value["stock_carrier"]["config_sha256"]
             or runtime.sha(carrier / "model.safetensors.index.json") != value["stock_carrier"]["index_sha256"]):
         raise ValueError("stock carrier identity differs")
@@ -354,7 +370,7 @@ def make_execution_seal(manifest_path: Path, seal_path: Path, global_root: Path,
                         storage_ledger_path: Path) -> dict:
     manifest, windows = authenticate_runtime_manifest(manifest_path)
     seal_path, global_root = Path(seal_path), Path(global_root)
-    output = Path(manifest["arms"]["stock"]["capture_root"]).parent
+    output = Path(manifest["arms"][ARMS[0]]["capture_root"]).parent
     if (seal_path != seal_path.resolve() or seal_path.exists() or seal_path.with_suffix(".sha256").exists()
             or output.exists() or not output.is_relative_to(global_root)):
         raise ValueError("fresh canonical seal/output below global capture root required")
@@ -363,7 +379,7 @@ def make_execution_seal(manifest_path: Path, seal_path: Path, global_root: Path,
     ledger, ledger_snapshot = validate_storage_ledger(storage_ledger_path, output)
     if shutil.disk_usage(global_root).free < RAW_BYTES:
         raise ValueError("one raw capture does not fit at seal time")
-    value = {"schema": "glm53.p8-coupled-three-layer-cf32-execution-seal.v1",
+    value = {"schema": "glm53.p8-coupled-three-layer-cf32-execution-seal.v2",
         "status": "authorized-before-gpu-execution", "runtime_manifest": str(manifest_path),
         "runtime_manifest_sha256": runtime.sha(manifest_path), "output": str(output),
         "global_capture_root": str(global_root), "global_retained_capture_inventory": inventory,
@@ -389,7 +405,7 @@ def authenticate_execution_seal(path: Path) -> tuple[dict, dict, list[dict]]:
     if path != path.resolve() or not path.is_file() or runtime.sha(path) != path.with_suffix(".sha256").read_text().split()[0]:
         raise ValueError("execution seal identity differs")
     seal = json.loads(path.read_text())
-    if (seal.get("schema") != "glm53.p8-coupled-three-layer-cf32-execution-seal.v1"
+    if (seal.get("schema") != "glm53.p8-coupled-three-layer-cf32-execution-seal.v2"
             or seal.get("status") != "authorized-before-gpu-execution" or seal.get("arm_order") != list(ARMS)
             or seal.get("aggregate_campaign_ceiling_bytes") != GLOBAL_BUDGET
             or seal.get("retained_prior_quality_peak_charge_bytes") != QUALITY_PEAK
@@ -665,7 +681,7 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
 
 def _analyze(manifest: dict, windows: list[dict]) -> dict:
     arms = {}
-    output = Path(manifest["arms"]["stock"]["capture_root"]).parent
+    output = Path(manifest["arms"][ARMS[0]]["capture_root"]).parent
     expected_ids = [window["id"] for window in windows]
     for arm in ARMS:
         root = output / arm
@@ -735,7 +751,7 @@ def execute(seal_path: Path, *, arm_runner=run_arm) -> dict:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         production_before = _production_off()
         output = Path(seal["output"]); output.mkdir(mode=0o700)
-        record = {"schema": "glm53.p8-coupled-three-layer-cf32-execution.v1",
+        record = {"schema": "glm53.p8-coupled-three-layer-cf32-execution.v2",
             "seal_sha256": runtime.sha(seal_path), "arm_order": list(ARMS), "completed_arms": [],
             "exit_code": 1, "restoration_attempted": False, "protected_roles_opened": [],
             "production_before": production_before, "root_lock": str(LOCK),
@@ -769,7 +785,7 @@ def execute(seal_path: Path, *, arm_runner=run_arm) -> dict:
             for sig, handler in handlers.items():
                 signal.signal(sig, handler)
     if record["exit_code"]:
-        raise RuntimeError("three-arm CF32 execution failed; partial evidence preserved, production remains off")
+        raise RuntimeError("candidate-first two-arm CF32 execution failed; partial evidence preserved, production remains off")
     return record
 
 

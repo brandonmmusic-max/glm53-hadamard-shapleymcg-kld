@@ -3,8 +3,9 @@
 Status: CPU implementation complete; GPU execution not started.
 
 The executor is `glm53_nvfp4/p8_coupled_cf32_executor.py`. It consumes the
-sealed three-arm runtime manifest and a second, explicit execution seal. The
-only allowed order is stock, identity P8, coupled P8. A failed window or arm
+sealed candidate-first two-arm runtime manifest and a second, explicit
+execution seal. The only allowed order is coupled P8, then identity P8. Stock
+serving is not tested; historical stock is context only and has no metric. A failed window or arm
 raises before the next arm. No code path calls the older product `_campaign`
 or `restore_if_safe`; the production user service, system timer and port 8000
 are observed inactive before execution, before every arm/window, and after the
@@ -40,9 +41,7 @@ dense-32 capture and no speed loop.
 
 Runtime logs must prove TP4/DCP1, no expert parallelism, no MTP, graphs,
 B12X_MLA_SPARSE, NVFP4 MLA KV, all four capture hooks, and exact P8
-weight/forward pairs for layers 3/20/22 and ranks 0..3. Stock MoE backend and
-the available activation/checkpoint evidence are copied from emitted logs;
-they are not inferred. Final logs must contain the ordered 2047-row rank-0
+weight/forward pairs for layers 3/20/22 and ranks 0..3. Final logs must contain the ordered 2047-row rank-0
 completion marker for every CF32 window.
 
 CPU validation:
@@ -59,8 +58,9 @@ PYTHONPATH=$PWD python3 -m pytest -q \
 
 Result: 66 passed. The destructive-path tests use a four-byte synthetic raw.
 They prove durable score-before-retire ordering and that a receipt-write error
-leaves the raw intact. A mocked lifecycle test injects an identity-arm failure,
-proves coupled is never entered, and makes any restoration call fail the test.
+leaves the raw intact. A mocked lifecycle test injects an identity-arm failure
+after coupled completes, proves there is no later arm, and makes any
+restoration call fail the test.
 The final broad `PYTHONPATH=$PWD python3 -m pytest -q tests/test_p8*.py`
 regression suite passed 824 tests in 24.96 seconds. The three adjacent Tail-V2
 capture/protocol files added another 39 passes in 0.95 seconds.

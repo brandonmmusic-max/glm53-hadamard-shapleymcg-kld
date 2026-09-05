@@ -1,4 +1,4 @@
-"""Fixed three-arm development analysis; no capture or protected-role access."""
+"""Fixed candidate-first two-arm analysis; no capture or protected-role access."""
 from collections import Counter
 
 import numpy as np
@@ -6,7 +6,7 @@ import numpy as np
 from .paired_role_analysis import BOOTSTRAP_B, BOOTSTRAP_SEED, bca_mean_interval
 
 
-ARMS = ('stock', 'identity_p8', 'coupled_p8')
+ARMS = ('coupled_p8', 'identity_p8')
 CONDITIONS = ('attention', 'kv_dtype', 'moe_backend', 'activation_precision', 'bpw')
 
 
@@ -24,7 +24,7 @@ def analyze(windows, arms):
     if sorted(Counter(domains.values()).values()) != [8, 8, 8, 8]:
         raise ValueError('requires four domains with eight windows each')
     if set(arms) != set(ARMS):
-        raise ValueError('requires exactly stock, identity_p8, coupled_p8')
+        raise ValueError('requires exactly coupled_p8 and identity_p8')
     values, all_rows, conditions = {}, {}, {}
     for arm in ARMS:
         entry = arms[arm]
@@ -46,7 +46,7 @@ def analyze(windows, arms):
     rng = np.random.default_rng(BOOTSTRAP_SEED)
     indices = rng.integers(0, 32, size=(BOOTSTRAP_B, 32))
     comparisons = {}
-    for control in ('identity_p8', 'stock'):
+    for control in ('identity_p8',):
         delta = values['coupled_p8'] - values[control]
         bootstrap = delta[indices].mean(axis=1)
         constant = bool(np.all(delta == delta[0]))
@@ -69,11 +69,12 @@ def analyze(windows, arms):
                 for domain in sorted(set(domains.values()))},
         }
     return {
-        'schema': 'glm53.p8-coupled-cf32-paired-development.v1',
+        'schema': 'glm53.p8-coupled-cf32-paired-development.v2',
         'role': 'conditional-fit', 'windows': 32,
         'decision': 'pass' if comparisons['identity_p8']['mean_delta_kld'] < 0 else 'fail',
         'decision_rule': 'coupled mean true-decode KLD below identity P8; BCa nonblocking',
-        'stock_win': comparisons['stock']['mean_delta_kld'] < 0,
+        'stock': {'status': 'not-tested', 'historical_only': True, 'metric': None,
+                  'claim': 'No fresh stock baseline; no equivalence or stock delta is inferred'},
         'bootstrap': {'unit': 'window', 'replicates': BOOTSTRAP_B, 'seed': BOOTSTRAP_SEED},
         'arms': {arm: {'conditions': conditions[arm],
                        'true_decode_mean_kld': float(values[arm].mean()),

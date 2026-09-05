@@ -22,6 +22,8 @@ def test_ci_is_nonblocking_and_rows_are_paired_by_id():
         row['true_decode_mean_kld'] += -0.01 if i < 17 else 0.01
     result = analyze(windows, arms)
     assert result['decision'] == 'pass'
+    assert result['stock'] == {'status': 'not-tested', 'historical_only': True, 'metric': None,
+                               'claim': 'No fresh stock baseline; no equivalence or stock delta is inferred'}
     assert result['comparisons']['identity_p8']['paired_bca95'][1] > 0
     assert result['comparisons']['identity_p8']['paired_window_wins'] == 17
     arms['coupled_p8']['windows'].reverse()

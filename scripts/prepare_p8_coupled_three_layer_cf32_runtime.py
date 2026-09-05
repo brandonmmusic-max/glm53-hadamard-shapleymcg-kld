@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal the runtime/capture launch manifest for the fixed three-arm CF32 pilot."""
+"""Seal the candidate-first two-arm runtime/capture manifest for the CF32 pilot."""
 from __future__ import annotations
 
 import argparse
@@ -110,6 +110,8 @@ def main() -> None:
     if args.output.exists() or args.output.with_suffix(".sha256").exists():
         raise ValueError("output and seal must be fresh")
     production = production_off()
+    amendment_path = Path(__file__).parents[1] / "experiments/p8-coupled-three-layer-cf32-candidate-first-v3.json"
+    amendment = runtime.validate_cf32_amendment(amendment_path)
     image = runtime.validate_capture_image_receipt(args.capture_image_receipt)
     stock = runtime.validate_stock_carrier_receipt(args.stock_carrier_receipt, args.model_root)
     extras = runtime.validate_stock_carrier_extras(args.stock_carrier_extras_receipt, args.model_root)
@@ -141,7 +143,7 @@ def main() -> None:
         raise ValueError("fresh capture root required")
     ids = [row["id"] for row in windows]
     arms = {}
-    for arm in ("stock", "identity_p8", "coupled_p8"):
+    for arm in runtime.CF32_ARMS:
         arm_out = output_root / arm
         env = runtime.arm_environment(arm, ids)
         arms[arm] = {"environment": env, "capture_root": str(arm_out),
@@ -149,13 +151,17 @@ def main() -> None:
                                        args.identity_root, args.coupled_root, args.identity_design,
                                        args.coupled_design, args.transform),
             "runtime_log_gate": "verify_runtime_log; exactly layers 3,20,22 x ranks 0..3; no fallback"}
-    manifest = {"schema": "glm53.p8-coupled-three-layer-cf32-runtime.v1",
+    manifest = {"schema": "glm53.p8-coupled-three-layer-cf32-runtime.v2",
         "status": "sealed-before-execution", "execution_authority": False,
+        "protocol_amendment": {"path": str(amendment_path), "sha256": runtime.sha(amendment_path),
+                               "arms_in_order": amendment["arms_in_order"]},
         "production": production, "image": image,
         "capture_attestation": {"path": str(args.capture_image_receipt),
                                 "sha256": runtime.sha(args.capture_image_receipt)},
         "source_recipe": {"path": str(args.source_recipe), "sha256": runtime.sha(args.source_recipe)},
-        "stock_carrier": {"path": str(args.model_root), "config_sha256": runtime.sha(args.model_root / "config.json"),
+        "stock_carrier": {"path": str(args.model_root),
+                          "role": "common authenticated base checkpoint for both P8 overlays; not a stock measurement",
+                          "config_sha256": runtime.sha(args.model_root / "config.json"),
                           "index_sha256": runtime.sha(args.model_root / "model.safetensors.index.json"),
                           "receipt": {"path": str(args.stock_carrier_receipt),
                                       "sha256": runtime.sha(args.stock_carrier_receipt)},
@@ -173,6 +179,7 @@ def main() -> None:
                            "design": {"path": str(args.coupled_design), "sha256": runtime.sha(args.coupled_design)},
                            "transform": {"path": str(args.transform), "sha256": runtime.sha(args.transform)}},
         "identity_sidecars": identity, "coupled_sidecars": coupled,
+        "stock_arm": {"status": "not-tested", "historical_only": True, "metric": None},
         "coupled_evidence": {str(layer): {
             "postwrite": {"path": str(postwrites[layer]), "sha256": runtime.sha(postwrites[layer])},
             "real_loader": {"path": str(loaders[layer]), "sha256": runtime.sha(loaders[layer])},

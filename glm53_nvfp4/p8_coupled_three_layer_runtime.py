@@ -14,6 +14,8 @@ import struct
 
 LAYERS = (3, 20, 22)
 RANKS = (0, 1, 2, 3)
+CF32_ARMS = ("coupled_p8", "identity_p8")
+CF32_AMENDMENT_SHA256 = "fc896a8300ecd40c5b7fe1c2bc49c95634e17cf43810af0dd35d826ef7597ae1"
 V9_IMAGE = "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3"
 V9_MANIFEST_SHA256 = "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1"
 TAIL_V2_SHA256 = "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
@@ -41,6 +43,19 @@ STOCK_HUB_REVISION = "520de24eabf507659eaef7c70f14fd584527facc"
 def sha(path: Path) -> str:
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def validate_cf32_amendment(path: Path) -> dict:
+    path = Path(path)
+    value = json.loads(path.read_text())
+    if (path != path.resolve() or sha(path) != CF32_AMENDMENT_SHA256
+            or value.get("schema") != "glm53.p8-coupled-cf32-protocol-amendment.v1"
+            or value.get("status") != "preregistered-before-candidate-results"
+            or value.get("arms_in_order") != list(CF32_ARMS) or value.get("layers") != list(LAYERS)
+            or value.get("role_sha256") != ROLE_SHA256 or value.get("window_count") != 32
+            or value.get("fresh_stock_comparison") != "Not tested; no stock-only serving arm"):
+        raise ValueError("candidate-first CF32 amendment differs")
+    return value
 
 
 def safetensors_metadata(path: Path) -> dict[str, str]:

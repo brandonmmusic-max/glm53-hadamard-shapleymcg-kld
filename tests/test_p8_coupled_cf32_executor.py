@@ -222,12 +222,12 @@ def test_score_receipt_precedes_exact_raw_retirement(tmp_path, monkeypatch):
     monkeypatch.setattr(executor.protocol, "score_aligned", lambda *_args: score)
     monkeypatch.setattr(executor.validation, "_save_scores", lambda path, _scores: path.write_bytes(b"scores"))
     result = executor.score_retire_window(
-        arm="stock", window=window, teacher_root=tmp_path, capture_root=capture,
+        arm="coupled_p8", window=window, teacher_root=tmp_path, capture_root=capture,
         receipt_root=tmp_path / "receipts", runtime_audit_sha256="a" * 64)
     assert result["prediction_rows"] == 2047 and result["true_decode_rows"] == 2046
     assert not raw.exists()
-    assert (tmp_path / "receipts/stock/conditional-fit-0001.score.json").is_file()
-    assert (tmp_path / "receipts/stock/conditional-fit-0001.retirement.json").is_file()
+    assert (tmp_path / "receipts/coupled_p8/conditional-fit-0001.score.json").is_file()
+    assert (tmp_path / "receipts/coupled_p8/conditional-fit-0001.retirement.json").is_file()
 
 
 def test_raw_survives_failure_to_write_durable_score(tmp_path, monkeypatch):
@@ -245,7 +245,7 @@ def test_raw_survives_failure_to_write_durable_score(tmp_path, monkeypatch):
     monkeypatch.setattr(executor.validation, "_durable_json", lambda *_args: (_ for _ in ()).throw(OSError("disk")))
     with pytest.raises(OSError, match="disk"):
         executor.score_retire_window(
-            arm="stock", window=window, teacher_root=tmp_path, capture_root=capture,
+            arm="coupled_p8", window=window, teacher_root=tmp_path, capture_root=capture,
             receipt_root=tmp_path / "receipts", runtime_audit_sha256="a" * 64)
     assert raw.is_file()
 
@@ -271,10 +271,10 @@ def test_execute_never_restores_and_stops_before_next_arm(tmp_path, monkeypatch)
             raise RuntimeError("injected")
     with pytest.raises(RuntimeError, match="production remains off"):
         executor.execute(seal_path, arm_runner=arm_runner)
-    assert seen == ["stock", "identity_p8"]
+    assert seen == ["coupled_p8", "identity_p8"]
     assert observations == ["off", "off"]
     record = json.loads((output / "execution.json").read_text())
-    assert record["completed_arms"] == ["stock"]
+    assert record["completed_arms"] == ["coupled_p8"]
     assert record["restoration_attempted"] is False
 
 
