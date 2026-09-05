@@ -2938,7 +2938,10 @@ class MoEDynamicKernelBackend:
         )
         if cutlass.const_expr(self.external_materialized_fc1):
             phase1_experts = task_expert
-            if cutlass.const_expr(self.p8_fc1_tile_n != 128):
+            # Every direct M1 owner, including N128 full coupling, consumes
+            # original route ids. Phase0 does not populate grouped task_expert
+            # on this path. Dense prefill still consumes grouped task metadata.
+            if cutlass.const_expr(self.p8_small_m or self.p8_fc1_tile_n != 128):
                 phase1_experts = topk_ids
             self.materialized_phase1_kernel(
                 packed_a_storage,
