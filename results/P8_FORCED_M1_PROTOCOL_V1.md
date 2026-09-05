@@ -1,8 +1,15 @@
 # Complete causal-row validation of the optimized P8 decode path
 
 Status: **CPU-tested and independently reviewed; not GPU-executed yet**,
-2026-09-05. The fresh five-cold-run comparison remains active. No new KLD,
-numerical-closure pass, allocation result or speed qualification is claimed here.
+2026-09-05. The fresh five-cold-run comparison has completed and passed both
+speed gates, reported separately in `P8_FC1_COLD_COMPARISON_V1.md`. No new KLD,
+numerical-closure pass or allocation result is claimed here.
+
+The capture plan is `experiments/p8-forced-m1-v2-v1.json`, SHA-256
+`e3332469bc2ed9aec86eabb86b8dc57f76123542e1de309b9136893e4014725a`.
+It binds the completed cold receipts and freshly verified 32-window teacher
+and token inventory. Its canary is the first manifest window,
+`conditional-fit-0056`.
 
 ## Frozen design before execution
 

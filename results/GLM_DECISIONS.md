@@ -1191,6 +1191,30 @@ confirmation, and final roles remained unopened for this redesign branch.
   preserve partial outputs and withhold production restoration while owned
   GPU containers remain live or their state is uncertain.
 
+## 2026-09-05: Decision 55 — fresh speed pass advances only to numerical closure
+
+- All ten fresh cold-process runs completed successfully, and the sealed raw
+  analyzer and portable snapshot replayed. P8 median C1 decode is
+  100.5501114546 tok/s versus EXL3 91.2199741959 (+10.2282%); primary
+  server-validated prefill is 6,959 versus 6,239 tok/s (+11.5403%). Both
+  predeclared median gates pass. Maximum sampled temperature was 84 C;
+  prior backend-active/timer-inactive states were restored without errors.
+- Preserve the full ten-run record under
+  `evidence/opened/codec-v2/p8-fc1-cold-comparison-v1/`. These are five new
+  processes per arm with retained compiled caches, not pilot reuse. P8
+  TP4/noEP/DCP1 versus EXL3 TP4/EP4/DCP4 remains a system comparison.
+- This speed pass does not establish new KLD or authorize allocation. Advance
+  only to `experiments/p8-forced-m1-v2-v1.json`, sealed SHA-256
+  `e3332469bc2ed9aec86eabb86b8dc57f76123542e1de309b9136893e4014725a`.
+  Its first canary is conditional-fit-0056 and its full stage retains all
+  32 domain-balanced windows and 65,504 causal positions. Planning freshly
+  verified all 32 teacher files and token identities. Protected data stays
+  unopened; exact failure cannot be replaced by a favorable average KLD.
+- The V2 request fields and token-return contract also passed a CPU-only
+  instantiation check in the exact capture image. This is interface evidence,
+  not GPU capture proof. P8 still carries twice NVFP4's MMA issue count;
+  the separate native P4 endpoint is not qualified by this speed result.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
