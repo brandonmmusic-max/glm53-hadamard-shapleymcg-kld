@@ -24,3 +24,10 @@
 7. Production remains off. Only scored-and-hashed transient raw logits may
    be retired by the executor; all source chunks remain. No protected
    confirmation logits are opened. New KLD results remain outstanding.
+8. Attempt v1 failed before any request: the original source command already
+   began with `exec`, and the preparer added another. Bash reported
+   `exec: exec: not found`. Zero windows completed, no candidate scores were
+   inspected, cleanup passed and production remained off. Preserve v1;
+   normalize the leading shell builtin, test it, and use fresh v2 manifests,
+   ledger and execution seal. All scientific factors and arm ordering remain
+   unchanged. This is a disclosed launch-only protocol amendment.
