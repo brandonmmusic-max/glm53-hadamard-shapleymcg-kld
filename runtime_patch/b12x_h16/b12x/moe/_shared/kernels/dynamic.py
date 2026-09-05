@@ -69,6 +69,7 @@ from b12x._lib.intrinsics import (
     cp_async4_shared_global,
     cp_async_u32_shared_global,
     cp_async_u64_shared_global,
+    div_rn_f32,
     e2m1x8_mul_residual_to_e4m3x8,
     e2m1x8_to_qmma_e2m1x8,
     fabs_f32,
@@ -168,6 +169,92 @@ _WORK_SOURCES = {
 # alignment = copy size) and 20*g mod 32 spreads the eight g-rows a lane
 # quad touches across distinct bank groups.
 _W4A8_B_ROW_PAD = 80
+
+# Exact float32 encodings used by torch's terminal ``/ sqrt(N)`` in the
+# full-coupled CPU reference.  The previous input owner multiplied by the
+# reciprocal twice (H128 then H4), which is algebraically equivalent but can
+# move an E4M3 tie by one code.  Keep these as divisors and use div.rn.f32.
+_P8_SQRT128_F32 = 11.313708305358887  # 0x413504f3
+_P8_SQRT512_F32 = 22.627416610717773  # 0x41b504f3
+
+
+@cute.jit
+def _p8_had128_quad_unnormalized(
+    v0: cutlass.Float32,
+    v1: cutlass.Float32,
+    v2: cutlass.Float32,
+    v3: cutlass.Float32,
+    lane: Int32,
+):
+    """Natural-order Sylvester H128 without terminal normalization."""
+
+    s0 = v0 + v1
+    d0 = v0 - v1
+    s1 = v2 + v3
+    d1 = v2 - v3
+    h0 = s0 + s1
+    h1 = d0 + d1
+    h2 = s0 - s1
+    h3 = d0 - d1
+    for i in cutlass.range_constexpr(5):
+        stride = 1 << i
+        p0 = cute.arch.shuffle_sync_bfly(h0, offset=stride)
+        p1 = cute.arch.shuffle_sync_bfly(h1, offset=stride)
+        p2 = cute.arch.shuffle_sync_bfly(h2, offset=stride)
+        p3 = cute.arch.shuffle_sync_bfly(h3, offset=stride)
+        if (lane & Int32(stride)) != Int32(0):
+            h0 = p0 - h0
+            h1 = p1 - h1
+            h2 = p2 - h2
+            h3 = p3 - h3
+        else:
+            h0 = p0 + h0
+            h1 = p1 + h1
+            h2 = p2 + h2
+            h3 = p3 + h3
+    return h0, h1, h2, h3
+
+
+@cute.jit
+def _p8_had128_quad_reference_order(
+    v0: cutlass.Float32,
+    v1: cutlass.Float32,
+    v2: cutlass.Float32,
+    v3: cutlass.Float32,
+    lane: Int32,
+):
+    """H128 with the CPU reference's one correctly-rounded terminal divide."""
+
+    h0, h1, h2, h3 = _p8_had128_quad_unnormalized(v0, v1, v2, v3, lane)
+    divisor = cutlass.Float32(_P8_SQRT128_F32)
+    return (
+        div_rn_f32(h0, divisor),
+        div_rn_f32(h1, divisor),
+        div_rn_f32(h2, divisor),
+        div_rn_f32(h3, divisor),
+    )
+
+
+@cute.jit
+def _p8_h512_mix_reference_order(
+    x0: cutlass.Float32,
+    x1: cutlass.Float32,
+    x2: cutlass.Float32,
+    x3: cutlass.Float32,
+):
+    """Finish H512 exactly as CPU butterfly strides 128 then 256."""
+
+    r0 = x0 + x1
+    r1 = x0 - x1
+    r2 = x2 + x3
+    r3 = x2 - x3
+    divisor = cutlass.Float32(_P8_SQRT512_F32)
+    return (
+        div_rn_f32(r0 + r2, divisor),
+        div_rn_f32(r1 + r3, divisor),
+        div_rn_f32(r0 - r2, divisor),
+        div_rn_f32(r1 - r3, divisor),
+    )
 
 
 @dsl_user_op
@@ -2411,7 +2498,7 @@ class MoEDynamicKernelBackend:
                 quarters[quarter][3] = cutlass.Float16(
                     a_input[row_base + col + Int32(3)].to(cutlass.Float32)
                 ).to(cutlass.Float32)
-                q0, q1, q2, q3 = _w4a8_had128_quad(
+                q0, q1, q2, q3 = _p8_had128_quad_unnormalized(
                     quarters[quarter][0],
                     quarters[quarter][1],
                     quarters[quarter][2],
@@ -2427,18 +2514,13 @@ class MoEDynamicKernelBackend:
                 x1 = quarters[1][component]
                 x2 = quarters[2][component]
                 x3 = quarters[3][component]
-                quarters[0][component] = cutlass.Float32(0.5) * (
-                    x0 + x1 + x2 + x3
+                y0, y1, y2, y3 = _p8_h512_mix_reference_order(
+                    x0, x1, x2, x3
                 )
-                quarters[1][component] = cutlass.Float32(0.5) * (
-                    x0 - x1 + x2 - x3
-                )
-                quarters[2][component] = cutlass.Float32(0.5) * (
-                    x0 + x1 - x2 - x3
-                )
-                quarters[3][component] = cutlass.Float32(0.5) * (
-                    x0 - x1 - x2 + x3
-                )
+                quarters[0][component] = y0
+                quarters[1][component] = y1
+                quarters[2][component] = y2
+                quarters[3][component] = y3
             for quarter in cutlass.range_constexpr(4):
                 output_col = (
                     h512 * Int32(512)
@@ -2457,7 +2539,9 @@ class MoEDynamicKernelBackend:
                 h3 = quarters[quarter][3] * scale_component[
                     output_col + Int32(3)
                 ].to(cutlass.Float32)
-                h0, h1, h2, h3 = _w4a8_had128_quad(h0, h1, h2, h3, lane)
+                h0, h1, h2, h3 = _p8_had128_quad_reference_order(
+                    h0, h1, h2, h3, lane
+                )
                 group = lane >> Int32(3)
                 values = cute.make_rmem_tensor((32,), cutlass.Float32)
                 block_max = cutlass.Float32(0.0)
@@ -3422,7 +3506,7 @@ class MoEDynamicKernelBackend:
                             quarters[quarter][3] = cutlass.Float16(
                                 a_input[m1_col + Int32(3)].to(cutlass.Float32)
                             ).to(cutlass.Float32)
-                            q0, q1, q2, q3 = _w4a8_had128_quad(
+                            q0, q1, q2, q3 = _p8_had128_quad_unnormalized(
                                 quarters[quarter][0], quarters[quarter][1],
                                 quarters[quarter][2], quarters[quarter][3],
                                 m1_lane_id,
@@ -3436,10 +3520,13 @@ class MoEDynamicKernelBackend:
                             x1 = quarters[1][component]
                             x2 = quarters[2][component]
                             x3 = quarters[3][component]
-                            quarters[0][component] = cutlass.Float32(0.5) * (x0 + x1 + x2 + x3)
-                            quarters[1][component] = cutlass.Float32(0.5) * (x0 - x1 + x2 - x3)
-                            quarters[2][component] = cutlass.Float32(0.5) * (x0 + x1 - x2 - x3)
-                            quarters[3][component] = cutlass.Float32(0.5) * (x0 - x1 - x2 + x3)
+                            y0, y1, y2, y3 = _p8_h512_mix_reference_order(
+                                x0, x1, x2, x3
+                            )
+                            quarters[0][component] = y0
+                            quarters[1][component] = y1
+                            quarters[2][component] = y2
+                            quarters[3][component] = y3
                         for quarter in cutlass.range_constexpr(4):
                             output_col = (
                                 m1_h512 * Int32(512)
@@ -3450,7 +3537,7 @@ class MoEDynamicKernelBackend:
                             h1 = quarters[quarter][1] * trellis_rotations[output_col + Int32(1)].to(cutlass.Float32)
                             h2 = quarters[quarter][2] * trellis_rotations[output_col + Int32(2)].to(cutlass.Float32)
                             h3 = quarters[quarter][3] * trellis_rotations[output_col + Int32(3)].to(cutlass.Float32)
-                            h0, h1, h2, h3 = _w4a8_had128_quad(
+                            h0, h1, h2, h3 = _p8_had128_quad_reference_order(
                                 h0, h1, h2, h3, m1_lane_id
                             )
                             m1_group = m1_lane_id >> Int32(3)
