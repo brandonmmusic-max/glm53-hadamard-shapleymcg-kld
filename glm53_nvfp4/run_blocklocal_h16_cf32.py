@@ -12,7 +12,7 @@ from pathlib import Path
 from .shard_index import sha256_file
 
 
-SCHEMA = "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v2"
+SCHEMA = "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3"
 
 
 def _verify_file(item: dict[str, object]) -> None:

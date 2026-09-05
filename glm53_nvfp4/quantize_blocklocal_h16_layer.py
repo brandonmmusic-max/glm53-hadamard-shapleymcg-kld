@@ -310,7 +310,8 @@ def main() -> None:
         "expert_range": f"{args.expert_start}:{args.expert_end}",
         "transform": "per-expert-per-projection-per-K16 D-P-H16",
         "descriptor_bank": "procedural structured_hadamard16 bank-v1, 256 entries",
-        "format": "ModelOpt NVFP4 E2M1/E4M3-per-16/FP32-global",
+        "format": "pt",
+        "weight_format": "ModelOpt NVFP4 E2M1/E4M3-per-16/FP32-global",
         "ldlq": "false",
     }
     args.dense_output.parent.mkdir(parents=True, exist_ok=True)
