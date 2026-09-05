@@ -1433,6 +1433,24 @@ confirmation, and final roles remained unopened for this redesign branch.
   without retry. Full-model KLD/allocation remain gated separately.
 - See results/P8_INDEX_ORDER_DEVICE_V2.md.
 
+## 2026-09-05: Decision 64 — synthetic pass permits an integrated exact canary
+
+- Device-v2 passed five fresh GPU0 processes under planfa2b503...;
+  root251757... records2,300 checks and five matching short-output signatures
+  d7592d.... Independent analytic-hash replay passed; peak35C. No model,
+  teacher, protected role or speed measurement was involved.
+- Preserve candidate emitted source655236... and all kernel/probe sources.
+  Integrate only a one-time rank-tagged indexer-invocation receipt, without
+  the143-copy-kernel diagnostic observer, in a new worktree/plan.
+- Authorize three fresh CF0056 full2047 forced-M1 captures: correctedN128,
+  correctedN128 repeat, then correctedN64/consolidated scratch. Require exact
+  first-pair equality before starting the third; require exact equality of
+  the third with both controls. Any difference stops, with no retry/exclusion.
+- This is full-model canary closure, not conditional-fit32 KLD or final
+  five-run serving determinism. Tail omission remains a separate unchanged
+  defect; no final quality/allocation gate advances. See
+  results/P8_INDEX_ORDER_INTEGRATION_V1.md.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

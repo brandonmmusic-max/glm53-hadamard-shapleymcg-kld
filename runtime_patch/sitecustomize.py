@@ -18,10 +18,17 @@ if os.environ.get("GLM53_P8_INDEX_ORDER", ""):
     try:
         from p8_index_order import install as _install_index_order
         _install_index_order()
+        if os.environ.get("GLM53_P8_INDEX_ORDER_RECEIPT", ""):
+            from p8_index_order_receipt import install as _install_index_order_receipt
+            _install_index_order_receipt()
     except BaseException:
         import traceback
         traceback.print_exc()
         os._exit(78)
+
+
+if os.environ.get("GLM53_P8_INDEX_ORDER_RECEIPT", "") and not os.environ.get("GLM53_P8_INDEX_ORDER", ""):
+    os._exit(78)
 
 
 if os.environ.get("GLM53_P8_INDEX_TRACE", ""):
