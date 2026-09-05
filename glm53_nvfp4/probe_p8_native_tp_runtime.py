@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import statistics
 import sys
 from pathlib import Path
 
@@ -90,6 +91,8 @@ def main() -> None:
     parser.add_argument("--deterministic-output", action="store_true")
     parser.add_argument("--small-m-scheduler", action="store_true")
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--timing-warmups", type=int, default=0)
+    parser.add_argument("--timing-repeats", type=int, default=0)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
@@ -138,6 +141,30 @@ def main() -> None:
                 ).hexdigest()
             )
         actual = actual_runs[0]
+        timing = None
+        if args.timing_repeats:
+            if args.timing_warmups < 0 or args.timing_repeats < 1:
+                raise ValueError("timing counts must be nonnegative with at least one repeat")
+            for _ in range(args.timing_warmups):
+                runtime(x, weights, ids)
+            torch.cuda.synchronize()
+            samples = []
+            for _ in range(args.timing_repeats):
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                start.record()
+                runtime(x, weights, ids)
+                end.record()
+                end.synchronize()
+                samples.append(float(start.elapsed_time(end)))
+            timing = {
+                "warmups": args.timing_warmups,
+                "repeats": args.timing_repeats,
+                "samples_ms": samples,
+                "median_ms": statistics.median(samples),
+                "min_ms": min(samples),
+                "max_ms": max(samples),
+            }
         cosine = float(F.cosine_similarity(actual.reshape(1, -1), expected.reshape(1, -1)))
         relative_l2 = float((actual - expected).norm() / expected.norm().clamp_min(1e-9))
         bitwise_deterministic = len(set(output_hashes)) == 1
@@ -150,6 +177,7 @@ def main() -> None:
                 "output_sha256": output_hashes[0],
                 "output_sha256_runs": output_hashes,
                 "bitwise_deterministic": bitwise_deterministic,
+                "timing": timing,
                 "pass": bool(
                     torch.isfinite(actual).all()
                     and cosine > 0.995
