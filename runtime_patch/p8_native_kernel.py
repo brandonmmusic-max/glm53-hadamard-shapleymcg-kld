@@ -16,6 +16,7 @@ import torch
 from cutlass.base_dsl.compiler import OptLevel
 from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
+from p8_smallm_schedule import P8SmallMGeometry, use_small_m
 
 from b12x._lib.compiler import KernelCompileSpec, compile as b12x_compile
 from b12x._lib.utils import get_max_active_clusters
@@ -72,6 +73,7 @@ class P8NativeTPMoE:
         force_materialized: bool | None = None,
         mac_override: int | None = None,
         deterministic_output: bool = True,
+        small_m_scheduler: bool = False,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -85,6 +87,14 @@ class P8NativeTPMoE:
         self.force_materialized = force_materialized
         self.mac_override = None if mac_override is None else int(mac_override)
         self.deterministic_output = bool(deterministic_output)
+        # Explicit developmental opt-in. M2/M3 and prefill retain baseline
+        # selection; this is not enabled through a serving environment flag.
+        self.small_m_scheduler = bool(small_m_scheduler)
+        if self.small_m_scheduler and (
+            not self.deterministic_output or force_materialized is not None
+            or (topk, hidden, intermediate) != (8, 4096, 512)
+        ):
+            raise ValueError("P8 small-M requires deterministic GLM TP4 and automatic fallback")
         if self.mac_override is not None and self.mac_override <= 0:
             raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
@@ -183,13 +193,16 @@ class P8NativeTPMoE:
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_rotation = torch.zeros(1, dtype=torch.float16, device=self.device)
         self.ones = torch.ones(experts, dtype=torch.float32, device=self.device)
-        self._compiled: dict[bool, _CompiledArm] = {}
+        if self.small_m_scheduler and self.experts != 288:
+            raise ValueError("P8 small-M requires 288 experts")
+        self._compiled: dict[tuple[bool, bool], _CompiledArm] = {}
 
-    def _compile(self, materialized: bool) -> _CompiledArm:
-        cached = self._compiled.get(materialized)
+    def _compile(self, materialized: bool, small_m: bool = False) -> _CompiledArm:
+        cache_key = (materialized, small_m)
+        cached = self._compiled.get(cache_key)
         if cached is not None:
             return cached
-        tile_m = 64 if materialized else 16
+        tile_m = 64 if materialized and not small_m else 16
         mac = (
             self.mac_override
             if self.mac_override is not None
@@ -206,8 +219,9 @@ class P8NativeTPMoE:
             trellis_codebook="mcg",
             trellis_scaled=True,
             trellis_identity_boundary=True,
-            direct_routing=False,
+            direct_routing=small_m,
             materialize_intermediate=materialized,
+            p8_small_m=small_m,
             share_input_across_experts=materialized,
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
@@ -280,6 +294,7 @@ class P8NativeTPMoE:
                 "glm53.p8.native.tp4",
                 1,
                 ("materialized", int(materialized)),
+                ("small_m_scheduler", int(small_m)),
                 ("experts", self.experts),
                 ("hidden", self.hidden),
                 ("intermediate", self.intermediate),
@@ -293,7 +308,7 @@ class P8NativeTPMoE:
             dsl_compile_options=OptLevel(2),
         )
         arm = _CompiledArm(compiled=compiled, tile_m=tile_m, materialized=materialized, mac=mac)
-        self._compiled[materialized] = arm
+        self._compiled[cache_key] = arm
         return arm
 
     @torch.inference_mode()
@@ -316,12 +331,17 @@ class P8NativeTPMoE:
             if self.force_materialized is None
             else self.force_materialized
         )
-        arm = self._compile(materialized)
+        small_m = use_small_m(self.small_m_scheduler, m)
+        materialized = materialized or small_m
+        arm = self._compile(materialized, small_m=small_m)
         tile_m = arm.tile_m
         x = x.contiguous()
         flat_ids = topk_ids.to(dtype=torch.int32).contiguous().reshape(-1)
         flat_weights = topk_weights.to(dtype=torch.float32).contiguous().reshape(-1)
-        physical_tiles = self.experts + (m * self.topk + tile_m - 1) // tile_m
+        physical_tiles = (
+            P8SmallMGeometry().physical_tiles if small_m
+            else self.experts + (m * self.topk + tile_m - 1) // tile_m
+        )
         rows_padded = physical_tiles * tile_m
         gate_tile_count = ((2 * self.intermediate) // 128) // 2
         max_tasks = physical_tiles * max(gate_tile_count, 1)

@@ -821,6 +821,7 @@ class MoEDynamicKernelBackend:
         w4a8_repacked: bool = False,
         direct_routing: bool = False,
         materialize_intermediate: bool = False,
+        p8_small_m: bool = False,
         work_source: str = _WORK_SOURCE_MATERIALIZED_QUEUE,
         swiglu_limit: float | None = None,
         swiglu_alpha: float | None = None,
@@ -993,6 +994,16 @@ class MoEDynamicKernelBackend:
         self.w4a8_repacked = bool(w4a8_repacked)
         self.direct_routing = bool(direct_routing)
         self.materialize_intermediate = bool(materialize_intermediate)
+        self.p8_small_m = bool(p8_small_m)
+        if self.p8_small_m and not (
+            quant_recipe == "w4a8_trellis" and trellis_codebook == "mcg"
+            and trellis_bits == 4 and trellis_scaled and trellis_identity_boundary
+            and deterministic_output and w4a8_repacked and direct_routing
+            and materialize_intermediate and share_input_across_experts
+            and mma_tiler_mn == (16, 128) and activation == "silu"
+            and num_topk == 8 and not trellis_coupled and not trellis_direct_lut
+        ):
+            raise ValueError("P8 small-M requires the frozen M1 scaled-MCG contract")
         self.w4a8_m1_materialized = bool(
             self.w4a8_repacked
             and self.direct_routing
@@ -1019,7 +1030,7 @@ class MoEDynamicKernelBackend:
         # union and is graph-safe: every grid is fixed from preplanned launch
         # capacity and no host value is read between launches.
         self.external_materialized_fc1 = self.w4a8_split_materialized
-        self.external_materialized_fc2 = self.w4a8_split_materialized
+        self.external_materialized_fc2 = self.w4a8_split_materialized or self.p8_small_m
         if int(num_topk) <= 0:
             raise ValueError(f"num_topk must be positive, got {num_topk}")
         self.num_topk = int(num_topk)
@@ -1074,6 +1085,9 @@ class MoEDynamicKernelBackend:
                 self.trellis_identity_boundary and self.w4a8_split_materialized
             ),
         )
+        if self.p8_small_m:
+            from b12x.moe._shared.kernels.p8_small_m import P8SmallMPhase2Kernel
+            self.materialized_phase2_kernel = P8SmallMPhase2Kernel()
         if self.w4a8_repacked and quant_recipe not in ("w4a8_mx", "w4a8_trellis"):
             raise ValueError(
                 "repacked W4A8 weights are only valid for w4a8_mx or w4a8_trellis"
@@ -1084,7 +1098,7 @@ class MoEDynamicKernelBackend:
                 quant_recipe == "w4a8_mx"
                 or (
                     quant_recipe == "w4a8_trellis"
-                    and mma_tiler_mn in {(64, 128), (128, 128)}
+                    and (mma_tiler_mn in {(64, 128), (128, 128)} or self.p8_small_m)
                 )
             )
             and mma_tiler_mn in {(16, 128), (32, 128), (64, 128), (128, 128)}
@@ -1098,13 +1112,14 @@ class MoEDynamicKernelBackend:
             (
                 quant_recipe == "nvfp4"
                 or (self.w4a8_repacked and quant_recipe == "w4a8_mx")
+                or self.p8_small_m
             )
             and work_source != _WORK_SOURCE_READY_QUEUE
             and (
                 not self.materialize_intermediate
                 or (
                     self.w4a8_repacked
-                    and quant_recipe == "w4a8_mx"
+                    and (quant_recipe == "w4a8_mx" or self.p8_small_m)
                     and mma_tiler_mn == (16, 128)
                 )
             )
@@ -2478,6 +2493,11 @@ class MoEDynamicKernelBackend:
                 self.tile_shape_mnk[1]
             )
         launch_params = DynamicLaunchParams(row_counts, gate_tile_cnt)
+        if cutlass.const_expr(self.p8_small_m):
+            assert a_input.shape[0] == 1, "P8 small-M is M1-only"
+            assert a_input.shape[1] == 4096, "P8 small-M hidden ABI"
+            assert gate_tile_cnt == 4, "P8 small-M intermediate ABI"
+            assert row_counts.shape[0] == 288, "P8 small-M expert ABI"
         if cutlass.const_expr(self.is_w4a8):
             assert sfb_w13_mx is not None and sfb_down_mx is not None, (
                 "w4a8 recipes require sfb_w13_mx and sfb_down_mx"
@@ -2648,6 +2668,11 @@ class MoEDynamicKernelBackend:
                 stream,
             )
         if cutlass.const_expr(self.external_materialized_fc2):
+            # M1 consumes original route-order ids; dense FC2 consumes grouped
+            # task metadata. Neither path reads routing state back on the host.
+            phase2_experts = task_expert
+            if cutlass.const_expr(self.p8_small_m):
+                phase2_experts = topk_ids
             self.materialized_phase2_kernel(
                 intermediate_u32,
                 down_rp,
@@ -2655,7 +2680,7 @@ class MoEDynamicKernelBackend:
                 scatter_output,
                 token_map,
                 token_weights,
-                task_expert,
+                phase2_experts,
                 task_valid_rows,
                 expert_tile_base,
                 down_alpha,
