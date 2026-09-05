@@ -91,6 +91,14 @@ also diverges at the same causal row259, despite matched source/config/tokens;
 the failure cannot be isolated to N64. The full panel remains stopped while
 shared-path repeatability is diagnosed. See the
 [canary outcome and repeated-control diagnostic](results/P8_FORCED_M1_CANARY_V3.md).
+The subsequent [two-process index trace](results/P8_INDEX_TRACE_V2.md)
+reproduced the first divergence at row259, layer7, TP rank1: identical recorded
+scorer inputs, attention query and cache produced the same selected set in a
+different order, with different attention output. Four recorded rows satisfy
+that same-row linkage rule. This supports the attention-order mechanism; it
+does not yet prove that a canonical-order intervention fixes full-model
+repeatability. No teacher KLD or throughput was measured in this instrumented
+diagnostic, and the full-panel closure gate remains pending.
 
 ### Earlier codec redesign results (2026-09-04)
 
