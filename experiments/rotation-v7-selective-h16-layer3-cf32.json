@@ -1,0 +1,89 @@
+{
+  "algorithm_exclusion": "LDLQ and BlockLDLQ are excluded",
+  "amendment_reason": "the forced-H16 bank was 0.790 percent worse end-to-end despite positive local gain versus fixed H16; include identity in the same one-byte bank so each physical block can decline rotation under the fitted block-Hessian objective",
+  "calibration": {
+    "count": 256,
+    "offset": 0,
+    "role": "fit",
+    "route_weight_power": 2,
+    "strategy": "domain-balanced"
+  },
+  "candidate": {
+    "descriptor": "one uint8 bank index per K16 block; index 0 identity; procedural zero-table H16 law",
+    "down_scale": "independent jointly refit FP32 scalar",
+    "gate_up_scale": "one jointly refit FP32 scalar after separate gate/up selection",
+    "global_scale_refits": 2,
+    "include_identity": true,
+    "name": "identity-inclusive-structured-bank256-blockgptq-all288",
+    "physical_format": "E2M1 packed weights plus E4M3/16 scales and FP32 tensor-family scale",
+    "quantizer": "full-Hessian GPTQ, static within-native-group act order, slab128",
+    "search_grid": 8,
+    "selection_method": "block-gptq-hessian",
+    "transform": "independent identity-or-D-P-H16 per expert, projection, and physical K16 block",
+    "variants_per_block": 256
+  },
+  "claim_boundary": "conditional-fit32 is reused adaptive data and cannot qualify a final claim",
+  "conditional_fit": {
+    "analysis": "paired BCa 95 percent CI over windows",
+    "development_advance_rule": "advance iff mean candidate KLD is lower than stock; report CI",
+    "primary_estimand": "equal-window mean candidate KLD minus stock KLD",
+    "run_order": [
+      "stock-modelopt-nvfp4",
+      "selective-h16-pseudoquant"
+    ],
+    "stopping_rule": "one complete fresh run per arm; no rerolls, substitutions, or exclusions",
+    "windows": 32
+  },
+  "created_at": "2026-09-05T12:12:22.520197+00:00",
+  "decision_before_result": true,
+  "experts": 288,
+  "inputs": {
+    "capture_manifest": {
+      "bytes": 310332,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "conditional_fit_roles": {
+      "bytes": 23117,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    },
+    "materializer": {
+      "bytes": 16789,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/quantize_blocklocal_h16_layer.py",
+      "sha256": "51afe9df73986bdce910f36ff1019cbfb6da1684ae5c4dd9f5a61285babf9ecc"
+    },
+    "roles": {
+      "bytes": 86518,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "selector": {
+      "bytes": 13232,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/screen_blocklocal_h16.py",
+      "sha256": "7193f29fe5a10de94e29764de172562b6d0202771a63ce8e7d2853977a250db6"
+    },
+    "source_index": {
+      "bytes": 4083163,
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "layer": 3,
+  "prior": {
+    "analysis": {
+      "bytes": 6990,
+      "path": "/media/brandonmusic/nvme1n1p3/glm53-rotation-v6/blocklocal-h16-layer3/full-all288/results/cf32-v3-paired-analysis.json",
+      "sha256": "0e9be417290750e95dfa5769de35b5fd57daf1711d3a0f4e70b780a6570072ac"
+    },
+    "full_build": {
+      "bytes": 2751,
+      "path": "/media/brandonmusic/nvme1n1p3/glm53-rotation-v6/blocklocal-h16-layer3/full-all288/FULL_BUILD_PT.json",
+      "sha256": "4258943a493cc4a7091dbba75e35e214f593ea62625b1d9cf720db4f26990d35"
+    }
+  },
+  "protected_boundary": "selection, confirmation, final, and 28 reserved confirmation logits remain unopened",
+  "pseudoquant_execution": "serve Q(W R_b) R_b.T as BF16 effective weights for KLD linkage only",
+  "role": "adaptive conditional-fit development after forced-H16 all-block null",
+  "schema": "glm53-rotation-v7.selective-h16-layer3-plan.v1"
+}
