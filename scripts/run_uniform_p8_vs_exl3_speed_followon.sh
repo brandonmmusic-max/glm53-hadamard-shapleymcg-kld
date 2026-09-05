@@ -64,6 +64,14 @@ if not values or not all(math.isfinite(v) for v in values):
 PY
 
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
+PYTHONPATH="$REPO" python3 -m glm53_nvfp4.audit_p8_fullmodel_completion \
+  --plan "$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.json" \
+  --roles "$CAMPAIGN/roles/roles-codec-conditional-fit32-v1.json" \
+  --manifest "$CAMPAIGN/kld-v3/run-p8-uniform-all42-native-cf32-v1.json" \
+  --analysis "$KLD_ANALYSIS" \
+  --log "$CAMPAIGN/kld-v3/sessions/p8-uniform-all42-native-cf32-v1/server-final.log" \
+  --records "$CAMPAIGN/kld-v3/records/p8-uniform-all42-native-cf32-v1" \
+  --output "$ROOT/fullmodel-completion-audit.json" | tee -a "$LOG"
 [ "$(sha "$ANALYZER")" = dae589bbf84fcedf221c926957c7ae65684d29012ca436c997eb9478f4f1036f ]
 [ "$(git -C "$RUNTIME_REPO" rev-parse HEAD)" = efd250b002e8da5a0e603253e0cd07ba6249c7b4 ]
 [ "$(sha "$RUNTIME_MANIFEST")" = e1cf316e8e969625eac6749866a12c298b5ae7fef3dde6ebba37b53ed74dc873 ]
