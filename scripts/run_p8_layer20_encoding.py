@@ -42,7 +42,8 @@ def main():
         command = list(launch['command'])
         for name,value in [('--layer',20),('--expert-start',start),('--expert-end',end),('--codec-output',codec),('--receipt',receipt)]:
             replace_arg(command,name,value)
-        prefix = OUT / f'layer20-{start:03d}-{end:03d}'
+        replace_arg(command,'--capture-root','/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/fit-capture-l20-l22-v1')
+        prefix = OUT / f'layer20-{start:03d}-{end:03d}-capture-relocation-v2'
         record = dict(command=command,start=time.time(),plan_sha256=sha(plan_path),prior_receipt_sha256=prior,gpu_snapshot=gpu,artifact_bytes_before=before)
         with Path(str(prefix)+'.launch.json').open('x') as f:
             json.dump(record,f,indent=2)
