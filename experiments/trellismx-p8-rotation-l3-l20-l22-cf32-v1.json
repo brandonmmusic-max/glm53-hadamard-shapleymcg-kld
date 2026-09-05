@@ -1,0 +1,113 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-plan.v1",
+  "status": "preregistered-before-layer20-layer22-encoding-or-target-kld",
+  "decision_before_result": true,
+  "decision_record": "DECISIONS_GLM53.md#26",
+  "question": "Does the frozen p00625 shared 16-lane middle butterfly improve a physical K4 TrellisMX-P8 encoder when installed at exactly layers 3, 20, and 22?",
+  "observation": "The already-opened direct-KLD interaction pilot's lowest observed nonempty coalition was unrotated P8 on layers 3,20,22 at mean KLD 0.037635898105918886; standalone ModelOpt p00625 failed tune32, so this test is restricted to the codec interaction and does not reopen angle search.",
+  "hypothesis": "Encoding W2 in the p00625 rotated basis and applying the exact staged rotation after SwiGLU will reduce mean end-to-end teacher KLD relative to an otherwise matched unrotated physical P8 overlay on the same three layers.",
+  "rivals": [
+    "The layer subset, rather than rotation, explains any advantage versus stock NVFP4.",
+    "The physical trellis encoder removes the proxy-level rotation effect.",
+    "Window-level serving noise is larger than the rotation effect.",
+    "A pseudoquant advantage fails device closure because the fused native kernel still has an identity boundary."
+  ],
+  "layers": [3, 20, 22],
+  "rotation": {
+    "id": "p00625",
+    "angle_pi": 0.0625,
+    "parameterization": "one layer-shared four-stage H16-wired SO(16) butterfly repeated over the 512-wide middle dimension",
+    "scope": "post-SwiGLU middle only; W2 is encoded as W2 @ R",
+    "per_layer_angle_search": false,
+    "table_bytes_at_runtime": 0
+  },
+  "encoder": {
+    "stored_rate_bpw": 4.25,
+    "bits": 4,
+    "law": "procedural-mcg-alpha2",
+    "alphabet": "E4M3",
+    "scales": "UE8M0 per 32 weights",
+    "error_feedback": "full-Hessian GPTQ-style between native groups",
+    "activation_order": "static within each native 16-column trellis group",
+    "scale_refits": 2,
+    "calibration_role": "fit",
+    "calibration_sampling": "domain-balanced routed samples, maximum 256 per expert",
+    "ldlq": false
+  },
+  "experimental_unit": "one conditional-fit window; token rows inside a window are subsamples",
+  "role": {
+    "name": "already-opened conditional-fit",
+    "windows": 32,
+    "domain_counts": {
+      "axis1_general": 8,
+      "axis2_legal": 8,
+      "axis3_code_agentic": 8,
+      "axis4_reasoning_termination": 8
+    },
+    "roles_path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+    "roles_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+    "protected": false
+  },
+  "arms": {
+    "stock": "fresh stock ModelOpt NVFP4 carrier",
+    "unrotated_p8": "fresh matched BF16 overlay with decoded physical K4 P8 weights at layers 3,20,22 and no middle rotation",
+    "rotated_p8": "fresh matched BF16 overlay with decoded physical K4 P8 weights at layers 3,20,22 plus exact p00625 middle rotation"
+  },
+  "run_order": ["stock", "unrotated_p8", "rotated_p8"],
+  "held_constant": [
+    "model revision and tokenizer",
+    "32 window identities and teacher logits",
+    "runtime image and patch tree",
+    "TP4, DCP4, MTP off, FP8 MLA KV, Humming MoE, eager mode",
+    "InstantTensor loading for both BF16 overlays",
+    "K4 P8 encoder, calibration, scale geometry, and layer set between unrotated and rotated arms"
+  ],
+  "primary_estimand": "equal-window mean of rotated_p8 KLD minus unrotated_p8 KLD",
+  "secondary_estimands": [
+    "rotated_p8 KLD minus stock KLD",
+    "paired window wins and per-domain deltas",
+    "paired BCa 95 percent intervals as nonblocking controls"
+  ],
+  "decision_rule": {
+    "rotation_interaction_pass": "rotated_p8 mean KLD is below unrotated_p8 mean KLD",
+    "combined_stock_win": "rotated_p8 mean KLD is below fresh stock mean KLD",
+    "advance_to_fused_prologue": "both rotation_interaction_pass and combined_stock_win are true",
+    "uncertainty": "paired BCa intervals and window wins are reported but do not veto development",
+    "failure": "If rotated_p8 does not beat unrotated_p8, reject this fixed three-layer p00625 interaction; do not search another proxy angle."
+  },
+  "stopping": "Encode all 288 experts once for each missing layer, then run all 32 windows once per arm; resume only incomplete windows with identical identities; no exclusions, substitutions, rerolls, or replacement angles.",
+  "storage": {
+    "klcstore_mode": "read-only source, calibration, roles, and teacher inputs; no new raw capture or build outputs",
+    "output_filesystem": "/media/brandonmusic/nvme1n1p3",
+    "available_bytes_before_plan": 228542021632,
+    "maximum_new_layer_build_bytes": 45000000000,
+    "capture_adapter_keep_payload": false,
+    "maximum_expected_transient_capture_bytes": 3000000000,
+    "minimum_free_margin_bytes": 21474836480
+  },
+  "build_roots": {
+    "layer3_existing": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v2",
+    "layer20": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l20-v1",
+    "layer22": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l22-v1",
+    "combined": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-l20-l22-v1",
+    "kld_run_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1"
+  },
+  "inputs": {
+    "git_commit": "0095452f5b84b1ef99efe3c1e296cc02f85032e5",
+    "layer3_full_build_sha256": "5e1523bc926c2e201d5ed3972a7cad1e43b402c14c73f26a7af7da0af5a1f3c6",
+    "layer3_design_sha256": "aa8fa31682b3412d58875baa73aad27312878006eb62b090433a7429e7ec1688",
+    "layer20_design_sha256": "f3c34c735402ae258c13068cb5377e7b3c031c09876697599c544c4dd145fde4",
+    "layer22_design_sha256": "936c8ae13bd54b44793ad13fb73d156dfa26c86df00421066c96d2b6e7567ea5",
+    "build_runner_sha256": "f42ebb0933e4c30d4c885d7287883e932f9f32618299ebb4c09d2aa97b9cda7d",
+    "kld_runner_sha256": "a78c5d0a2e9101efc0c00c660fc670f8a5f0bf02664322816efb70734d5ad0fe",
+    "pseudoquant_runtime_sha256": "55dfeaaac097751efb7d45c33ec3e1a8a4ce93954e77819ba68b877c097f39f3",
+    "prior_overlay_manifest_sha256": "34b9fe2b3379e392f115480306d355e83d7b74be32fd9f6299279a8fc8d8f3bf",
+    "prior_interaction_analysis_sha256": "8e7b677b39029f8ca945eec299ceed920c60e8da7c40509149c90a02172d8438"
+  },
+  "device_boundary": "Pseudoquant is the first gate. The current native P8 runtime remains identity-boundary and therefore cannot serve these rotated sidecars correctly until a separate fused-prologue implementation closes to pseudoquant.",
+  "isa_cost_statement": "P8 uses mxf8f6f4 at twice the NVFP4 MMA issue count; P8 is the quality product and no P4 speed claim is made by this experiment.",
+  "protected_roles_opened": [],
+  "protected_boundary": "selection, confirmation, final, and the 28 reserved confirmation logits remain unopened",
+  "k5": "reserved exact 5.25-bpw quality lever; not varied in this rotation experiment",
+  "ldlq": false
+}
