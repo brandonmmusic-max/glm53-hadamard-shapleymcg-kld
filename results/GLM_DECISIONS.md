@@ -1095,6 +1095,43 @@ confirmation, and final roles remained unopened for this redesign branch.
   numerical-closure test is still needed; ordinary prefill KLD does not
   exercise the changed M1 path. No protected roles are opened.
 
+## 2026-09-05: Decision 51 — fresh five-cold speed comparison
+
+- The successful 100.57 tok/s pilot advances to ten new serving processes:
+  five P8 N64/fused-scratch and five EXL3, in the fixed alternating order in
+  `experiments/p8-fc1-cold-comparison-v1.json`. No historical sample enters
+  the primary medians. Both arms use server-validated 32K prefill and
+  continuous-usage C1 decode with the same benchmark protocol.
+- Both P8 medians must strictly exceed the corresponding EXL3 medians.
+  This qualifies speed only, not quality or allocation. Different EP/DCP
+  topologies remain explicitly a system comparison.
+- Fresh byte verification passed for all 168 P8 routed sidecars and 120
+  EXL3 weight shards (337,357,865,080 bytes). The receipt is
+  `weights-identity-v1.json`, SHA-256
+  `8ce9c07dd89e307ad50aa7c4af93ffbdac51e0637a143ceb64add47f8651eefb`.
+  P8 carrier provenance is unchanged, not newly full-shard hashed. Per-run
+  stat checks detect changes after this payload audit.
+- Preserve any failure, stop the comparison without a silent rerun, and
+  withhold production restoration if an owned test container remains live
+  or uncertain. No protected role is opened.
+
+## 2026-09-05: Decision 52 — require complete single-row causal replay
+
+- Plan numerical closure for all 65,504 causal rows of the same fixed
+  conditional-fit32 panel, not just a favorable tail subset. One-token
+  prompts followed by 2,047 forced original token IDs produce one
+  one-token-prefill row and 2,046 true decode rows per window. Raw pre-mask
+  FP32 logits must align to teacher rows 0 through 2,046 without shifting.
+- Compare N128/no-fused-scratch and N64/fused-scratch in the same current
+  image and Model Runner V2/FULL-graph topology. First require exact logits
+  across the complete inventory, then report teacher KLD. Preserve a failed
+  exact gate rather than introducing post-hoc tolerance.
+- The standard custom-logits-processor interface would fall back to Model
+  Runner V1 in this vLLM revision. It is therefore not authorized as the
+  current-path closure endpoint. Develop an isolated V2 capture/force hook
+  and validate it before launching the full replay. The V1 component may
+  provide tested capture-storage logic, but is not serving-path proof.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
