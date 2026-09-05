@@ -64,10 +64,12 @@ samples do not enter its medians. The earlier failed comparison remains valid
 for its older runtime. See the [N64 pilot receipts](results/P8_FC1_INTEGRATED_V1.md).
 Allocation remains stopped pending speed and full-model M1 numerical closure.
 Ordinary prompt-prefill KLD exercises the unchanged M>1 fallback, so the closure
-endpoint is being built to replay every conditional-fit causal row with M1
+endpoint is built and CPU-reviewed to replay every conditional-fit causal row with M1
 under the same Model Runner V2/FULL-graph configuration. Its capture overhead
 must never be used for throughput claims. P8 remains the E4M3 compute product
 with twice NVFP4's MMA issue count, not the P4/NVFP4 speed-class endpoint.
+The [forced-M1 protocol](results/P8_FORCED_M1_PROTOCOL_V1.md) documents the
+pending real-device canary, full-panel capture and paired KLD analysis.
 
 ### Earlier codec redesign results (2026-09-04)
 
