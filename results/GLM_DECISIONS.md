@@ -1512,6 +1512,22 @@ confirmation, and final roles remained unopened for this redesign branch.
   causal-execution/runtime variables before attributing it. Both paths were
   no-MTP; small-M `M1` is not MTP-1.
 
+## 2026-09-05: Decision 68 — corrected tail V2 supports a material cause
+
+- V1 is retained as inconclusive failed-method evidence: its selector placed
+  tail entries near column 2048 and did not selectively exercise tail rows.
+- Before KLD, the actual device expander passed all lengths 1 through 2047.
+  Exactly the 1,536 rows with length modulo four in 1, 2, or 3 changed; all
+  511 modulo-zero rows were bitwise unchanged.
+- On the same four conditional-fit windows, attention backend
+  `B12X_MLA_SPARSE`, KV dtype `nvfp4_ds_mla`, native P8 MoE with E4M3
+  activations, and exact 4.25 bpw, tail V2 reduced mean KLD from 0.1174741 to
+  0.0515686: 56.1021%, four of four wins, paired percentile interval
+  [-0.1271547,-0.0264585]. The intervention passes its material-support rule.
+- This is a four-window serving diagnostic, not full32 qualification or speed.
+  Preserve the 5,072,629,760 raw bytes on NVMe and write nothing to klcstore.
+  See results/P8_TAIL_OMISSION_REPAIR_V2.md.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
