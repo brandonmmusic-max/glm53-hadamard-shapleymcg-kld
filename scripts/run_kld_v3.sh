@@ -26,6 +26,7 @@ P8_PSEUDOQUANT=${GLM53_P8_PSEUDOQUANT:-}
 P8_PSEUDOQUANT_ARM=${GLM53_P8_PSEUDOQUANT_ARM:-candidate}
 P8_BOUNDARY_FILES=${GLM53_P8_BOUNDARY_FILES:-}
 P8_POLICY=${GLM53_P8_POLICY:-}
+P8_MID_BUTTERFLY_ANGLE_PI=${GLM53_P8_MID_BUTTERFLY_ANGLE_PI:-}
 P8_NATIVE=${GLM53_P8_NATIVE:-}
 P8_NATIVE_SIDECAR_DIR=${GLM53_P8_NATIVE_SIDECAR_DIR:-}
 P8_NATIVE_LAYERS=${GLM53_P8_NATIVE_LAYERS:-3}
@@ -56,8 +57,9 @@ DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || [ "$DCP_SIZE" = 1 ] || { echo "routed-expert return requires GLM53_DCP_SIZE=1" >&2; exit 2; }
 [ "$DISABLE_EP" = 0 ] || [ "$DISABLE_EP" = 1 ] || { echo "GLM53_DISABLE_EP must be 0 or 1" >&2; exit 2; }
 [ -z "$P8_PSEUDOQUANT" ] || [ "$DISABLE_EP" = 1 ] || { echo "P8 pseudoquant reference requires GLM53_DISABLE_EP=1" >&2; exit 2; }
-[ -z "$P8_PSEUDOQUANT" ] || [ -n "$P8_BOUNDARY_FILES" ] || { echo "P8 pseudoquant requires GLM53_P8_BOUNDARY_FILES" >&2; exit 2; }
+[ -z "$P8_PSEUDOQUANT" ] || [ "$P8_PSEUDOQUANT_ARM" = mid-butterfly ] || [ -n "$P8_BOUNDARY_FILES" ] || { echo "P8 pseudoquant requires GLM53_P8_BOUNDARY_FILES" >&2; exit 2; }
 [ "$P8_PSEUDOQUANT_ARM" != hybrid ] || [ -n "$P8_POLICY" ] || { echo "hybrid P8 pseudoquant requires GLM53_P8_POLICY" >&2; exit 2; }
+[ "$P8_PSEUDOQUANT_ARM" != mid-butterfly ] || [ "$P8_MID_BUTTERFLY_ANGLE_PI" = 0.0625 ] || { echo "mid-butterfly P8 requires GLM53_P8_MID_BUTTERFLY_ANGLE_PI=0.0625" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ "$DISABLE_EP" = 1 ] || { echo "P8 native reference requires GLM53_DISABLE_EP=1" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -n "$P8_NATIVE_SIDECAR_DIR" ] || { echo "P8 native requires GLM53_P8_NATIVE_SIDECAR_DIR" >&2; exit 2; }
 [ -z "$P8_NATIVE" ] || [ -f "$P8_NATIVE_DESIGN" ] || { echo "P8 native design is missing: $P8_NATIVE_DESIGN" >&2; exit 2; }
@@ -161,6 +163,7 @@ if [ -n "$P8_PSEUDOQUANT" ]; then
     -e GLM53_P8_BOUNDARY_FILES="$P8_BOUNDARY_FILES"
   )
   [ -z "$P8_POLICY" ] || rotation_env+=( -e GLM53_P8_POLICY="$P8_POLICY" )
+  [ -z "$P8_MID_BUTTERFLY_ANGLE_PI" ] || rotation_env+=( -e GLM53_P8_MID_BUTTERFLY_ANGLE_PI="$P8_MID_BUTTERFLY_ANGLE_PI" )
   if [ ${#rotation_mount[@]} -eq 0 ]; then
     rotation_mount+=( -v "$RUNTIME_PATCH_ROOT:/runtime-patch:ro" )
   fi
@@ -282,6 +285,7 @@ docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
 [ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
+[ "$P8_PSEUDOQUANT_ARM" != mid-butterfly ] || grep -q 'GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .*arm=mid-butterfly angle_pi=0.0625 ' "$SESSION/server-ready.log"
 [ -z "$P8_NATIVE" ] || grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=$P8_NATIVE_LAYERS tp=4 .*K4 procedural_mcg E4M3 UE8M0_K32 identity deterministic_route_topk_sum physical_bpw=4.25 ldlq=false" "$SESSION/server-ready.log"
 [ -z "$P4_NATIVE" ] || grep -q "GLM53_P4_NATIVE_PATCH_ACTIVE layers=$P4_NATIVE_LAYERS tp=4 .*schema=glm53-p4-mcg-tp-rank.v2 .*mma=mxf4nvf4 .*physical_bpw=4.5 .*ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"

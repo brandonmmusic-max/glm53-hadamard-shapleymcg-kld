@@ -128,3 +128,29 @@ BCa interval is a nonblocking development control.  The kernel must then close
 to this exact staged pseudoquant arithmetic before any speed claim.  This does
 not open selection, confirmation, final, or the 28 reserved confirmation
 logits, and it does not yet qualify an all-42-layer product.
+
+## 22. 2026-09-05: standalone p00625 tune fails; preserve the precommitted interaction
+
+On the disjoint domain-balanced tune32 split, fresh stock measured
+`0.0363378694`, matched zero-angle GPTQ down measured `0.0364762391`, and
+`+pi/16` measured `0.0371841305`.  Candidate minus stock is
+`+0.0008462611` (`2.3289%` worse), with paired BCa 95% interval
+`[-0.00110295,+0.00468556]`; candidate minus zero is `+0.0007078914`.
+General and legal domain deltas versus stock are `+0.00308741` and
+`+0.00292800`, respectively.  All four tune checks fail.  Therefore no claim
+that the standalone 4.5-bpw ModelOpt rotation beats stock survives tune.
+
+The candidate KLD manifest completed before the wrapper failed.  The failure
+was caused by editing the active `run_kld_v3.sh` file while its long-lived
+shell was executing; the shifted lazy-read source resumed at `--config-id` and
+exited 127 after scoring.  Do not rerun or replace those windows.  The final
+server log was copied bit-for-bit to the expected rotation-log filename, the
+existing four-rank runtime verifier passed, and the frozen analyzer was run
+once over the three complete manifests.  The recovery receipt preserves those
+hashes and labels the event.
+
+Decision 21 predates this result and remains binding: run exactly one
+`+pi/16` by TrellisMX-P8 interaction at layer 3.  A combined pass may advance
+the codec-specific fused prologue, but it cannot rehabilitate the failed
+standalone rotation claim.  No alternative angle, protected role, or LDLQ path
+is introduced.

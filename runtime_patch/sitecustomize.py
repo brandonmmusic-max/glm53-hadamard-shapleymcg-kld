@@ -323,8 +323,28 @@ if P8_PSEUDOQUANT:
 
     _P8_LAYER_SPEC = os.environ.get("GLM53_P8_LAYERS", "3").strip()
     _P8_ARM = os.environ.get("GLM53_P8_PSEUDOQUANT_ARM", "candidate").strip().lower()
-    if _P8_ARM not in {"candidate", "control", "hybrid"}:
+    if _P8_ARM not in {"candidate", "control", "hybrid", "mid-butterfly"}:
         raise RuntimeError(f"invalid GLM53_P8_PSEUDOQUANT_ARM={_P8_ARM!r}")
+    _P8_MID_BUTTERFLY_ANGLE_PI = 0.0
+    if _P8_ARM == "mid-butterfly":
+        import math as _p8_math
+
+        _p8_angle_text = os.environ.get(
+            "GLM53_P8_MID_BUTTERFLY_ANGLE_PI", ""
+        ).strip()
+        try:
+            _P8_MID_BUTTERFLY_ANGLE_PI = float(_p8_angle_text)
+        except ValueError as error:
+            raise RuntimeError(
+                "mid-butterfly P8 requires a finite scalar angle_pi"
+            ) from error
+        if (
+            not _p8_math.isfinite(_P8_MID_BUTTERFLY_ANGLE_PI)
+            or _P8_MID_BUTTERFLY_ANGLE_PI != 0.0625
+        ):
+            raise RuntimeError(
+                "the frozen P8 interaction requires GLM53_P8_MID_BUTTERFLY_ANGLE_PI=0.0625"
+            )
     _P8_LAYERS = frozenset(int(value) for value in _P8_LAYER_SPEC.split(",") if value)
     if not _P8_LAYERS or not _P8_LAYERS.issubset(set(range(3, 45))):
         raise RuntimeError(f"invalid GLM53_P8_LAYERS={_P8_LAYER_SPEC!r}")
@@ -332,7 +352,7 @@ if P8_PSEUDOQUANT:
     _P8_BOUNDARY_PATHS = [
         value for value in os.environ.get("GLM53_P8_BOUNDARY_FILES", "").split(":") if value
     ]
-    if not _P8_BOUNDARY_PATHS:
+    if not _P8_BOUNDARY_PATHS and _P8_ARM != "mid-butterfly":
         raise RuntimeError("GLM53_P8_PSEUDOQUANT requires GLM53_P8_BOUNDARY_FILES")
     _P8_POLICY_STATES = tuple(1 for _ in range(288)) if _P8_ARM == "candidate" else tuple(0 for _ in range(288))
     _P8_H128_EXPERTS = frozenset(range(288)) if _P8_ARM == "candidate" else frozenset()
@@ -391,7 +411,11 @@ if P8_PSEUDOQUANT:
             _p8_part = _p8_handle.get_tensor("down_diagonal").float()
             _p8_parts.append(_p8_part)
             _p8_next += int(_p8_part.shape[0])
-    _P8_DOWN_DIAGONAL = _p8_torch.cat(_p8_parts, dim=0).contiguous()
+    _P8_DOWN_DIAGONAL = (
+        _p8_torch.cat(_p8_parts, dim=0).contiguous()
+        if _p8_parts
+        else _p8_torch.ones((288, 2048), dtype=_p8_torch.float32)
+    )
     if _P8_DOWN_DIAGONAL.ndim != 2 or not _p8_torch.isfinite(_P8_DOWN_DIAGONAL).all():
         raise RuntimeError("P8 boundary diagonal is invalid")
     if not (_P8_DOWN_DIAGONAL > 0).all():
@@ -426,6 +450,32 @@ if P8_PSEUDOQUANT:
         quantized = (blocks * inverse[..., None]).clamp(-448.0, 448.0)
         quantized = quantized.to(_p8_torch.float8_e4m3fn).float()
         return (quantized * scale[..., None]).reshape_as(values).to(_p8_torch.bfloat16)
+
+    def _p8_shared_butterfly16_staged(
+        values: _p8_torch.Tensor,
+    ) -> _p8_torch.Tensor:
+        """Exact staged reference for the fused +pi/16 middle transform."""
+        if values.shape[-1] % 16:
+            raise RuntimeError("P8 middle-butterfly width is not divisible by 16")
+        angle = _p8_torch.tensor(
+            _p8_math.pi * _P8_MID_BUTTERFLY_ANGLE_PI,
+            dtype=_p8_torch.float32,
+            device=values.device,
+        )
+        cosine = _p8_torch.cos(angle)
+        sine = _p8_torch.sin(angle)
+        work = values.to(_p8_torch.bfloat16).float().reshape(-1, 16).clone()
+        for stride in (1, 2, 4, 8):
+            previous = work.clone()
+            for base in range(0, 16, 2 * stride):
+                for offset in range(stride):
+                    left = base + offset
+                    right = left + stride
+                    a = previous[:, left]
+                    b = previous[:, right]
+                    work[:, left] = cosine * a - sine * b
+                    work[:, right] = sine * a + cosine * b
+        return work.reshape_as(values).to(_p8_torch.bfloat16)
 
     def _p8_forward(
         layer,
@@ -465,6 +515,8 @@ if P8_PSEUDOQUANT:
                 gate = gate.clamp(max=10.0)
                 up = up.clamp(-10.0, 10.0)
                 middle = _p8_F.silu(gate) * up
+            if _P8_ARM == "mid-butterfly":
+                middle = _p8_shared_butterfly16_staged(middle)
             middle = _p8_qdq_e4m3_k32(middle)
             partial = _p8_F.linear(middle, layer.w2_weight[expert])
             partial = partial * topk_weights[token_index, slot_index, None]
@@ -479,7 +531,8 @@ if P8_PSEUDOQUANT:
                 "GLM53_P8_PSEUDOQUANT_FORWARD "
                 f"layer={layer._glm53_p8_layer} rank={rank} "
                 f"active_experts={len(active)} carrier=E4M3_K32 arm={_P8_ARM} "
-                f"boundary={'hybrid_policy' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity')} "
+                f"boundary={'shared_butterfly_p00625' if _P8_ARM == 'mid-butterfly' else ('hybrid_policy' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity'))} "
+                f"angle_pi={_P8_MID_BUTTERFLY_ANGLE_PI} "
                 f"policy_sha256={_P8_POLICY_SHA256} ldlq=false",
                 flush=True,
             )
@@ -547,6 +600,7 @@ if P8_PSEUDOQUANT:
         "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE "
         f"layers={_P8_LAYER_SPEC} experts={_P8_DOWN_DIAGONAL.shape[0]} "
         f"intermediate={_P8_DOWN_DIAGONAL.shape[1]} arm={_P8_ARM} "
+        f"angle_pi={_P8_MID_BUTTERFLY_ANGLE_PI} "
         f"h128_experts={len(_P8_H128_EXPERTS)} policy_sha256={_P8_POLICY_SHA256} ldlq=false",
         flush=True,
     )
