@@ -23,7 +23,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from glm53_nvfp4 import p8_decode_analysis as metric
 
-CAPTURE_PLAN = REPO / 'experiments/p8-index-order-full-v1.json'
+CAPTURE_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-index-full-v1')
+CAPTURE_PLAN = CAPTURE_REPO / 'experiments/p8-index-order-full-v1.json'
 CAPTURE_PLAN_SHA256 = '6873cd1c066ad2845635cdb0db25df2352196240930d99ec213dc16b6a15133a'
 CAPTURE_ROOT = Path('/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-smallm-scheduler-v1/index-order-full-v1')
 CAPTURE_EXECUTION_SHA256 = '3a08163738655452c0c430a36ecb906e014b0bec7f5d8aeef80d70849ccac158'
@@ -343,7 +344,7 @@ def snapshot(destination=DEST):
     capture_plan = sealed_plan(CAPTURE_PLAN, CAPTURE_PLAN_SHA256)
     for path in (CAPTURE_PLAN, CAPTURE_PLAN.with_suffix('.sha256')):
         check(path)
-    stats.update(authenticate_sources(REPO, capture_plan.get('source_sha256'), 56))
+    stats.update(authenticate_sources(CAPTURE_REPO, capture_plan.get('source_sha256'), 56))
     input_stats = validate_input_stats(capture_plan)
     stats.update(input_stats)
     if (capture_plan.get('output') != str(CAPTURE_ROOT)

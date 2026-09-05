@@ -193,7 +193,7 @@ def campaign(tmp_path, monkeypatch):
     outer_sha = s.receipt(outer_path)['sha256']
 
     for name, value in {
-            'REPO': repo, 'CAPTURE_PLAN': capture_plan_path,
+            'REPO': repo, 'CAPTURE_REPO': repo, 'CAPTURE_PLAN': capture_plan_path,
             'CAPTURE_PLAN_SHA256': capture_plan_sha, 'CAPTURE_ROOT': capture_root,
             'CAPTURE_EXECUTION_SHA256': execution_sha, 'FULL_EXACT_SHA256': exact_sha,
             'V2_REPO': v2repo, 'V2_PLAN': v2_plan_path,
@@ -209,6 +209,11 @@ def campaign(tmp_path, monkeypatch):
             'capture_plan': capture_plan_path, 'v2_plan': v2_plan_path,
             'destination': tmp_path / 'snapshot', 'windows': windows,
             'invocation': invocation}
+
+
+def test_capture_plan_is_bound_to_frozen_capture_worktree_not_snapshot_checkout():
+    assert s.CAPTURE_PLAN.parent.parent == s.CAPTURE_REPO
+    assert s.CAPTURE_REPO != s.REPO
 
 
 def test_retained_systemd_success_requires_exact_terminal_state():

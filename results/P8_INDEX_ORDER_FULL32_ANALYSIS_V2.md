@@ -77,6 +77,11 @@ An independent SOL-high replay verified all 98 outer and 97 inner inventory
 entries, every per-window raw and NPZ pair, the aggregate, the terminal-success
 unit state, and the claim boundaries.
 
+The first sanitized-snapshot invocation failed closed before creating its
+destination because the newly integrated packager derived the frozen V1 plan
+path from the V2 checkout. The correction binds the original capture worktree
+explicitly and is regression-tested; it does not touch capture or KLD output.
+
 This is worse in absolute KLD than the earlier `0.04002139481676188` run by a
 factor of `2.9353` (`+193.53%`). That difference is real between the two
 observed systems, but it is not attributable to N64: N128 is identical here.
