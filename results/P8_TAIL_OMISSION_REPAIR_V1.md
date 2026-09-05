@@ -1,7 +1,9 @@
 # P8 fixed-order KPool tail repair
 
-Decision: **reject incomplete-tail omission as a material cause of the shared
-approximately 0.11 forced-decode endpoint.**
+Historical V1 result: **inconclusive because the intended intervention did not
+execute on the tail rows.** This file is retained as failed-method evidence; it
+must not be cited as a negative tail result. The corrected, device-closed V2
+result is in `results/P8_TAIL_OMISSION_REPAIR_V2.md`.
 
 The preregistered single-variable candidate kept the fixed compressed-pool
 order and placed each request's 1-3 incomplete current-pool tokens inside the
@@ -18,11 +20,11 @@ implementation were unchanged.
 | conditional-fit-0003 / reasoning | 0.0727031 | 0.0727031 | -0.000000002 |
 | Equal-window mean | 0.1174741 | 0.1238439 | +0.0063698 |
 
-The mean regressed by 5.4223%. Although three windows improved numerically,
-their changes were effectively zero; the general window caused a material
-regression. The paired four-window percentile interval for candidate-minus-
-baseline was `[-0.00000197,+0.01911143]`. The preregistered verdict is
-`material-tail-cause-rejected`; no reroll or alternative ordering was tried.
+The recorded V1 mean regressed by 5.4223%, but post-run row-diff inspection
+showed that three of four windows changed only one final row and the fourth
+also changed zero-tail rows. The patch inserted tail entries near column 2048
+rather than directly after valid history. Therefore the preregistered verdict
+`material-tail-cause-rejected` is mechanically invalidated, not rerolled.
 
 The successful run used 5,072,629,760 raw bytes on NVMe and none on klcstore.
 Two earlier host-only failures are retained: a recursive adapter before
