@@ -200,7 +200,7 @@ def verify(manifest_path: Path) -> dict[str, object]:
             errors.append(f"py_compile failed: {target}: {error.msg}")
 
     result: dict[str, object] = {
-        "schema": "glm53.p8-coupled-image-verification.v4",
+        "schema": "glm53.p8-coupled-image-verification.v5",
         "status": "pass" if not errors else "fail",
         "parent_image_id": manifest["parent_image_id"],
         "tail_v2_sha256": tail_actual,
