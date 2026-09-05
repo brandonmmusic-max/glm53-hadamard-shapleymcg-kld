@@ -1,0 +1,54 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 2,
+  "parent_plan": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1.json",
+    "sha256": "cf3576e009031f91f1e184c96a774ebeafc9f8a54fb54b7b509314906829c8d9"
+  },
+  "trigger": "The first unrotated three-layer overlay assembly found that the previously decoded output-aware layer-3 BF16 reference shards had been removed after their earlier validated use. The physical codec shards and their historical codec and dense hashes remain available. The incomplete overlay is preserved and no KLD arm was launched.",
+  "preserved_failure": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/failures/overlay-missing-l3-dense-v1",
+  "change": "Reconstruct the four output-aware unrotated layer-3 BF16 reference shards from the retained physical P8 codec with the bit-exact reference decoder, write only to the fast NVMe, and require every reconstructed shard to match its historical dense SHA-256 and byte count before overlay assembly.",
+  "source_codec_root": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/output-aware/layer3-full/codec",
+  "new_dense_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/unrotated-layer3-dense",
+  "shards": [
+    {
+      "experts": "000-072",
+      "codec_sha256": "8189317f6cf20a227bfa0234a7671dc39c007719f519e5dd3220032cb6d8848c",
+      "dense_sha256": "152c1cee441a4a674da2b21a318f8d371b524c7df7755732bbe7fc4c821c866e",
+      "dense_bytes": 3623908840
+    },
+    {
+      "experts": "072-144",
+      "codec_sha256": "db37922ba29380ae2b84b22c1ab5e161a9ee2237b2c7a0dd5bbdbdcb089ef26d",
+      "dense_sha256": "48c9ec4645a030ec15a05c8b8376d7b631e6651582f026a43587e91d1d6c9ada",
+      "dense_bytes": 3623909008
+    },
+    {
+      "experts": "144-216",
+      "codec_sha256": "cd90a68a7e516008cdde4ccfb2d297b17b2cb4c1ca9c79f97fa683b938d016e7",
+      "dense_sha256": "abe83dd6bcf2e873cbeb085835d1ec3de696e6fab937bc4f349453a38156899b",
+      "dense_bytes": 3623909088
+    },
+    {
+      "experts": "216-288",
+      "codec_sha256": "f08f288c125e5d83facda9caebf10a51c03611dd0b414932d84988e45e7efab0",
+      "dense_sha256": "8f64c229809fca00bb171b2393abb4b12cb584f6766e4db25251d4acde0c2df4",
+      "dense_bytes": 3623909088
+    }
+  ],
+  "storage": {
+    "maximum_additional_allocated_bytes": 14500000000,
+    "minimum_free_margin_bytes": 21474836480,
+    "observed_free_bytes_before_decode": 182536110080,
+    "klcstore_writes": false
+  },
+  "unchanged": [
+    "layer set 3,20,22",
+    "p00625 angle and rotation arithmetic",
+    "physical K4 P8 encoder and exact 4.25 bpw",
+    "three KLD arms, run order, role, metric, decision rules, and stopping",
+    "source checkpoint and all candidate artifacts",
+    "no LDLQ and no protected role opening"
+  ],
+  "interpretation": "A deterministic reconstruction and storage repair only. It changes no experimental variable. A byte count or SHA-256 mismatch aborts the experiment before any target KLD is opened."
+}

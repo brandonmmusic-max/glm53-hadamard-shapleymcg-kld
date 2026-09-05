@@ -237,3 +237,11 @@ required, and the build runner now validates the receipt before stopping the
 application or launching GPUs.  No encoder, angle, layer, KLD arm, threshold,
 or protected boundary changes.  Receipt:
 `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-1.json`.
+
+Amendment 2 preserves the failed first overlay assembly and permits only a
+bit-exact reconstruction of the removed output-aware layer-3 BF16 reference
+from the retained physical codec.  The four historical dense byte counts and
+SHA-256 hashes are hard pre-KLD gates, output goes to the fast NVMe, and the
+additional storage ceiling is 14.5 GB.  It changes no encoder, arm, role,
+threshold, or protected boundary.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-2.json`.
