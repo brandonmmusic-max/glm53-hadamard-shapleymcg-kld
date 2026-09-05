@@ -20,7 +20,7 @@ def _expert_bases(layer: int, start: int, stop: int) -> list[str]:
 
 
 def _load_rank(
-    chunks: list[Path], *, layer: int, rank: int, world_size: int
+    chunks: list[Path], *, layer: int, rank: int, world_size: int, bits: int = 4
 ) -> tuple[
     dict[str, torch.Tensor],
     list[dict[str, object]],
@@ -53,14 +53,17 @@ def _load_rank(
             if metadata.get("design_sha256"):
                 source_designs.add(metadata["design_sha256"])
             rotated = schema == "glm53-rotated-hessian-trellis-p8-layer-chunk.v1"
+            if rotated and bits != 4:
+                raise RuntimeError("the historical p00625 arm is K4-only")
             if (
                 schema not in {
                     "glm53-p8-identity-mcg-layer-chunk.v1",
                     "glm53-hessian-trellis-p8-layer-chunk.v2",
+                    "glm53-hessian-trellis-p8-k5-layer-chunk.v1",
                     "glm53-rotated-hessian-trellis-p8-layer-chunk.v1",
                 }
                 or metadata.get("role") != "physical-codec"
-                or metadata.get("bits") != "4"
+                or metadata.get("bits") != str(bits)
                 or metadata.get("alphabet") != "e4m3"
                 or metadata.get("block_size") != "32"
                 or metadata.get("scale") not in {"ue8m0", "ue8m0-k32"}
@@ -131,6 +134,7 @@ def _load_rank(
     source_schema = next(iter(source_schemas))
     if source_schema in {
         "glm53-hessian-trellis-p8-layer-chunk.v2",
+        "glm53-hessian-trellis-p8-k5-layer-chunk.v1",
         "glm53-rotated-hessian-trellis-p8-layer-chunk.v1",
     }:
         if len(source_designs) != 1:
@@ -165,6 +169,7 @@ def main() -> None:
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--layer", type=int, default=3)
     parser.add_argument("--world-size", type=int, default=4)
+    parser.add_argument("--bits", type=int, choices=(4, 5), default=4)
     args = parser.parse_args()
     if args.world_size != 4:
         raise ValueError("this frozen product currently targets TP4")
@@ -176,8 +181,8 @@ def main() -> None:
         "schema": "glm53-p8-mcg-tp4-sidecars.v2",
         "layer": args.layer,
         "world_size": args.world_size,
-        "bits": 4,
-        "physical_bpw": 4.25,
+        "bits": args.bits,
+        "physical_bpw": args.bits + 0.25,
         "law": "procedural-mcg-alpha2",
         "alphabet": "e4m3",
         "scale": "ue8m0-k32",
@@ -188,7 +193,11 @@ def main() -> None:
     }
     for rank in range(args.world_size):
         tensors, sources, source_schema, source_design, source_boundary, source_angle = _load_rank(
-            args.chunk, layer=args.layer, rank=rank, world_size=args.world_size
+            args.chunk,
+            layer=args.layer,
+            rank=rank,
+            world_size=args.world_size,
+            bits=args.bits,
         )
         if receipt["boundary"] is None:
             receipt["boundary"] = source_boundary
@@ -206,8 +215,11 @@ def main() -> None:
             tensor.numel() * tensor.element_size() for tensor in tensors.values()
         )
         payload_bpw = payload_bytes * 8.0 / logical_elements
-        if payload_bpw != 4.25:
-            raise RuntimeError(f"rank {rank} payload is {payload_bpw} bpw, expected 4.25")
+        expected_bpw = args.bits + 0.25
+        if payload_bpw != expected_bpw:
+            raise RuntimeError(
+                f"rank {rank} payload is {payload_bpw} bpw, expected {expected_bpw}"
+            )
         save_file(
             tensors,
             output,
@@ -218,7 +230,7 @@ def main() -> None:
                 "layer": str(args.layer),
                 "rank": str(rank),
                 "world_size": str(args.world_size),
-                "bits": "4",
+                "bits": str(args.bits),
                 "alphabet": "e4m3",
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",

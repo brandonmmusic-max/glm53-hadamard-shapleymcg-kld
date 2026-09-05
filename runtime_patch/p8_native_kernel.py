@@ -1,6 +1,6 @@
 """Experimental TP-local P8 procedural-MCG MoE runtime for GLM-5.3.
 
-This is a direct device path: the K4 trellis stream is decoded to E4M3 inside
+This is a direct device path: a K4 or K5 trellis stream is decoded to E4M3 inside
 the MMA kernel and physical UE8M0/32 scales are consumed by the tensor core.
 It implements the frozen TP4 identity-boundary P8 contract for any GLM routed
 layer whose sidecar carries the matching immutable layer identity.
@@ -117,11 +117,15 @@ class P8NativeTPMoE:
             metadata = src.metadata() or {}
             schema = metadata.get("schema")
             source_design_sha256 = metadata.get("source_design_sha256")
+            bits_text = metadata.get("bits", "")
+            if bits_text not in {"4", "5"}:
+                raise RuntimeError(f"invalid P8 trellis rate: {bits_text!r}")
+            self.trellis_bits = int(bits_text)
             required = {
                 "layer": str(self.layer),
                 "rank": str(self.tp_rank),
                 "world_size": "4",
-                "bits": "4",
+                "bits": bits_text,
                 "alphabet": "e4m3",
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",
@@ -156,9 +160,14 @@ class P8NativeTPMoE:
             w2_scale = src.get_tensor("w2_scale_ue8m0")
         self.source_design_sha256 = source_design_sha256
         experts = int(w13.shape[1])
-        if tuple(w13.shape) != (2, experts, hidden // 16, intermediate // 16, 64):
+        stream_words = 16 * self.trellis_bits
+        if tuple(w13.shape) != (
+            2, experts, hidden // 16, intermediate // 16, stream_words
+        ):
             raise RuntimeError(f"unexpected W13 trellis shape {tuple(w13.shape)}")
-        if tuple(w2.shape) != (experts, intermediate // 16, hidden // 16, 64):
+        if tuple(w2.shape) != (
+            experts, intermediate // 16, hidden // 16, stream_words
+        ):
             raise RuntimeError(f"unexpected W2 trellis shape {tuple(w2.shape)}")
         if tuple(w13_scale.shape) != (experts, 2 * intermediate, hidden // 32):
             raise RuntimeError(f"unexpected W13 scale shape {tuple(w13_scale.shape)}")
@@ -199,10 +208,16 @@ class P8NativeTPMoE:
         ).reshape(-1)
         # These are descriptor carriers only; they alias the trellis storage
         # above and therefore add zero payload bytes.
-        self.w13_dummy = w13_stream_storage.view(torch.uint8).reshape(
+        w13_dummy_bytes = experts * 2 * intermediate * (hidden // 2)
+        w2_dummy_bytes = experts * hidden * (intermediate // 2)
+        self.w13_dummy = w13_stream_storage.view(torch.uint8).reshape(-1)[
+            :w13_dummy_bytes
+        ].reshape(
             experts, 2 * intermediate, hidden // 2
         )
-        self.w2_dummy = w2_stream_storage.view(torch.uint8).reshape(
+        self.w2_dummy = w2_stream_storage.view(torch.uint8).reshape(-1)[
+            :w2_dummy_bytes
+        ].reshape(
             experts, hidden, intermediate // 2
         )
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
@@ -211,6 +226,8 @@ class P8NativeTPMoE:
         self.ones = torch.ones(experts, dtype=torch.float32, device=self.device)
         if self.small_m_scheduler and self.experts != 288:
             raise ValueError("P8 small-M requires 288 experts")
+        if self.small_m_scheduler and self.trellis_bits != 4:
+            raise ValueError("P8 K5 does not use the K4-only small-M specialization")
         self._compiled: dict[tuple[bool, bool], _CompiledArm] = {}
 
     def _compile(self, materialized: bool, small_m: bool = False) -> _CompiledArm:
@@ -231,7 +248,7 @@ class P8NativeTPMoE:
             quant_recipe="w4a8_trellis",
             w4a8_repacked=True,
             num_topk=self.topk,
-            trellis_bits=4,
+            trellis_bits=self.trellis_bits,
             trellis_codebook="mcg",
             trellis_scaled=True,
             trellis_identity_boundary=True,

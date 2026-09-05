@@ -31,11 +31,11 @@ def _middle(hidden: torch.Tensor, gate: torch.Tensor, up: torch.Tensor) -> torch
     return _qdq_e4m3_k32(F.silu(gate_output) * up_output, 1.0, "amax")
 
 
-def _quantize(weight: torch.Tensor, hessian: torch.Tensor):
+def _quantize(weight: torch.Tensor, hessian: torch.Tensor, *, bits: int = 4):
     return quantize_trellis_mxf_gptq(
         weight,
         hessian,
-        bits=4,
+        bits=bits,
         alphabet="e4m3",
         law="mcg",
         compander_scale=2.0,
@@ -58,6 +58,7 @@ def main() -> None:
     parser.add_argument("--expert-start", type=int, required=True)
     parser.add_argument("--expert-end", type=int, required=True)
     parser.add_argument("--samples", type=int, default=256)
+    parser.add_argument("--bits", type=int, choices=(4, 5), default=4)
     parser.add_argument("--device", default="cuda:0")
     args = parser.parse_args()
     outputs = [args.codec_output, args.receipt]
@@ -69,9 +70,13 @@ def main() -> None:
     if not (0 <= args.expert_start < args.expert_end <= 288):
         raise ValueError("invalid expert range")
     design = json.loads(args.design.read_text())
+    expected_design = (
+        ("glm53-p8.direct-kld-native-shapley-design.v2", "p8-k4-to-scalar-mxfp8")
+        if args.bits == 4
+        else ("glm53-p8.k5-arm-design.v1", "p8-k5-to-scalar-mxfp8")
+    )
     if (
-        design.get("schema") != "glm53-p8.direct-kld-native-shapley-design.v2"
-        or design.get("game") != "p8-k4-to-scalar-mxfp8"
+        (design.get("schema"), design.get("game")) != expected_design
         or design.get("ldlq") is not False
         or args.layer not in design.get("layers", [])
         or design.get("physical_scale_abi", {}).get("mma_consumption")
@@ -125,8 +130,12 @@ def main() -> None:
             for projection in ("gate_proj", "up_proj", "down_proj")
         }
         payloads = {
-            "gate_proj": _quantize(weights["gate_proj"], hidden_hessian),
-            "up_proj": _quantize(weights["up_proj"], hidden_hessian),
+            "gate_proj": _quantize(
+                weights["gate_proj"], hidden_hessian, bits=args.bits
+            ),
+            "up_proj": _quantize(
+                weights["up_proj"], hidden_hessian, bits=args.bits
+            ),
         }
         middle = _middle(
             hidden,
@@ -134,7 +143,9 @@ def main() -> None:
             payloads["up_proj"].reconstruction,
         )
         payloads["down_proj"] = _quantize(
-            weights["down_proj"], route_weighted_hessian(middle, route)
+            weights["down_proj"],
+            route_weighted_hessian(middle, route),
+            bits=args.bits,
         )
         for projection, payload in payloads.items():
             name = f"{base}.{projection}.weight"
@@ -174,11 +185,15 @@ def main() -> None:
         torch.cuda.empty_cache()
 
     metadata = {
-        "schema": "glm53-hessian-trellis-p8-layer-chunk.v2",
+        "schema": (
+            "glm53-hessian-trellis-p8-layer-chunk.v2"
+            if args.bits == 4
+            else "glm53-hessian-trellis-p8-k5-layer-chunk.v1"
+        ),
         "role": "physical-codec",
         "layer": str(args.layer),
         "expert_range": f"{args.expert_start}:{args.expert_end}",
-        "bits": "4",
+        "bits": str(args.bits),
         "alphabet": "e4m3",
         "block_size": "32",
         "scale": "ue8m0-k32",
@@ -193,8 +208,11 @@ def main() -> None:
         tensor.numel() * tensor.element_size() for tensor in codec_tensors.values()
     )
     payload_bpw = payload_bytes * 8.0 / logical_elements
-    if not math.isclose(payload_bpw, 4.25, rel_tol=0.0, abs_tol=1e-12):
-        raise RuntimeError(f"physical P8 payload is {payload_bpw} bpw, expected 4.25")
+    expected_bpw = args.bits + 0.25
+    if not math.isclose(payload_bpw, expected_bpw, rel_tol=0.0, abs_tol=1e-12):
+        raise RuntimeError(
+            f"physical P8 payload is {payload_bpw} bpw, expected {expected_bpw}"
+        )
     args.codec_output.parent.mkdir(parents=True, exist_ok=True)
     save_file(codec_tensors, str(args.codec_output), metadata=metadata)
     if args.dense_output is not None:
@@ -231,7 +249,7 @@ def main() -> None:
             "causal_down_hessian": True,
         },
         "algorithm": {
-            "bits": 4,
+            "bits": args.bits,
             "alphabet": "E4M3",
             "block_size": 32,
             "scale": "UE8M0",
@@ -240,7 +258,7 @@ def main() -> None:
             "error_feedback": "GPTQ-style full-Hessian between native trellis groups",
             "activation_order": "static within native 16-column group",
             "scale_refit_iterations": 2,
-            "physical_bpw": 4.25,
+            "physical_bpw": expected_bpw,
             "table_bytes": 0,
             "ldlq": False,
         },
