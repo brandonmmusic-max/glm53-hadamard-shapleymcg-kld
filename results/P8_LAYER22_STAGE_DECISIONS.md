@@ -36,3 +36,12 @@ twice the NVFP4 MMA issue count. No new end-to-end KLD result is claimed.
    `676382abd1e90a6c85f0c8f33d45441ecd45fd514fd7b63ce5610e732d8e4996`,
    index SHA256 `0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb`.
    These metadata checks are not a fresh hash audit of all stock weight shards.
+6. Pin `p8-layer22-loader-execution-v1.json` before its result: same immutable
+   v9 image and loader harness, explicit layer22 protocol, all four ranks,
+   source-exact postwrite prerequisite and fresh storage/production-off gate.
+7. Read-only CF32 availability check via `load_role_inputs(...,
+   verify_teacher_bytes=False)` passed all32 token-file hashes, manifest/Hub
+   identities, teacher file sizes and stored F32 tensor/header checks, with
+   exactly8 windows in each domain. Full teacher byte rehash remains required
+   at runtime-manifest preparation; this check must not be represented as it.
+   No protected logits were opened.
