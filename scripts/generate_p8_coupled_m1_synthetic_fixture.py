@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
+import sys
 import time
 from typing import Iterator, Sequence
 
@@ -23,6 +25,11 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    # Absolute ``python3 /path/to/script.py`` execution otherwise exposes only
+    # ``scripts/`` and cannot import the repository packages used by the
+    # post-write validator.
+    sys.path.insert(0, str(ROOT))
 TRANSFORM = ROOT / "experiments/p8-coupled-transform-draw0-silu10-v1.json"
 TRANSFORM_SHA256 = "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12"
 SEED = 20260905129
@@ -193,6 +200,21 @@ def iter_tensor_bytes(spec: TensorSpec, *, chunk_bytes: int = CHUNK_BYTES) -> It
             yield bytes(count)
         else:
             raise AssertionError(f"unhandled synthetic recipe for {spec.name}")
+
+
+def expected_tensor_hashes(geometry: Geometry) -> dict[str, str]:
+    """Recompute recipe identities without materializing a tensor plane."""
+    hashes: dict[str, str] = {}
+    for name, spec in tensor_specs(geometry).items():
+        digest = hashlib.sha256()
+        seen = 0
+        for raw in iter_tensor_bytes(spec):
+            digest.update(raw)
+            seen += len(raw)
+        if seen != spec.nbytes:
+            raise RuntimeError(f"seeded recipe byte count differs for {name}")
+        hashes[name] = digest.hexdigest()
+    return hashes
 
 
 def design_record(geometry: Geometry) -> dict[str, object]:
@@ -443,6 +465,168 @@ def _validate_budget(output_dir: Path, budget_root: Path, plan: dict[str, object
     }
 
 
+def _historical_external_budget(
+    path: Path,
+    expected_sha256: str,
+    budget_root: Path,
+    artifacts: Sequence[Path],
+) -> dict[str, object]:
+    """Validate the original write authorization without renewing it.
+
+    Resume mode never authorizes another payload write. The expired receipt is
+    accepted only to prove that the preserved artifacts were written during its
+    original interval. Its nested audit identities are retained as historical
+    claims rather than re-resolved against mutable working-tree paths.
+    """
+    if not path.is_absolute() or not path.is_file():
+        raise ValueError("historical external budget receipt path differs")
+    if sha256_file(path) != expected_sha256:
+        raise ValueError("historical external budget receipt identity differs")
+    record = json.loads(path.read_text())
+    if record.get("schema") != "glm53.p8-coupled.external-budget.v1":
+        raise ValueError("historical external budget receipt schema differs")
+    if record.get("budget_root") != str(budget_root.resolve()):
+        raise ValueError("historical external budget receipt is for another root")
+    if record.get("max_aggregate_bytes") != MAX_AGGREGATE_BYTES:
+        raise ValueError("historical external budget ceiling differs")
+    amount = record.get("external_bytes_upper_bound")
+    if type(amount) is not int or amount < 0:
+        raise ValueError("historical external charge must be nonnegative")
+    measured = record.get("measured_unix")
+    expires = record.get("valid_until_unix")
+    if (
+        type(measured) not in (int, float)
+        or type(expires) not in (int, float)
+        or measured > expires
+    ):
+        raise ValueError("historical external budget interval is invalid")
+    evidence = record.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise ValueError("historical external budget evidence is absent")
+    for item in evidence:
+        if (
+            not isinstance(item, dict)
+            or not Path(item.get("path", "")).is_absolute()
+            or not isinstance(item.get("sha256"), str)
+            or len(item["sha256"]) != 64
+        ):
+            raise ValueError("historical external budget evidence is malformed")
+    artifact_mtimes = {}
+    for artifact in artifacts:
+        modified = artifact.stat().st_mtime
+        if not measured <= modified <= expires:
+            raise ValueError(f"{artifact.name} was not written in the authorized interval")
+        artifact_mtimes[str(artifact.resolve())] = modified
+    return {
+        "external_bytes_upper_bound": amount,
+        "external_budget_receipt": str(path.resolve()),
+        "external_budget_receipt_sha256": expected_sha256,
+        "original_measured_unix": measured,
+        "original_valid_until_unix": expires,
+        "artifact_mtime_unix": artifact_mtimes,
+        "expired_receipt_used_for_new_payload_write": False,
+        "nested_evidence_revalidated_at_resume": False,
+    }
+
+
+def _validate_resume_budget(
+    output_dir: Path,
+    budget_root: Path,
+    *,
+    external_bytes: int,
+) -> dict[str, int]:
+    if not output_dir.is_absolute() or not output_dir.is_dir():
+        raise ValueError("resume output directory must be an existing absolute directory")
+    if not budget_root.is_absolute() or not budget_root.is_dir():
+        raise ValueError("resume budget root must be an existing absolute directory")
+    output = output_dir.resolve()
+    root = budget_root.resolve()
+    if root != output and root not in output.parents:
+        raise ValueError("resume output directory must be inside --budget-root")
+    existing = _tree_bytes(root)
+    projected = external_bytes + existing + RECEIPT_ALLOWANCE_BYTES
+    if projected > MAX_AGGREGATE_BYTES:
+        raise RuntimeError("resume receipt would exceed the 30 GB aggregate budget")
+    free = shutil.disk_usage(output).free
+    if free < RECEIPT_ALLOWANCE_BYTES:
+        raise RuntimeError("filesystem free bytes are below receipt allowance")
+    return {
+        "existing_budget_root_bytes_including_preserved_fixture": existing,
+        "new_write_allowance_bytes": RECEIPT_ALLOWANCE_BYTES,
+        "external_bytes_upper_bound": external_bytes,
+        "projected_aggregate_bytes": projected,
+        "filesystem_free_bytes_before": free,
+    }
+
+
+def _load_failure_receipt(
+    path: Path,
+    expected_sha256: str,
+    *,
+    external_budget_sha256: str,
+    sidecar: Path,
+    design: Path,
+) -> dict[str, object]:
+    if not path.is_absolute() or not path.is_file():
+        raise ValueError("failure receipt path differs")
+    if sha256_file(path) != expected_sha256:
+        raise ValueError("failure receipt identity differs")
+    record = json.loads(path.read_text())
+    required = {
+        "schema": "glm53.p8-coupled.synthetic-generation-failure.v1",
+        "status": "failed_post_write_validation",
+        "budget_receipt_sha256": external_budget_sha256,
+        "success_receipt_created": False,
+        "gpu_used": False,
+        "quality_claim_allowed": False,
+    }
+    if any(record.get(key) != value for key, value in required.items()):
+        raise ValueError("failure receipt contract differs")
+    if not isinstance(record.get("source_generation_commit"), str):
+        raise ValueError("failure receipt lacks generation source identity")
+    for key, artifact in (("sidecar", sidecar), ("design", design)):
+        identity = record.get(key)
+        if not isinstance(identity, dict):
+            raise ValueError(f"failure receipt lacks {key} identity")
+        if identity.get("path") != str(artifact.resolve()):
+            raise ValueError(f"failure receipt {key} path differs")
+        if identity.get("bytes") != artifact.stat().st_size:
+            raise ValueError(f"failure receipt {key} byte count differs")
+        if not isinstance(identity.get("sha256"), str):
+            raise ValueError(f"failure receipt {key} hash is absent")
+    return record
+
+
+def _write_receipt_no_replace(path: Path, record: dict[str, object]) -> None:
+    partial = path.with_suffix(path.suffix + ".partial")
+    if path.exists() or partial.exists():
+        raise FileExistsError(f"refusing to replace {path} or {partial}")
+    try:
+        with partial.open("xb") as stream:
+            stream.write(canonical_json_bytes(record))
+            stream.flush()
+            os.fsync(stream.fileno())
+        # A hard-link publish provides create-if-absent semantics; os.replace
+        # would silently overwrite a receipt created by a racing validator.
+        os.link(partial, path)
+        partial.unlink()
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except BaseException:
+        if partial.exists():
+            partial.unlink()
+        raise
+
+
+def _git_head() -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+
 def _write_sidecar(
     output: Path,
     geometry: Geometry,
@@ -516,12 +700,37 @@ def _validate_written(
     )
 
     specs = tensor_specs(geometry)
+    expected_header, expected_offsets = _header(
+        specs,
+        base_metadata(
+            geometry,
+            design_sha256=design_sha256,
+            tensor_hashes=tensor_hashes,
+        ),
+    )
+    expected_size = 8 + len(expected_header) + sum(
+        spec.nbytes for spec in specs.values()
+    )
+    if path.stat().st_size != expected_size:
+        raise RuntimeError("sidecar size differs from exact seeded fixture")
+    actual_hashes: dict[str, str] = {}
+    sidecar_digest = hashlib.sha256()
     with path.open("rb") as stream:
-        header_size = struct.unpack("<Q", stream.read(8))[0]
-        header = json.loads(stream.read(header_size))
+        size_raw = stream.read(8)
+        if len(size_raw) != 8:
+            raise RuntimeError("truncated safetensors header length")
+        header_size = struct.unpack("<Q", size_raw)[0]
+        header_raw = stream.read(header_size)
+        if header_size != len(expected_header) or header_raw != expected_header:
+            raise RuntimeError("sidecar header/metadata differs from exact seeded fixture")
+        header = json.loads(header_raw)
+        sidecar_digest.update(size_raw)
+        sidecar_digest.update(header_raw)
         data_begin = 8 + header_size
         for name, spec in specs.items():
             begin, end = header[name]["data_offsets"]
+            if (begin, end) != expected_offsets[name]:
+                raise RuntimeError(f"sidecar offsets differ for {name}")
             digest = hashlib.sha256()
             stream.seek(data_begin + begin)
             remaining = end - begin
@@ -530,9 +739,13 @@ def _validate_written(
                 if not raw:
                     raise RuntimeError(f"truncated tensor bytes for {name}")
                 digest.update(raw)
+                sidecar_digest.update(raw)
                 remaining -= len(raw)
-            if digest.hexdigest() != tensor_hashes[name]:
-                raise RuntimeError(f"post-write tensor hash mismatch for {name}")
+            actual_hashes[name] = digest.hexdigest()
+            if actual_hashes[name] != tensor_hashes[name]:
+                raise RuntimeError(f"seeded tensor hash mismatch for {name}")
+        if stream.tell() != expected_size or stream.read(1):
+            raise RuntimeError("sidecar payload extent differs from exact fixture")
 
     with safe_open(path, framework="pt", device="cpu") as source:
         metadata = source.metadata() or {}
@@ -630,6 +843,10 @@ def _validate_written(
     return {
         "runtime_cpu_schema_validation": "pass",
         "post_write_tensor_hash_validation": "pass",
+        "seeded_tensor_hash_validation": "pass",
+        "exact_header_validation": "pass",
+        "actual_tensor_sha256": actual_hashes,
+        "sidecar_sha256": sidecar_digest.hexdigest(),
         "expert0_k4_mcg_decode": decode_receipt,
         "signed_nonunit_scale_roles": True,
         "sampled_ue8m0_codes": {
@@ -678,7 +895,7 @@ def generate(output_dir: Path, budget_root: Path, *, external_budget_receipt: Pa
             "sidecar": {
                 "path": str(sidecar.resolve()),
                 "bytes": sidecar.stat().st_size,
-                "sha256": sha256_file(sidecar),
+                "sha256": validation["sidecar_sha256"],
             },
             "design": {
                 "path": str(design_path.resolve()),
@@ -712,31 +929,198 @@ def generate(output_dir: Path, budget_root: Path, *, external_budget_receipt: Pa
     return receipt
 
 
+def resume_validate_existing(
+    output_dir: Path,
+    budget_root: Path,
+    *,
+    external_budget_receipt: Path,
+    external_budget_sha256: str,
+    failure_receipt: Path,
+    failure_receipt_sha256: str,
+    geometry: Geometry = FULL_GEOMETRY,
+) -> dict[str, object]:
+    """Validate the preserved failed-generation payload and publish one receipt."""
+    geometry.validate(full=geometry == FULL_GEOMETRY)
+    if sha256_file(TRANSFORM) != TRANSFORM_SHA256:
+        raise RuntimeError("repository draw0 transform receipt differs")
+    if not output_dir.is_absolute() or not output_dir.is_dir():
+        raise ValueError("resume requires an existing absolute --output-dir")
+    sidecar = output_dir / "p8-synthetic-layer-003-tp4-rank-0.safetensors"
+    design_path = output_dir / "synthetic-design.json"
+    receipt_path = output_dir / "receipt.json"
+    forbidden = (
+        sidecar.with_suffix(sidecar.suffix + ".partial"),
+        receipt_path,
+        receipt_path.with_suffix(receipt_path.suffix + ".partial"),
+    )
+    if not sidecar.is_file() or not design_path.is_file():
+        raise FileNotFoundError("preserved sidecar and design are both required")
+    if any(path.exists() for path in forbidden):
+        raise FileExistsError("resume refuses partial payloads or an existing receipt")
+
+    plan = forecast(geometry)
+    if sidecar.stat().st_size != plan["sidecar_bytes"]:
+        raise RuntimeError("preserved sidecar size differs from frozen forecast")
+    expected_design = canonical_json_bytes(design_record(geometry))
+    actual_design = design_path.read_bytes()
+    if actual_design != expected_design:
+        raise RuntimeError("preserved design differs from the seeded recipe")
+    design_sha = hashlib.sha256(actual_design).hexdigest()
+
+    failure = _load_failure_receipt(
+        failure_receipt,
+        failure_receipt_sha256,
+        external_budget_sha256=external_budget_sha256,
+        sidecar=sidecar,
+        design=design_path,
+    )
+    historical = _historical_external_budget(
+        external_budget_receipt,
+        external_budget_sha256,
+        budget_root,
+        (sidecar, design_path),
+    )
+    budget = _validate_resume_budget(
+        output_dir,
+        budget_root,
+        external_bytes=int(historical["external_bytes_upper_bound"]),
+    )
+    budget.update(historical)
+
+    # Two bounded passes establish deterministic closure: synthesize expected
+    # hashes without retaining planes, then read and validate the existing file.
+    expected_hashes = expected_tensor_hashes(geometry)
+    validation = _validate_written(
+        sidecar,
+        geometry,
+        design_sha256=design_sha,
+        tensor_hashes=expected_hashes,
+    )
+    sidecar_sha = str(validation["sidecar_sha256"])
+    if failure["sidecar"]["sha256"] != sidecar_sha:
+        raise RuntimeError("preserved sidecar hash differs from failure receipt")
+    if failure["design"]["sha256"] != design_sha:
+        raise RuntimeError("preserved design hash differs from failure receipt")
+
+    receipt = {
+        "schema": "glm53.p8-coupled.synthetic-m1-fixture-resume-receipt.v1",
+        "status": "validated_existing_payload",
+        "synthetic": True,
+        "quality_claim_allowed": False,
+        "generated_from_model": False,
+        "regenerated_or_overwritten": False,
+        "gpu_used": False,
+        "plan": plan,
+        "budget": budget,
+        "recovery": {
+            "failure_receipt": str(failure_receipt.resolve()),
+            "failure_receipt_sha256": failure_receipt_sha256,
+            "source_generation_commit": failure["source_generation_commit"],
+            "original_error_type": failure.get("error_type"),
+            "original_error_message": failure.get("error_message"),
+        },
+        "validation_source": {
+            "repository": str(ROOT.resolve()),
+            "git_head": _git_head(),
+            "script": str(Path(__file__).resolve()),
+            "script_sha256": sha256_file(Path(__file__).resolve()),
+        },
+        "identities": {
+            "sidecar": {
+                "path": str(sidecar.resolve()),
+                "bytes": sidecar.stat().st_size,
+                "sha256": sidecar_sha,
+            },
+            "design": {
+                "path": str(design_path.resolve()),
+                "bytes": design_path.stat().st_size,
+                "sha256": design_sha,
+            },
+            "transform": {
+                "path": str(TRANSFORM.resolve()),
+                "bytes": TRANSFORM.stat().st_size,
+                "sha256": TRANSFORM_SHA256,
+            },
+        },
+        "tensor_sha256": expected_hashes,
+        "validation": validation,
+        "closure_command": [
+            "python3",
+            str((ROOT / "scripts/run_p8_coupled_m1_device_closure.py").resolve()),
+            "--execute",
+            "--image",
+            "sha256:<PIN_REPAIRED_IMAGE_ID>",
+            "--gpu-device",
+            "<IDLE_SM120_GPU>",
+            "--sidecar",
+            str(sidecar.resolve()),
+            "--sidecar-sha256",
+            sidecar_sha,
+            "--design",
+            str(design_path.resolve()),
+            "--design-sha256",
+            design_sha,
+            "--transform",
+            str(TRANSFORM.resolve()),
+            "--transform-sha256",
+            TRANSFORM_SHA256,
+            "--runtime-manifest-sha256",
+            "<PIN_REPAIRED_RUNTIME_MANIFEST>",
+            "--output",
+            str((output_dir / "device-closure-evidence").resolve()),
+        ],
+    }
+    _write_receipt_no_replace(receipt_path, receipt)
+    print(json.dumps(receipt, sort_keys=True))
+    return receipt
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--generate", action="store_true")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--generate", action="store_true")
+    action.add_argument("--resume-validate-existing", action="store_true")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--budget-root", type=Path)
     parser.add_argument("--external-budget-receipt", type=Path)
     parser.add_argument("--external-budget-sha256")
+    parser.add_argument("--failure-receipt", type=Path)
+    parser.add_argument("--failure-receipt-sha256")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    if not args.generate:
+    if not args.generate and not args.resume_validate_existing:
         if any(value is not None for value in (args.output_dir, args.budget_root,
-                                               args.external_budget_receipt, args.external_budget_sha256)):
-            raise ValueError("output arguments require explicit --generate")
+                                               args.external_budget_receipt,
+                                               args.external_budget_sha256,
+                                               args.failure_receipt,
+                                               args.failure_receipt_sha256)):
+            raise ValueError("output arguments require an explicit write/recovery action")
         print(json.dumps(forecast(), sort_keys=True))
         return
     if args.output_dir is None or args.budget_root is None:
-        raise ValueError("--generate requires --output-dir and --budget-root")
+        raise ValueError("fixture action requires --output-dir and --budget-root")
     if args.external_budget_receipt is None or args.external_budget_sha256 is None:
-        raise ValueError("--generate requires a pinned campaign-wide external budget receipt")
-    generate(args.output_dir, args.budget_root,
-             external_budget_receipt=args.external_budget_receipt,
-             external_budget_sha256=args.external_budget_sha256)
+        raise ValueError("fixture action requires a pinned campaign-wide external budget receipt")
+    if args.generate:
+        if args.failure_receipt is not None or args.failure_receipt_sha256 is not None:
+            raise ValueError("failure receipt arguments are resume-only")
+        generate(args.output_dir, args.budget_root,
+                 external_budget_receipt=args.external_budget_receipt,
+                 external_budget_sha256=args.external_budget_sha256)
+        return
+    if args.failure_receipt is None or args.failure_receipt_sha256 is None:
+        raise ValueError("resume requires the pinned original failure receipt")
+    resume_validate_existing(
+        args.output_dir,
+        args.budget_root,
+        external_budget_receipt=args.external_budget_receipt,
+        external_budget_sha256=args.external_budget_sha256,
+        failure_receipt=args.failure_receipt,
+        failure_receipt_sha256=args.failure_receipt_sha256,
+    )
 
 
 if __name__ == "__main__":

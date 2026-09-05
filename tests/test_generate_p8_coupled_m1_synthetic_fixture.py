@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pytest
@@ -87,6 +88,16 @@ def test_default_is_plan_only_with_exact_full_size() -> None:
     assert plan["max_aggregate_bytes"] == 30_000_000_000
 
 
+def test_absolute_script_execution_exposes_repository_packages() -> None:
+    code = (
+        "import importlib,runpy;"
+        f"runpy.run_path({str(SCRIPT)!r});"
+        "importlib.import_module('glm53_nvfp4.trellis_mxf');"
+        "importlib.import_module('runtime_patch.p8_coupled_scales')"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
 def test_splitmix_stream_is_chunk_boundary_invariant_and_nonconstant() -> None:
     module = _module()
     spec = module.TensorSpec("w2_trellis", "I16", (33,), 2, "test")
@@ -149,3 +160,119 @@ def test_full_generation_requires_explicit_fresh_budgeted_destination(tmp_path: 
         assert "fresh absolute" in str(error)
     else:
         raise AssertionError("existing output must be rejected")
+
+
+def _preserved_small_fixture(module, tmp_path: Path):
+    output = tmp_path / "rank0-v1"
+    output.mkdir()
+    geometry = module.SMALL_GEOMETRY
+    design = output / "synthetic-design.json"
+    design.write_bytes(module.canonical_json_bytes(module.design_record(geometry)))
+    sidecar = output / "p8-synthetic-layer-003-tp4-rank-0.safetensors"
+    module._write_sidecar(
+        sidecar, geometry, design_sha256=module.sha256_file(design)
+    )
+
+    evidence = tmp_path / "historical-audit.json"
+    evidence.write_text("{}")
+    external = tmp_path / "external-budget.json"
+    external.write_text(json.dumps({
+        "schema": "glm53.p8-coupled.external-budget.v1",
+        "budget_root": str(tmp_path.resolve()),
+        "max_aggregate_bytes": module.MAX_AGGREGATE_BYTES,
+        "external_bytes_upper_bound": 4_000_000_000,
+        "measured_unix": time.time() - 60,
+        "valid_until_unix": time.time() + 60,
+        "evidence": [{"path": str(evidence.resolve()), "sha256": "a" * 64}],
+    }))
+    external_sha = module.sha256_file(external)
+    failure = tmp_path / "generation-failure.json"
+    failure.write_text(json.dumps({
+        "schema": "glm53.p8-coupled.synthetic-generation-failure.v1",
+        "status": "failed_post_write_validation",
+        "source_generation_commit": "test-source",
+        "budget_receipt_sha256": external_sha,
+        "sidecar": {
+            "path": str(sidecar.resolve()), "bytes": sidecar.stat().st_size,
+            "sha256": module.sha256_file(sidecar),
+        },
+        "design": {
+            "path": str(design.resolve()), "bytes": design.stat().st_size,
+            "sha256": module.sha256_file(design),
+        },
+        "success_receipt_created": False,
+        "gpu_used": False,
+        "quality_claim_allowed": False,
+    }))
+    return {
+        "output": output,
+        "sidecar": sidecar,
+        "design": design,
+        "external": external,
+        "external_sha": external_sha,
+        "failure": failure,
+        "failure_sha": module.sha256_file(failure),
+        "geometry": geometry,
+    }
+
+
+def test_resume_validates_existing_bytes_without_rewriting_payload(tmp_path: Path) -> None:
+    module = _module()
+    fixture = _preserved_small_fixture(module, tmp_path)
+    before = {
+        key: (fixture[key].stat().st_mtime_ns, module.sha256_file(fixture[key]))
+        for key in ("sidecar", "design")
+    }
+    receipt = module.resume_validate_existing(
+        fixture["output"],
+        tmp_path,
+        external_budget_receipt=fixture["external"],
+        external_budget_sha256=fixture["external_sha"],
+        failure_receipt=fixture["failure"],
+        failure_receipt_sha256=fixture["failure_sha"],
+        geometry=fixture["geometry"],
+    )
+    after = {
+        key: (fixture[key].stat().st_mtime_ns, module.sha256_file(fixture[key]))
+        for key in ("sidecar", "design")
+    }
+    assert before == after
+    assert receipt["status"] == "validated_existing_payload"
+    assert receipt["regenerated_or_overwritten"] is False
+    assert receipt["validation"]["seeded_tensor_hash_validation"] == "pass"
+    assert receipt["identities"]["sidecar"]["sha256"] == before["sidecar"][1]
+    assert (fixture["output"] / "receipt.json").is_file()
+    with pytest.raises(FileExistsError, match="existing receipt"):
+        module.resume_validate_existing(
+            fixture["output"], tmp_path,
+            external_budget_receipt=fixture["external"],
+            external_budget_sha256=fixture["external_sha"],
+            failure_receipt=fixture["failure"],
+            failure_receipt_sha256=fixture["failure_sha"],
+            geometry=fixture["geometry"],
+        )
+
+
+def test_resume_rejects_seed_mismatch_without_receipt(tmp_path: Path) -> None:
+    module = _module()
+    fixture = _preserved_small_fixture(module, tmp_path)
+    with fixture["sidecar"].open("r+b") as stream:
+        stream.seek(-1, 2)
+        value = stream.read(1)
+        stream.seek(-1, 2)
+        stream.write(bytes([value[0] ^ 1]))
+    # Bind the simulated failure receipt to the corrupted artifact so the
+    # deterministic recipe check, not merely the archival hash, rejects it.
+    record = json.loads(fixture["failure"].read_text())
+    record["sidecar"]["sha256"] = module.sha256_file(fixture["sidecar"])
+    fixture["failure"].write_text(json.dumps(record))
+    with pytest.raises(RuntimeError, match="seeded tensor hash mismatch"):
+        module.resume_validate_existing(
+            fixture["output"], tmp_path,
+            external_budget_receipt=fixture["external"],
+            external_budget_sha256=fixture["external_sha"],
+            failure_receipt=fixture["failure"],
+            failure_receipt_sha256=module.sha256_file(fixture["failure"]),
+            geometry=fixture["geometry"],
+        )
+    assert not (fixture["output"] / "receipt.json").exists()
