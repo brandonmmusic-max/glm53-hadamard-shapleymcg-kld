@@ -943,6 +943,18 @@ confirmation, and final roles remained unopened for this redesign branch.
   monolithic per-K128 BF16 boundary. Protected roles stay closed and allocation
   stays stopped. See `experiments/p8-smallm-n256-device-v1.json`.
 
+## 2026-09-05: Decision 41 — N256 A reuse is valid but not the bottleneck
+
+- The independently audited candidate compiled and matched the N128x2 control
+  bit for bit on identical payloads across all four GPUs. Five graph replays
+  matched eager for each arm/device.
+- N256 reduced 100-replay medians by only 1.3766%, 1.7949%, 1.5025% and 1.6857%
+  on GPUs 0-3. It fails the frozen 35% threshold by a wide margin.
+- Stop this candidate before integrated serving. Preserve it as evidence that
+  duplicate FC2 A/SFA staging was not the material remaining bottleneck. Move
+  to an integrated trace of the closed N128x2 small-M path; allocation remains
+  stopped. See `results/P8_SMALLM_N256_DEVICE_V1.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
