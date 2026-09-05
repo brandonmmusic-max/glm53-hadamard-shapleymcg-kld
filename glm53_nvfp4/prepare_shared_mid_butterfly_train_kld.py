@@ -49,6 +49,7 @@ def main() -> None:
     parser.add_argument("--image", required=True)
     parser.add_argument("--attempt", default="v1")
     parser.add_argument("--prior-execution", type=Path)
+    parser.add_argument("--prior-failure-log", type=Path, action="append", default=[])
     parser.add_argument("--amendment-reason")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -92,6 +93,8 @@ def main() -> None:
     ).strip()
     if (args.prior_execution is None) != (args.amendment_reason is None):
         raise RuntimeError("prior execution and amendment reason are required together")
+    if args.prior_failure_log and args.prior_execution is None:
+        raise RuntimeError("failure logs require a prior execution amendment")
     run_ids = {
         arm: f"rotation-v8-shared-mid-butterfly-l3-{arm}-train32-{args.attempt}"
         for arm in RUN_ORDER
@@ -151,6 +154,9 @@ def main() -> None:
     if args.prior_execution is not None:
         result["amendment"] = {
             "prior_execution": _record(args.prior_execution),
+            "prior_failure_logs": [
+                _record(path) for path in args.prior_failure_log
+            ],
             "reason": args.amendment_reason,
             "changed_decision_fields": [],
         }
