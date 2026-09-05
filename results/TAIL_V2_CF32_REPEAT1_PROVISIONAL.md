@@ -60,3 +60,16 @@ B12X_MLA_SPARSE / nvfp4_ds_mla / native P8 mxf8f6f4 N64 / E4M3 activation /
 `aa9d7fe6227f0104a7cbd23f69ce4ac389489869018cba4a1569e6b53c03821e`.
 This establishes a full-panel two-start match for P8. The remaining three
 P8 repeats and EXL3 repeats are still needed for the five-start gate.
+
+EXL3 repeat 2 subsequently completed all 32 windows, with zero matching
+repeat-1 raw hashes. Same EXL3 conditions as above: B12X_MLA_SPARSE /
+nvfp4_ds_mla / B12X EXL3 full-expert / BF16 activation / 4.0 bpw,
+TP4/EP4/DCP4, graphs on, MTP off, tail V2. Its mean true-decode KLD is
+0.031244056862183633 (repeat 1: 0.031611840268931456); mean including the
+first prefill row is 0.03312469430313143. Repetition is a process-level
+diagnostic and does not add windows to the primary paired estimate.
+
+`round-02-exl3/execution.json` SHA-256:
+`fb15ace1b28979ca71b16fe0be9a4132e8df9acf6535e7bed915fb56b6652546`.
+The stipulated all-hashes-equal five-start EXL3 gate has failed; remaining
+scheduled runs characterize variation but cannot reverse that outcome.
