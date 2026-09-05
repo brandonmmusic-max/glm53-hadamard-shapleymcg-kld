@@ -31,10 +31,15 @@ def main() -> None:
             ROOT / "results/selective-h16-summary.json",
             ROOT / "results/codec-v2-redesign-summary.json",
             ROOT / "results/GLM_DECISIONS.md",
+            ROOT / "results/P8_FULLMODEL_CF32.md",
+            ROOT / "results/P8_SPEED_ATTEMPTS.md",
+            ROOT / "results/P8_SPEED_V2A3.md",
+            ROOT / "results/P8_DECODE_CPU_AUDIT.md",
             ROOT / "figures/current-layer3-kld.png",
             ROOT / "figures/current-kld.png",
             ROOT / "figures/selective-h16-generalization.png",
             ROOT / "figures/codec-v2-matched-kld.png",
+            ROOT / "figures/p8-speed-v2a3.svg",
         ]
     )
     lines = [f"{sha256(path)}  {path.relative_to(ROOT)}" for path in paths]

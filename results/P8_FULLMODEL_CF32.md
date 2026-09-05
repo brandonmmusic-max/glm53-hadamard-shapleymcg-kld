@@ -51,9 +51,9 @@ supported statement is “24.96% lower than this historical contextual row,”
 not prove whole-model pseudoquant/kernel equivalence, Shapley benefit,
 protected generalization, or five-run bitwise determinism.
 
-## Speed attempt and next gate
+## Speed gate outcome
 
-The queued speed comparison failed before its first measured request. The
+The original speed comparison failed before its first measured request. The
 EXL3 baseline rejected `checkpoint=2, runtime=4` in `create_weights`.
 The failed attempt is retained in `speed-v1-failed/`; neither arm has a speed
 result. Allocation remains stopped under the preregistered incomplete-arm
@@ -63,11 +63,14 @@ not relabeling this trial or silently changing TP. The P8 KLD result is intact.
 Source diagnosis: the stored experts are unsliced; the reader synthesizes the
 TP2 restriction. The existing four-GPU EXL3 service uses its explicit EP path.
 [Speed plan v2](../experiments/p8-uniform-all42-tp4-vs-exl3-speed-v2.json)
-therefore preregisters P8 TP4/no-EP/DCP1 versus EXL3 TP4/EP4/DCP4, target-only
-in both, retaining the same five-run speed thresholds. This is explicitly a
-different-topology product comparison; it does not retroactively repair v1.
-The [speed-attempt ledger](P8_SPEED_ATTEMPTS.md) preserves later operational
-failures, the receipt-incomplete baseline measurement, and each amended retry.
+therefore preregistered P8 TP4/no-EP/DCP1 versus EXL3 TP4/EP4/DCP4,
+target-only in both, retaining the same five-run thresholds. V2a3 completed
+all ten cold runs: P8 gained **11.00%** on median 32K prefill but lost
+**77.33%** on median C1 32K decode. The two-metric gate failed and allocation
+stopped. This is explicitly a different-topology product comparison; it does
+not repair v1 or identify codec causality. See the
+[complete speed report](P8_SPEED_V2A3.md). The
+[speed-attempt ledger](P8_SPEED_ATTEMPTS.md) preserves every prior failure.
 
 ## Reproduction and receipts
 

@@ -814,6 +814,28 @@ confirmation, and final roles remained unopened for this redesign branch.
   fail-closed thermal telemetry and verified restoration. Seventy-nine CPU
   tests pass; no device or trace validity is inferred from that result.
 
+## 2026-09-05: Decision 34 — product speed fails; preserve and diagnose decode
+
+- Speed-v2a3 completed five cold processes per arm with ten unique containers,
+  complete FULL graph-capture receipts on four ranks, stable within-arm
+  configurations, start temperatures at most 68 C and measured peaks at most
+  90 C. The complete receipt audit passed.
+- Frozen primary medians: P8/EXL3 32K prefill `6940/6252` tokens/s
+  (**+11.0045%**), and C1 32K decode `20.6937/91.2645` tokens/s
+  (**-77.3256%**). Both metrics had to win, so the product gate fails and the
+  native6 Shapley allocation game stops. Secondary 64K cells and every run are
+  retained in `results/P8_SPEED_V2A3.md`.
+- This is a different-topology system comparison: P8 TP4/no-EP/DCP1 versus
+  EXL3 TP4/EP4/DCP4, target-only and no MTP. Do not attribute the full decode
+  gap to the codec or transfer eager/FP8-KV KLD to graph/NVFP4-KV serving.
+- Read-only Astra audits establish genuine fusion: procedural MCG decoding
+  produces E4M3 register fragments inside the same kernel that issues
+  `mxf8f6f4`; no decoded-weight global buffer exists. At C1, deterministic
+  scheduling exposes only eight useful all-slice tasks, alongside graph-replayed
+  scratch clears and routing barriers. These are source-backed hypotheses,
+  not measured attribution. Continue the isolated Nsight diagnostic while
+  preserving this speed failure and allocation stop.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

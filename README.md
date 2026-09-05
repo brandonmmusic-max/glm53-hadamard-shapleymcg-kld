@@ -22,10 +22,12 @@ forward paths and 65,504 causal positions. Payload is 4.25 bpw; no LDLQ was used
 It is **24.96% lower than the historical contextual comparator** (28/32 wins),
 but that comparator differs in bitrate, quantization coverage and EP/DCP
 topology, so this is **not a matched NVFP4 or protected-quality win**.
-P8 uses twice NVFP4's MMA issue count. The speed comparison failed before
-measurement because the EXL3 loader rejected checkpoint TP2 versus runtime TP4;
-there is no speed pass, and allocation remains stopped pending a repaired gate.
-See [the full report and receipts](results/P8_FULLMODEL_CF32.md).
+P8 uses twice NVFP4's MMA issue count. The repaired five-cold-run product
+comparison measured **+11.00% 32K prefill but -77.33% C1 decode** versus the
+existing EXL3 serving topology. It failed the predeclared two-metric gate, so
+the allocation game is stopped. This is a different-topology system result,
+not codec-only causality. See the [KLD report](results/P8_FULLMODEL_CF32.md)
+and [speed report](results/P8_SPEED_V2A3.md).
 
 ### Earlier codec redesign results (2026-09-04)
 
@@ -164,8 +166,8 @@ full GLM dimensions (cosine `0.998940`–`0.998948`, relative L2
 MMA lane permutation, now fixed and preserved as an implementation diagnostic.
 This initial receipt cleared device arithmetic only. Subsequent layer-3 KLD
 and deterministic device tests are described below; the later all-layer KLD
-result is reported above, while speed remains unmeasured. The earlier W6A8 activation
-failure remains a negative control, and neither the uniform nor expert-masked
+result is reported above; its later product speed failure is reported above.
+The earlier W6A8 activation failure remains a negative control, and neither the uniform nor expert-masked
 encoder has passed the strict matched-path end-to-end KLD claim gate.
 
 The physical layer-3 kernel has now also completed its first end-to-end
@@ -198,7 +200,8 @@ equivalence within a 0.0014 margin. Against the decoded-GPTQ context row it
 was **3.0632% worse** at the point estimate, with an interval crossing zero.
 This is the later runtime lineage used by the all-layer build. Five repeated
 device outputs were bitwise identical for each tested monolithic/materialized
-M3/M33 case; full-model five-run determinism and speed remain open.
+M3/M33 case. Full-model five-run bitwise determinism remains open; product
+speed subsequently failed its five-cold-run gate.
 Receipts: [deterministic KLD closure](evidence/opened/codec-v2/p8-native-kld-closure-v2/analysis.json)
 and [contextual GPTQ comparison](evidence/opened/codec-v2/p8-native-kld-closure-v2/native-deterministic-vs-decoded-gptq-diagnostic.json).
 The historical plan has an inconsistent `written_at` field; see the
