@@ -1156,6 +1156,41 @@ confirmation, and final roles remained unopened for this redesign branch.
   Normal `analysis.json` requires successful raw-analyzer replay. Do not run
   this archiver against a still-active comparison.
 
+## 2026-09-05: Decision 54 — full forced-M1 replay and KLD analysis contract
+
+- After the fresh cold comparison completes its ten-run protocol, use the
+  reviewed capture image for four fresh starts in this order: canary N128,
+  canary N64, full-panel N128, full-panel N64. The first manifest window is
+  the fixed canary, with all 2,047 causal rows. Any canary bit mismatch stops
+  the full stage; no retry, tail substitution or tolerance change is allowed.
+- The full stage captures every row in all 32 conditional-fit windows, eight
+  per domain, with one-token input and the exact remaining 2,047 original
+  token IDs forced as output. Require matching original head dtype and width
+  across arms, all 168 native layer/rank dispatches, V2/FULL configuration,
+  exact forced-token responses and authenticated raw logits.
+- Score `KL(teacher || student)` in nats with the existing pinned CPU FP64
+  metric with eight Torch CPU threads, on all 65,504 positions without a row
+  shift. Report each window and
+  separate row-zero/true-decode diagnostics. The primary KLD aggregation is
+  the equal-window mean. Use 20,000 paired window bootstrap resamples with
+  seed 20260905 and the existing BCa implementation. These are panel-window
+  intervals, not independent quantization-pipeline replications.
+- If raw logits match bitwise, scoring one arm and reusing its metric values
+  for the other is permitted with explicit per-window identity receipts.
+  Identical window deltas have an undefined sampling interval, reported as
+  null with explanation, not an artificial zero-width BCa interval. A full
+  exact-logit failure remains a failure even if mean KLD decreases.
+- The cold protocol must complete successfully before capture, but a negative
+  speed result does not prevent measuring numerical correctness. Neither
+  capture timing nor a favorable quality diagnostic restarts allocation.
+  P8 remains E4M3 with twice NVFP4's MMA issue count, not the P4 endpoint.
+- Root-written capture artifacts may be made readable by the host only via
+  authenticated owned-container `chown -h` on explicit regular files under
+  the new capture directory. Preserve before/after ownership and identity
+  receipts; never recursively change model or cache ownership. On failure,
+  preserve partial outputs and withhold production restoration while owned
+  GPU containers remain live or their state is uncertain.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
