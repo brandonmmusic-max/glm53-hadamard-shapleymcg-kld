@@ -1,0 +1,27 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 4,
+  "parent_amendment": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-3.json",
+    "sha256": "15e71105ec1e229c73e2a0d5746c66c8f0e7c45d11819ae11da754b5ef6172cd"
+  },
+  "trigger": "Source-exact metadata reproduced all four historical byte counts but not the historical file hashes. Inspection showed the original encoder accumulated tensors by numeric expert and gate/up/down projection order, whereas the standalone decoder iterated lexically sorted trellis names. Safetensors records data offsets from insertion order even though header keys display lexically. Target KLD remained unopened.",
+  "preserved_failure": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/failures/layer3-reference-tensor-order-mismatch-v2",
+  "change": "Add an explicit historical-encoder-order mode that iterates numeric expert order with gate_proj, up_proj, down_proj within each expert. Combine it with source-metadata-exact and rerun the same four codec shards against the unchanged historical file hashes.",
+  "validation_before_rerun": {
+    "surviving_layer20_tensor_check": "current reference decoder exactly equals the original layer-20 expert-0 down-projection BF16 tensor",
+    "torch_equal": true,
+    "maximum_absolute_difference": 0.0,
+    "non_equal_elements": 0
+  },
+  "unchanged": [
+    "codec bits, codebook, trellis state, scales, and decoder arithmetic",
+    "all tensor names, dtypes, shapes, and values",
+    "historical byte counts and SHA-256 hard gates",
+    "layer set 3,20,22 and all experimental arms",
+    "run order, role, metric, decision rules, and stopping",
+    "14.5 GB storage ceiling and NVMe-only output",
+    "no LDLQ and no protected role opening"
+  ],
+  "interpretation": "Serialization-order correction only. It is diagnosed from the historical builder and a surviving bit-exact layer-20 control, not target KLD. The experiment remains blocked unless all four original layer-3 file hashes reproduce."
+}

@@ -1,6 +1,8 @@
 import pytest
 import torch
 
+from glm53_nvfp4.decode_trellis_mxf_bf16 import _historical_encoder_order
+
 from glm53_nvfp4.trellis_mxf import (
     alphabet_levels,
     nearest_levels,
@@ -11,6 +13,21 @@ from glm53_nvfp4.trellis_mxf import (
     unpack_ue8m0,
     unpack_scalar16_indices,
 )
+
+
+def test_historical_encoder_order_is_numeric_gate_up_down() -> None:
+    names = [
+        "model.layers.10.mlp.experts.10.down_proj.trellis",
+        "model.layers.10.mlp.experts.2.down_proj.trellis",
+        "model.layers.10.mlp.experts.2.up_proj.trellis",
+        "model.layers.10.mlp.experts.2.gate_proj.trellis",
+    ]
+    assert sorted(names, key=_historical_encoder_order) == [
+        "model.layers.10.mlp.experts.2.gate_proj.trellis",
+        "model.layers.10.mlp.experts.2.up_proj.trellis",
+        "model.layers.10.mlp.experts.2.down_proj.trellis",
+        "model.layers.10.mlp.experts.10.down_proj.trellis",
+    ]
 
 
 def test_native_alphabet_sizes_and_ranges() -> None:

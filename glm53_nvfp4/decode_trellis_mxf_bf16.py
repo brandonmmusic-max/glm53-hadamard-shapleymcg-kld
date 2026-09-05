@@ -14,6 +14,15 @@ from .shard_index import sha256_file
 from .trellis_mxf import decode_trellis_mxf, state_lut
 
 
+def _historical_encoder_order(name: str) -> tuple[int, int]:
+    expert = int(name.split(".experts.", 1)[1].split(".", 1)[0])
+    projection = name.split(f".experts.{expert}.", 1)[1].split(".", 1)[0]
+    projection_order = {"gate_proj": 0, "up_proj": 1, "down_proj": 2}
+    if projection not in projection_order:
+        raise ValueError(f"unsupported expert projection in {name}")
+    return expert, projection_order[projection]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--codec", type=Path, required=True)
@@ -25,6 +34,11 @@ def main() -> None:
         "--source-metadata-exact",
         action="store_true",
         help="preserve the codec metadata byte-for-byte instead of adding a decode role",
+    )
+    parser.add_argument(
+        "--historical-encoder-order",
+        action="store_true",
+        help="serialize tensors in the original numeric-expert gate/up/down order",
     )
     args = parser.parse_args()
     for path in (args.output, args.receipt):
@@ -52,6 +66,8 @@ def main() -> None:
         else:
             raise RuntimeError("codec has neither a stored nor procedural codebook")
         trellis_names = sorted(name for name in source.keys() if name.endswith(".trellis"))
+        if args.historical_encoder_order:
+            trellis_names.sort(key=_historical_encoder_order)
         if args.expert_limit is not None:
             if args.expert_limit <= 0:
                 raise ValueError("expert limit must be positive")
@@ -104,6 +120,11 @@ def main() -> None:
             "source-exact"
             if args.source_metadata_exact
             else "decoded-device-closure-reference"
+        ),
+        "tensor_order": (
+            "numeric-expert-gate-up-down"
+            if args.historical_encoder_order
+            else "lexical"
         ),
         "decode": "bit-exact procedural-MCG trellis plus E4M3 codebook and UE8M0/32 scales, then BF16 round",
         "elapsed_seconds": time.time() - started,

@@ -252,3 +252,12 @@ exactly 40 bytes larger without changing decoder arithmetic.  A new explicit
 source-metadata-exact mode reproduces the historical builder's serialization;
 the same four historical hashes remain mandatory before KLD.  Receipt:
 `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-3.json`.
+
+Amendment 4 preserves the second reconstruction failure: exact historical
+metadata restored the byte counts, while tensor insertion order still changed
+the file hashes.  The historical builder used numeric expert order and
+gate/up/down projection order; a surviving layer-20 shard proves the current
+decoder arithmetic remains tensor-exact.  A separate historical-order mode is
+now required together with source-exact metadata, with the original four
+hashes still mandatory.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-4.json`.
