@@ -56,5 +56,37 @@ closure of the known incomplete-KPool-tail omission. P8 still uses E4M3
 
 ## Result
 
-Pending the one sealed CPU-only analysis execution. This section will be
-appended from its immutable receipt; the plan above will not be rewritten.
+The single sealed CPU-only analysis completed successfully. No GPU was
+launched and no protected role was opened.
+
+- Mean KLD, N128: `0.11747562624547078` nats.
+- Mean KLD, N64/fused scratch: `0.11747562624547078` nats.
+- N64 minus N128: exactly `0.0`; all paired window values and NPZ outputs are
+  identical, so no sampling interval is inferred for the identically-zero
+  delta.
+- Equal-window 95% BCa interval for absolute KLD:
+  `[0.09262619134086884, 0.1508711690207086]`.
+- True-decode rows 1--2046 equal-window mean: `0.1156031843903463` nats.
+- Full result: 32 unique windows, eight per domain and 65,504 causal rows.
+- Outer execution SHA-256:
+  `a67f466084947759156737be705ccdfedc965d33c3d4bee9f172ab8e359faa23`.
+- Nested analysis SHA-256:
+  `83fa9f3700c8ad2ad7e2be77c42f4c682afb64d95a8bedf486ec02b3fbbfcb2c`.
+
+An independent SOL-high replay verified all 98 outer and 97 inner inventory
+entries, every per-window raw and NPZ pair, the aggregate, the terminal-success
+unit state, and the claim boundaries.
+
+This is worse in absolute KLD than the earlier `0.04002139481676188` run by a
+factor of `2.9353` (`+193.53%`). That difference is real between the two
+observed systems, but it is not attributable to N64: N128 is identical here.
+The runs share the conditional-fit32 window IDs, all 32 teacher hashes, metric
+code, TP4/noEP/DCP1 topology, carrier, all 168 P8 sidecars and no-MTP serving.
+The older run measured all 2,048 causal positions through one prompt-prefill
+execution, eager with FP8 MLA KV. This run measured one-token prefill followed
+by 2,047 serial forced decode steps, using FULL graphs, Model Runner V2,
+NVFP4 MLA KV, a newer capture image and the corrected-index/small-M runtime.
+Thirty of 32 windows are higher in the current run. Those variables were
+changed together, so this comparison does not identify which one caused the
+higher KLD. In these reports, `M1` means the small-M MoE matmul shape; it does
+not mean an MTP-1 speculative model.
