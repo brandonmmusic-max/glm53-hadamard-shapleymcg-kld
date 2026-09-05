@@ -1503,6 +1503,14 @@ confirmation, and final roles remained unopened for this redesign branch.
   and failure receipts. This remains conditional-fit absolute P8 KLD, with no
   matched NVFP4 improvement or protected-role claim. See
   results/P8_INDEX_ORDER_FULL32_ANALYSIS_V2.md.
+- The one amended analysis completed: N128=N64 exactly at mean KLD0.1174756262,
+  absolute window-BCa95%[0.0926261913,0.1508711690]. This closes the N64
+  optimization with zero numerical/KLD cost, but not product quality. The old
+  prompt-prefill/eager/FP8-KV result0.0400213948 is not directly comparable to
+  the new serial-decode/FULL-graph/V2-runner/NVFP4-KV/corrected-runtime system.
+  Preserve the observed +193.53% cross-system difference and isolate those
+  causal-execution/runtime variables before attributing it. Both paths were
+  no-MTP; small-M `M1` is not MTP-1.
 
 ## 2026-09-03: uniform rotation
 
