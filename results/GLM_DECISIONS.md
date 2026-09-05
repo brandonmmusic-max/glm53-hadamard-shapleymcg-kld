@@ -1482,7 +1482,9 @@ confirmation, and final roles remained unopened for this redesign branch.
   This is development conditional-fit evidence, opens no protected role,
   measures no speed, uses no LDLQ, and does not restart allocation.
 - Three SOL-high reviews returned GO after removing an unenforced in-plan
-  wall-time claim. See results/P8_INDEX_ORDER_FULL32_V1.md.
+  wall-time claim. Plan6873cd1... freezes56sources and32windows. A duplicate
+  concurrent prepare failed on create-only output without modifying the plan.
+  See results/P8_INDEX_ORDER_FULL32_V1.md.
 
 ## 2026-09-03: uniform rotation
 
