@@ -190,15 +190,21 @@ Receipt: `experiments/decode-path-matched-control-v1-prereg.json`.
 
 The sealed v1 stock start failed before writing raw logits because the shared EXL3 recipe requested `b12x`, which correctly rejected stock NVFP4's `swiglu_limit=10.0` contract. V2 changes only stock's MoE backend to its clamp-correct Humming path; EXL3 remains B12X. It also corrects the runner's container-name adapter so create, cleanup, and restoration authenticate the same exact target. All measurement inputs and gates remain fixed, v1 is preserved, and no v1 raw capture bytes were written. Receipt: `experiments/decode-path-matched-control-v2-amendment.json`.
 
-## Decision 25: incomplete KPool tail is not the shared serving defect (2026-09-05)
+## Decision 25: first incomplete-KPool-tail repair is inconclusive (corrected 2026-09-05)
 
 The fixed-order tail-consumed candidate completed on the four predeclared P8
 windows at the unchanged physical `4.25` bpw. Its equal-window mean KLD was
 `0.1238438916` versus frozen baseline `0.1174740835`: delta
 `+0.0063698081`, or `5.4223%` worse. Legal, code, and reasoning changed by at
-most `0.000002631`; general regressed by `+0.0254819192`. This meets the
-predeclared `material-tail-cause-rejected` rule and not the 20% improvement
-rule. Preserve the result and do not try another tail order adaptively.
+most `0.000002631`; general regressed by `+0.0254819192`. Per-row comparison
+then showed that three windows changed only one row, so the patched path did
+not execute on the intended tail-row population; `conditional-fit-0032` also
+changed rows whose lengths were divisible by four. The measured candidate
+therefore fails the intervention-integrity gate and cannot support either a
+positive or negative conclusion about tail omission. Preserve it as an
+inconclusive implementation diagnostic. The next tail run must predeclare a
+single corrected selector, prove before KLD that changes occur only for rows
+with `L mod 4` in `1..3`, and report the complete per-row diff inventory.
 
 Proxy rotation is closed by Decision 22. The next rotation test is only inside
 the P8 encoder on exactly layers 3, 20, and 22—the strongest three-layer subset
@@ -207,6 +213,26 @@ separate exact `5.25`-bpw quality lever. No LDLQ or protected role is added.
 
 Receipt: `results/P8_TAIL_OMISSION_REPAIR_V1.md` and
 `evidence/opened/codec-v2/p8-tail-omission-repair-v1/`.
+
+## Decision 27: isolate FP8-DS-MLA before repairing the tail selector (2026-09-05)
+
+Before the corrected tail intervention, change only the MLA KV-cache dtype
+from `nvfp4_ds_mla` to `fp8_ds_mla` in two matched four-window controls. P8
+retains its qualified TP4/DCP1/no-EP native-N64 fused-scratch topology; EXL3
+retains its production TP4/DCP4/EP4/B12X topology. Both use the same V2
+forced-token pre-mask FP32 capture, domain-balanced opened windows, teacher
+logits, CUDA graphs, and MTP-off setting as their own frozen NVFP4-MLA
+baselines. Do not harmonize the two products' MoE topology because the causal
+comparison is within product.
+
+Call NVFP4 MLA implicated only if both products improve at least 20% and both
+FP8 means fall below `0.09`. Call KV format exonerated only if neither product
+improves 20% and both FP8 means remain at least `0.09`; otherwise report an
+arm-specific or inconclusive interaction. This is a serving-path diagnostic,
+not a full32 quality or speed qualification. Raw captures use only the fast
+NVMe and require their exact 10,145,259,520-byte budget plus 20 GiB headroom.
+
+Receipt: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v1-prereg.json`.
 
 ## Decision 26: freeze the only remaining proxy-selected rotation inside physical P8 (2026-09-05)
 
