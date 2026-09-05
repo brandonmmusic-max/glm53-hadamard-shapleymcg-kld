@@ -56,7 +56,7 @@ M1 = _load("p8_graph_m1_helpers", "run_p8_coupled_m1_device_closure.py")
 PREFILL = _load("p8_graph_prefill_helpers", "run_p8_coupled_prefill_device_closure.py")
 
 PROTOCOL = {
-    "schema": "glm53.p8-full-coupled-cudagraph-closure.v1",
+    "schema": "glm53.p8-full-coupled-cudagraph-closure.v2",
     "evidence_level": "gpu-smoke-cudagraph-eager-parity",
     "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
     "immutable_image": V9_IMAGE,
@@ -97,7 +97,7 @@ PROTOCOL = {
         "input and routed down-input E4M3 payload plus UE8M0-K32 bytes equal the same CPU reference",
         "route and final output byte hashes from every graph replay equal the fresh eager observation",
         "all observable carrier hashes are identical between eager and every graph replay",
-        "five graph replay receipt dictionaries are bitwise identical",
+        "five graph replay receipts are identical except repeat index and valid physical route permutation hash; raw permutation hashes remain recorded",
     ],
     "numeric_gates": dict(M1.PROTOCOL["numeric_gates"]),
     "failure_policy": (
@@ -121,6 +121,16 @@ def canonical_sha256(value: object) -> str:
 
 
 PROTOCOL_SHA256 = canonical_sha256(PROTOCOL)
+
+
+def _replay_comparison(run: dict[str, object]) -> dict[str, object]:
+    """Ignore only valid physical placement, never logical tensor contents."""
+    result = {key: value for key, value in run.items() if key != "repeat"}
+    result["schedule"] = {
+        key: value for key, value in run["schedule"].items()
+        if key != "route_to_physical_sha256"
+    }
+    return result
 
 
 def _write_partial(path: Path, record: dict[str, object]) -> None:
@@ -362,7 +372,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
             }
             _write_partial(partial_path, partial)
         comparable = [
-            {key: value for key, value in run.items() if key != "repeat"}
+            _replay_comparison(run)
             for run in graph_runs
         ]
         if any(run != comparable[0] for run in comparable[1:]):

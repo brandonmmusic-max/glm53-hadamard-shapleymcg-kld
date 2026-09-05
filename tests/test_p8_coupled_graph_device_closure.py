@@ -30,7 +30,7 @@ def test_default_is_cpu_only_frozen_protocol() -> None:
     )
     record = json.loads(completed.stdout)
     assert record["protocol_sha256"] == (
-        "3281b800664e7987732a681959c561b0c74905271e34a3da07e1ea004a0a2843"
+        "77660f7e0d9f11b809695f4aea0966ade03ebbecb94e7398b334f598edeb06a0"
     )
     protocol = record["protocol"]
     assert protocol["geometry"]["m_cases"] == [1, 2, 64, 65]
