@@ -799,6 +799,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   isolation. No LDLQ, no protected logits, no implied KLD transfer to a
   changed serving path. P8 remains a 2x-MMA-issue E4M3 quality product.
 
+## 2026-09-05: Decision 33 — queue the isolated diagnostic behind all ten speed runs
+
+- Freeze the synthetic profile plan and implementation before collection.
+  Commit `ddc22a09858ebb4091f97fcc7700ee6296b0460b` is executed from a
+  separate clean worktree. The queue receipt is
+  `experiments/p8-decode-profile-v1-queue.json`.
+- The follow-on is live only as a waiter while speed-v2a3 runs. It cannot
+  acquire the model-stack lock or launch GPUs until terminal success and
+  the complete receipt audit. A numerical speed-gate failure remains a
+  failure and stops allocation; it does not prohibit this declared diagnosis.
+- Use a new synthetic 32K request, not conditional-fit or protected logits.
+  Same weights/runtime, declared profiler-only changes, CID-owned cleanup,
+  fail-closed thermal telemetry and verified restoration. Seventy-nine CPU
+  tests pass; no device or trace validity is inferred from that result.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
