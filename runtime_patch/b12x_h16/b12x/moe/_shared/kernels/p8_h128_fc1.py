@@ -820,11 +820,11 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             # are disjoint and remain inside the existing payload allocation.
             # Return before any H128/nonlinearity/down-boundary work; this mode
             # can never produce a model-output closure result.
+            capture_words_per_row = intermediate_tiles * Int32(32)
             if tid < Int32(64) and valid_rows > Int32(0):
                 capture_row = (
                     source_m_tile * Int32(self.source_tile_m) + output_tile
                 )
-                capture_words_per_row = intermediate_tiles * Int32(32)
                 capture_base = capture_row * capture_words_per_row
                 gate_pair = ld_shared_u32(epilogue_base + tid * Int32(4))
                 up_pair = ld_shared_u32(up_epilogue_base + tid * Int32(4))
