@@ -1,6 +1,6 @@
 import pytest
 
-from glm53_nvfp4.analyze_p8_smallm_nsys import group_replays, category
+from glm53_nvfp4.analyze_p8_smallm_nsys import group_replays, category, require_c1
 
 
 def test_correlation_ids_handle_interleaved_replays():
@@ -20,3 +20,9 @@ def test_fc1_fc2_and_dense_work_remain_separate():
     assert category('foo MoEDynamicKernelBackend_object bar') == 'moe_fc1'
     assert category('foo P8SmallMPhase2Kernel_object bar') == 'moe_fc2'
     assert category('nvjet_sm120_tst_mma') == 'native_dense_mma'
+
+
+def test_rejects_non_c1_graph():
+    assert require_c1({16}) == 1
+    with pytest.raises(ValueError, match='expected active M1'):
+        require_c1({32})
