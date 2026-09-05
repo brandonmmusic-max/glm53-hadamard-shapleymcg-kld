@@ -39,6 +39,7 @@ def main() -> None:
             ROOT / "results/P8_SMALLM_DEVICE_V1.md",
             ROOT / "results/P8_SMALLM_GRAPH_V1.md",
             ROOT / "results/P8_SMALLM_INTEGRATED_V1.md",
+            ROOT / "results/P8_SMALLM_N256_DEVICE_V1.md",
             ROOT / "figures/current-layer3-kld.png",
             ROOT / "figures/current-kld.png",
             ROOT / "figures/selective-h16-generalization.png",
