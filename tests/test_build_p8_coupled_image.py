@@ -27,7 +27,7 @@ def _sha(path: Path) -> str:
 
 def test_manifest_hashes_every_declared_source() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text())
-    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v5"
+    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v6"
     for relative, expected in manifest["source_sha256"].items():
         assert _sha(ROOT / relative) == expected
 
@@ -39,12 +39,34 @@ def test_dockerfile_pins_parent_tail_and_actual_import_copies() -> None:
     assert manifest["tail_v2"]["sha256"] in dockerfile
     assert "research-only-not-device-qualified" in dockerfile
     assert "decode-m1-prefill-m64-n128-unqualified" in dockerfile
-    assert 'org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v5"' in dockerfile
+    assert 'org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v6"' in dockerfile
     assert "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels" in dockerfile
     assert "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels" in dockerfile
-    for destinations in manifest["install"].values():
-        for destination in destinations:
-            assert destination in dockerfile
+    # Resolve grouped COPY semantics against the exact staged inventory, not
+    # string-presence assertions that require one image layer per source file.
+    import shlex
+    from pathlib import PurePosixPath
+    inventory = set(manifest["source_sha256"]) | {
+        "runtime_patch/p8_coupled_image/image_manifest.json"
+    }
+    copied = {}
+    for line in dockerfile.splitlines():
+        if not line.startswith("COPY "):
+            continue
+        *sources, destination = shlex.split(line)[1:]
+        for source in sources:
+            if source.endswith("/"):
+                selected = {p: p[len(source):] for p in inventory if p.startswith(source)}
+                assert selected
+                assert destination.endswith("/")
+            else:
+                assert source in inventory
+                selected = {source: PurePosixPath(source).name}
+            for path, suffix in selected.items():
+                target = destination + suffix if destination.endswith("/") else destination
+                copied.setdefault(path, set()).add(target)
+    for source, destinations in manifest["install"].items():
+        assert copied[source] == set(destinations)
     for phase in manifest["parent_phase_abi"]["phases"].values():
         assert phase["sha256"] in dockerfile
         for path in phase["paths"]:
@@ -165,8 +187,8 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert "--pull=false" in command
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
-    assert builder.TAG == "klc/glm53-p8-coupled:v5"
-    assert builder.INTEGRATION_BASE == "910a39c593d9f913190bdc4c94c57ff6ce913ea2"
+    assert builder.TAG == "klc/glm53-p8-coupled:v6"
+    assert builder.INTEGRATION_BASE == "c7388f2b685826b94ed84c128cdefb2046df290e"
     assert builder.load_manifest()["runtime_commit"] == builder.INTEGRATION_BASE
 
 

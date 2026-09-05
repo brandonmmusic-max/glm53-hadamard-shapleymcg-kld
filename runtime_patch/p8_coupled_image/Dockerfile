@@ -24,28 +24,14 @@ RUN test "$(sha256sum /usr/lib/python3.12/sitecustomize.py | cut -d ' ' -f 1)" =
     && test ! -e /opt/p8-coupled-runtime \
     && test "$(sha256sum /opt/infernal-invocation/vllm/vllm/models/glm5next/nvidia/ops/kpool_compress.py | cut -d ' ' -f 1)" = "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
 
-COPY runtime_patch/p8_native_kernel.py /opt/p8-coupled-runtime/p8_native_kernel.py
-COPY runtime_patch/p8_coupled_scales.py /opt/p8-coupled-runtime/p8_coupled_scales.py
-COPY runtime_patch/p8_smallm_schedule.py /opt/p8-coupled-runtime/p8_smallm_schedule.py
-COPY runtime_patch/p8_coupled_prefill_plan.py /opt/p8-coupled-runtime/p8_coupled_prefill_plan.py
+# The staged context contains only manifest-pinned sources. Group copies by
+# destination to avoid a separate image layer for every tiny source file.
+COPY runtime_patch/p8_native_kernel.py runtime_patch/p8_coupled_scales.py runtime_patch/p8_smallm_schedule.py runtime_patch/p8_coupled_prefill_plan.py /opt/p8-coupled-runtime/
 COPY runtime_patch/sitecustomize.py /usr/lib/python3.12/sitecustomize.py
 
-# PYTHONPATH selects the editable B12X tree first, but both installed copies
-# are kept byte-identical to prevent a different launcher from seeing old code.
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_h128_fc1.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_narrow_fc1.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_narrow_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_small_m.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_topk.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_topk.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/dynamic.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_h128_fc1.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_h128_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_narrow_fc1.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_narrow_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_small_m.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_small_m.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_topk.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_topk.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py
-COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py
+# Both import trees receive the same seven explicitly staged kernel sources.
+COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/ /opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/
+COPY runtime_patch/b12x_h16/b12x/moe/_shared/kernels/ /opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/
 
 COPY runtime_patch/p8_coupled_image/image_manifest.json /opt/p8-coupled-runtime/image-manifest.json
 COPY runtime_patch/p8_coupled_image/verify_image.py /opt/p8-coupled-runtime/verify_image.py
@@ -62,7 +48,7 @@ RUN test -n "$KLC_SOURCE_COMMIT" \
 
 LABEL org.opencontainers.image.title="GLM-5.3 P8 coupled research runtime" \
       org.opencontainers.image.licenses="LicenseRef-ShapleyMCG-1.0" \
-      org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v5" \
+      org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v6" \
       org.klc.qualification="research-only-not-device-qualified" \
       org.klc.parent.digest="sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745" \
       org.klc.tail-v2.sha256="494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251" \
