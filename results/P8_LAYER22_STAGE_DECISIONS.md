@@ -20,3 +20,19 @@
 Conditions: attention/KV N/A during encoding; target MoE native coupled P8,
 target activations E4M3, approximately4.25398bpw including metadata. P8 has
 twice the NVFP4 MMA issue count. No new end-to-end KLD result is claimed.
+
+4. Before packing results, pin `p8-coupled-layer22-pack-v1.json` and its
+   CPU-only runner: four valid chunks required, unchanged packer/verifier
+   source hashes, no overwrite, failed pack prevents verifier. Five runner
+   tests pass. The complete artifact-directory bound is23.3GB; refreshed
+   external state plus orphan/lag reserve is6,573,009,168 bytes, yielding a
+   conservative29,873,009,168-byte bound. No new image/worktree/capture allowed
+   from this packing plan; refresh if unrelated campaign growth exceeds it.
+5. CPU control-input preflight: `validate_identity_sidecars` successfully
+   rehashed all12 stored identity-P8 sidecars on layers3/20/22, totaling
+   11,551,121,952 bytes, against the existing all42 manifest and design.
+   The stock carrier is `/home/brandonmusic/models/GLM-5.3-Flash-NVFP4`, NOT
+   the old recipe's pseudoquant model mount. Its config SHA256 is
+   `676382abd1e90a6c85f0c8f33d45441ecd45fd514fd7b63ce5610e732d8e4996`,
+   index SHA256 `0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb`.
+   These metadata checks are not a fresh hash audit of all stock weight shards.
