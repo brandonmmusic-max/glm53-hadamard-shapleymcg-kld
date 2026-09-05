@@ -75,6 +75,7 @@ def test_default_and_debug_capture_are_passive():
     assignment = debug.body[0]
     assert {key.value for key in assignment.value.keys} == {
         "packed_a", "scale_flat", "intermediate_u32", "route_output",
+        "token_map", "row_counts", "expert_tile_base",
     }
 
 

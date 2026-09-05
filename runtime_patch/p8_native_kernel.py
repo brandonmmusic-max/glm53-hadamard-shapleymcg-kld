@@ -458,5 +458,10 @@ class P8NativeTPMoE:
                 "packed_a": packed_a, "scale_flat": scale_flat,
                 "intermediate_u32": intermediate_u32,
                 "route_output": kernel_output,
+                "token_map": token_map, "row_counts": row_counts,
+                "expert_tile_base": expert_tile_base,
             }
+            self.debug_dispatch = {"small_m": small_m, "materialized": materialized,
+                                   "fc1_tile_n": self.fc1_tile_n if small_m else 128,
+                                   "tile_m": tile_m}
         return output

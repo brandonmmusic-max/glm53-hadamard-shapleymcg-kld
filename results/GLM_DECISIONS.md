@@ -1004,6 +1004,25 @@ confirmation, and final roles remained unopened for this redesign branch.
 - Plan: `experiments/p8-fc1-tiles-device-v1.json`. No protected role opens,
   no LDLQ, no allocation restart. P8 remains twice NVFP4 MMA issue count.
 
+## 2026-09-05: Decision 45 — canonicalize fallback input rows, preserve V1 failure
+
+- V1 GPU0 compiled and all eight M1 cases matched all buffers bit-for-bit.
+  M2 also matched. M3 failed physical input/scale hash determinism even for
+  the N128 control; route outputs, final outputs and intermediate buffers
+  remained identical across all arms and repeats. Timing was skipped and
+  the remaining GPUs were not launched. Preserve the original failed gate.
+- Independent source audit identifies atomic per-expert row allocation in
+  generic M>1 routing. Physical input/scale rows can permute while token_map
+  preserves the logical pair id. All tile requests resolve to unchanged
+  N128 monolithic code for M>1.
+- V2 keeps the same kernel image and synthetic cases, but compares fallback
+  packed input/scale bytes after CPU canonicalization by logical pair id.
+  Validate row counts, prefix bases, capacity and exact route permutation;
+  retain raw hashes. M1 still checks all raw bytes. Require explicit resolved
+  dispatch metadata. No arithmetic tolerance or output waiver is introduced.
+- Plan: `experiments/p8-fc1-tiles-device-v2.json`; fresh output and source seals.
+  Original V1 remains failed. No KLD claim, protected opening or allocation.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
