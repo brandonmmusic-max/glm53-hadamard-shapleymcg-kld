@@ -319,10 +319,14 @@ def successful_invocation(window_ids, outer, command=subprocess.check_output):
     invocation = next(iter(invocations))
     if not re.fullmatch(r'[0-9a-f]{32}', invocation):
         raise ValueError('invalid systemd invocation identity')
+    canonical = {'unit': UNIT, 'invocation_id': invocation,
+                 'start_command': expected_command,
+                 'progress': [{'windows_scored': number, 'window_id': wid}
+                              for number, wid in progress]}
     return {'method': 'collected-unit-journal-correlation', 'unit': UNIT,
             'invocation_id': invocation, 'terminal_success': True,
             'progress_events': 32,
-            'journal_sha256': hashlib.sha256(journal).hexdigest()}
+            'canonical_journal_evidence_sha256': hashlib.sha256(encode(canonical)).hexdigest()}
 
 
 def snapshot(destination=DEST):

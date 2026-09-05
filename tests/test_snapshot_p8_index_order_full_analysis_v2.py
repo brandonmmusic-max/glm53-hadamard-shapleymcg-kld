@@ -251,6 +251,14 @@ def test_collected_systemd_unit_uses_invocation_correlated_32_progress_events():
 
     value = s.successful_invocation(ids, {'exit_code': 0, 'windows_scored': 32}, command)
     assert value['invocation_id'] == invocation and value['progress_events'] == 32
+    expected = {'unit': s.UNIT, 'invocation_id': invocation,
+                'start_command': ('/usr/bin/python3 -u -m '
+                                  'glm53_nvfp4.p8_index_order_full_analysis_v2 '
+                                  f'run --plan {s.V2_PLAN}'),
+                'progress': [{'windows_scored': number, 'window_id': wid}
+                             for number, wid in enumerate(ids, 1)]}
+    assert value['canonical_journal_evidence_sha256'] == s.hashlib.sha256(
+        s.encode(expected)).hexdigest()
     entries[-1]['MESSAGE'] = json.dumps({'windows_scored': 31, 'window_id': ids[-1]})
     journal = b'\n'.join(json.dumps(row).encode() for row in entries)
     with pytest.raises(ValueError, match='correlated'):

@@ -81,6 +81,10 @@ The first sanitized-snapshot invocation failed closed before creating its
 destination because the newly integrated packager derived the frozen V1 plan
 path from the V2 checkout. The correction binds the original capture worktree
 explicitly and is regression-tested; it does not touch capture or KLD output.
+The second invocation also failed before destination creation because raw
+`journalctl -o json` field serialization was nondeterministic across its two
+change-detection reads. The receipt now hashes a canonical projection of the
+unit, invocation, start command and ordered 32 progress events.
 
 This is worse in absolute KLD than the earlier `0.04002139481676188` run by a
 factor of `2.9353` (`+193.53%`). That difference is real between the two
