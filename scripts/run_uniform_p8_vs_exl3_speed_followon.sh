@@ -21,11 +21,11 @@ EXL3_RECEIPT=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/re
 EXL3_COMPOSE=/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/runtime/compose.sm120-tp4-vision-mtp5.yaml
 BENCH_REPO=/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-r10-rebase/tooling/llm-inference-bench
 BENCH=$BENCH_REPO/llm_decode_bench.py
-OUT=$ROOT/speed-v2a2
+OUT=$ROOT/speed-v2a3
 ANALYSIS=$OUT/analysis.json
 EXECUTION=$OUT/execution.json
 LOG=$OUT/followon.log
-CONTAINER=glm53-p8-exl3-speed-v2a2
+CONTAINER=glm53-p8-exl3-speed-v2a3
 PORT=8017
 LOCK=/run/lock/klc/model-stack.lock
 P8_IMAGE=sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8
@@ -73,6 +73,7 @@ PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_speed_v2 \
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
 (cd "$REPO/experiments" && sha256sum --check --strict p8-speed-v2-operational-a1.sha256) | tee -a "$LOG"
 (cd "$REPO/experiments" && sha256sum --check --strict p8-speed-v2-operational-a2.sha256) | tee -a "$LOG"
+(cd "$REPO/experiments" && sha256sum --check --strict p8-speed-v2-operational-a3.sha256) | tee -a "$LOG"
 (cd "$REPO/experiments" && sha256sum --check --strict p8-all42-runtime-image-amendment-2.sha256) | tee -a "$LOG"
 PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_runtime_image --amendment "$IMAGE_AMENDMENT" | tee -a "$LOG"
 [ "$P8_IMAGE" = "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_id"])' "$IMAGE_AMENDMENT")" ]
@@ -114,6 +115,7 @@ static={
   'image_amendment_sha256':sha(plan.parent/'p8-all42-runtime-image-amendment-2.json'),
   'operational_amendment_sha256':sha(plan.parent/'p8-speed-v2-operational-a1.json'),
   'baseline_environment_amendment_sha256':sha(plan.parent/'p8-speed-v2-operational-a2.json'),
+  'graph_receipt_amendment_sha256':sha(plan.parent/'p8-speed-v2-operational-a3.json'),
   'p8_image_id':json.loads((plan.parent/'p8-all42-runtime-image-amendment-2.json').read_text())['image_id'],
   'runtime_manifest_sha256':sha(runtime), 'exl3_receipt_sha256':sha(exl3),
   'benchmark_tool_sha256':sha(bench), 'started_at':datetime.now(timezone.utc).isoformat(),
@@ -261,7 +263,7 @@ run_arm() {
     --display-mode plain --no-resume --output "$result" 2>&1 | tee "$slot/benchmark.log"
 
   docker logs "$CONTAINER" >"$server_log" 2>&1
-  grep -q 'Capturing decode CUDA graphs (FULL)' "$server_log"
+  PYTHONPATH="$REPO" python3 -m glm53_nvfp4.audit_speed_graphs --log "$server_log" | tee -a "$LOG"
   if [ "$arm" = p8 ]; then
     python3 - "$server_log" <<'PY'
 import re, sys
