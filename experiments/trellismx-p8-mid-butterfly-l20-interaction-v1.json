@@ -1,0 +1,110 @@
+{
+  "advance": "only a pseudoquant pass advances the selected rotation into the fused device prologue and all-layer build",
+  "base_p8_design": {
+    "bytes": 28592,
+    "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/experiments/p8-kld-shapley-native6-v2.json",
+    "sha256": "74637836d2680d3040ef000167a052c68519f89cdbc5fdeba03231c180a4d781"
+  },
+  "created_at": "2026-09-05T16:09:48.088890+00:00",
+  "decision_before_result": true,
+  "decision_record": "DECISIONS_GLM53.md#21",
+  "device_closure_gate": {
+    "comparison": "fused rotated P8 kernel minus exact staged rotated P8 pseudoquant",
+    "decision_rule": "absolute paired mean delta <= 0.0014 and paired BCa 95 percent interval contains zero",
+    "determinism": "five bitwise-identical runs"
+  },
+  "encoder": {
+    "activation_order": "static within each native 16-column trellis group",
+    "down": "encode W2 @ R with K4 procedural-MCG E4M3 UE8M0-K32, full-Hessian GPTQ feedback",
+    "gate_up": "K4 procedural-MCG E4M3 UE8M0-K32, full-Hessian GPTQ feedback",
+    "ldlq": false,
+    "rotation_arithmetic": "post-SwiGLU BF16 input; four FP32 Givens stages; final BF16 round; E4M3 UE8M0-K32 quantization",
+    "rotation_table_bytes": 0,
+    "scale_refits": 2,
+    "stored_weight_bpw": 4.25
+  },
+  "git_commit": "4ed87511093780e544e1405f95399e278af77e82",
+  "inputs": {
+    "block_rotation": {
+      "bytes": 13600,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/block_rotation.py",
+      "sha256": "478e3becb8287ce0f9eac235d924f9c8640c2cd6c82aa717c9f76cab510827b5"
+    },
+    "encoder": {
+      "bytes": 16368,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/quantize_rotated_hessian_trellis_layer.py",
+      "sha256": "f88b5d335153547b2217d010effe28ca8cf0174206ac0b8aa104a7f295f5cb18"
+    },
+    "roles": {
+      "bytes": 18477,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/experiments/rotation-v8-fit-tune32.json",
+      "sha256": "08ac5b6dbd0982b437d5930602d0f4a777966507efb562f6f567a9dbfc43a0a9"
+    },
+    "run_kld": {
+      "bytes": 20920,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/scripts/run_kld_v3.sh",
+      "sha256": "d22cad8ebb2e34a717b5ffa0b30d65d49567c60e3d583dea6680c23c2c57940b"
+    },
+    "runtime_patch": {
+      "bytes": 55880,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/runtime_patch/sitecustomize.py",
+      "sha256": "55dfeaaac097751efb7d45c33ec3e1a8a4ce93954e77819ba68b877c097f39f3"
+    },
+    "train_analysis": {
+      "bytes": 7501,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/results/rotation-v8-shared-mid-butterfly-layer3/train32-analysis-v2.json",
+      "sha256": "d8f470e22841417c21c41b108ef656c45ea35513a11831c1bc066c18fc451dc0"
+    },
+    "trellis_codec": {
+      "bytes": 27010,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/trellis_mxf.py",
+      "sha256": "bb4309ef2be5f008c8091c8be44e4596f367c50fffcdeac9d7ebe1f1a0bef07c"
+    },
+    "tune_analysis": {
+      "bytes": 1683,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/results/rotation-v8-shared-mid-butterfly-layer3/tune32-analysis-v1.json",
+      "sha256": "105c54116f1230225c1cdb26714497a456880c21de866be63d26526446df467c"
+    }
+  },
+  "isa_cost_statement": "P8 uses mxf8f6f4 at twice NVFP4 MMA issue count; it is the quality product, not the P4 speed product",
+  "layers": [
+    20
+  ],
+  "ldlq": false,
+  "prior_preflight_failure": null,
+  "protected_boundary": "selection, confirmation, final, and 28 reserved confirmation logits remain unopened",
+  "protected_roles_opened": [],
+  "pseudoquant_gate": {
+    "arms": [
+      "fresh-stock-nvfp4",
+      "unrotated-p8",
+      "rotated-p8-p00625"
+    ],
+    "decision_rule": "rotated P8 mean KLD below unrotated P8 and no greater than stock",
+    "domain_counts": {
+      "axis1_general": 8,
+      "axis2_legal": 8,
+      "axis3_code_agentic": 8,
+      "axis4_reasoning_termination": 8
+    },
+    "paired_bca": "reported as nonblocking development control",
+    "role": "fit/tune32",
+    "run_order": [
+      "fresh-stock-nvfp4",
+      "unrotated-p8",
+      "rotated-p8-p00625"
+    ],
+    "stopping": "one run per arm; no exclusions, substitutions, rerolls, or replacement angles",
+    "windows": 32
+  },
+  "rotation": {
+    "angle_pi": 0.0625,
+    "bytes": 1232,
+    "id": "p00625",
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l20-v1/rotation/p00625.safetensors",
+    "selection": "p00625 fixed by the completed layer-3 fit analysis before the three-layer P8 encoder test; no per-layer angle search",
+    "sha256": "2563d0cd2123f230383aa340f5984778e6fad43c5d66c60c6cdccbdd01f51137",
+    "tune_decision_control": "fail"
+  },
+  "schema": "glm53-trellismx-p8.shared-mid-butterfly-design.v1"
+}
