@@ -9,13 +9,21 @@ and software. Those components are not relicensed by the ShapleyMCG License.
 - vLLM: Apache-2.0.
 - B12X: Apache-2.0; the license accompanying the modified runtime sources is
   retained at `runtime_patch/b12x_h16/LICENSE.b12x`.
-- InstantTensor: see its upstream repository.
+- InstantTensor: upstream https://github.com/scitix/InstantTensor, used through
+  the voipmonitor/InstantTensor fork (0.1.9); upstream license applies.
+- Humming NVFP4 MoE backend: shipped inside the local-inference-lab/vllm fork
+  (Apache-2.0, vLLM contributors).
+- FlashInfer: Apache-2.0, used through the voipmonitor/flashinfer fork.
+- LibertAIDAI/GLM-5.3-Flash-NVFP4: earlier bring-up stock checkpoint referenced
+  in the documentation; model terms apply.
 - PyTorch: BSD-style license.
 - NVIDIA CUDA, ModelOpt, and container components: NVIDIA terms apply.
 - ExLlamaV3 / ExL3: Copyright turboderp and contributors, MIT License. The
   procedural trellis constants and bitstream layout used by the research codec
   are attributed to ExLlamaV3; the retained terms are in
   `LICENSE.exllamav3` and must accompany reuse.
+- b12x: upstream https://github.com/lukealonso/b12x by Luke Alonso, with
+  Martin Vit and other contributors named in `CITATIONS.md`; Apache-2.0.
 - KQuant / QSRT reference snapshot: commit
   `104dd9233f850a3955f4991bea68b07dd34deeb8`, attributed to Luke Alonso and
   contributors. The audited snapshot did not contain a `LICENSE` file, so this
@@ -50,3 +58,6 @@ and software. Those components are not relicensed by the ShapleyMCG License.
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be
 retained when redistributed.
+
+Academic and method lineage, including the papers whose ideas this work
+builds on, is recorded in `CITATIONS.md`.
