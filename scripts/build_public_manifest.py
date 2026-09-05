@@ -43,6 +43,7 @@ def main() -> None:
             ROOT / "results/P8_SMALLM_PROFILE_V1.md",
             ROOT / "results/P8_FC1_TILES_DEVICE.md",
             ROOT / "results/P8_FC1_INTEGRATED_V1.md",
+            ROOT / "results/DECODE_PATH_MATCHED_CONTROL_V2.md",
             ROOT / "figures/current-layer3-kld.png",
             ROOT / "figures/current-kld.png",
             ROOT / "figures/selective-h16-generalization.png",

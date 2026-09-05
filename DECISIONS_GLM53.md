@@ -154,6 +154,31 @@ Decision 21 predates this result and remains binding: run exactly one
 the codec-specific fused prologue, but it cannot rehabilitate the failed
 standalone rotation claim.  No alternative angle, protected role, or LDLQ path
 is introduced.
+
+## Decision 24: matched controls exonerate the codec for the 0.11 endpoint (2026-09-05)
+
+The corrected matched control completed four forced-decode windows per arm
+with MTP off, all captures exact-sized, no protected role opened, terminal
+container cleanup, and application-backend restoration. The frozen P8
+selected-four reference was `0.1174740835`. Stock NVFP4 measured
+`0.1250570905` and production EXL3 measured `0.1128497893`; their true-decode
+means were `0.1230733632` and `0.1109031831`, respectively. Both all-row means
+fall inside the predeclared `[0.09,0.15]` interval and neither improves at least
+20% over P8. The codec is therefore exonerated as the cause of this high
+endpoint, and a production serving-path defect shared across these products is
+supported. This four-window diagnostic does not locate the component and does
+not replace full32 quality inference.
+
+Proceed with one fixed-order incomplete-KPool-tail repair. The single semantic
+change will retain the current ordered expansion but place the request's 1-3
+causal tail tokens inside the 2,048 columns consumed by B12X, replacing the
+same number of lowest-ranked history entries. Do not alter the index scorer,
+pool selection, codec, MoE backend, KV format, topology, capture hook, window
+set, or KLD implementation. Predeclare the exact emitted order and decision
+rule before building or running it.
+
+Receipt: `results/DECODE_PATH_MATCHED_CONTROL_V2.md` and
+`evidence/opened/codec-v2/decode-path-matched-control-v2/`.
 ## Decision 23: matched forced-decode controls and storage gate (2026-09-05)
 
 Before building either control image or starting a new GPU capture, freeze a four-window, one-per-domain diagnostic comparing stock NVFP4 and the production EXL3 parent image through the identical forced-token, pre-mask FP32 logit-capture hook. The four windows are selected only from already-opened P8 results to reproduce the frozen full32 P8 mean (`0.1174756262`) as closely as possible; this makes the test diagnostic rather than protected inference. The codec is exonerated as the cause of the approximately `0.11` endpoint only if both controls fall in the predeclared `[0.09,0.15]` interval. A shared production-serving bug is supported only if neither control improves at least 20% against the paired P8 four-window mean. Raw output is fixed at `10,145,259,520` bytes total and must land on `/media/brandonmusic/nvme1n1p3` with an additional 20 GiB free-space margin; no raw capture may be written to 96%-full `klcstore`. The control is MTP-off and does not qualify speed.
