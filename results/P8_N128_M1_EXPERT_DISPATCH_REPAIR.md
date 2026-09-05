@@ -22,3 +22,15 @@ No new KLD, speed, or closure pass is asserted; prior failed receipts remain.
 
 Regime: synthetic coupled P8 M1, no attention/KV, E4M3/UE8M0-K32 activations and
 weights, K4 payload 4.25 bpw plus metadata; mxf8f6f4 is twice NVFP4 MMA issue.
+
+## Contrary observation retained
+
+Re-reading the frozen v4 NPZ shows that observed middle rows are not identical:
+payload mismatch counts versus row 0 are `[0,506,509,508,506,505,503,504]`, and
+scale counts `[0,8,7,8,8,4,8,3]`. A fully deterministic expert-0 computation
+repeated eight times on the same input would instead agree. Therefore the source
+argument above is not a complete explanation of the device behavior. Additional
+dispatch state, unintended writes or another kernel defect remain possible.
+The new diagnostic must capture consumed expert IDs and write completeness;
+the old NPZ did not capture `task_expert`. Do not claim that eight observed
+expert-0 computations have been demonstrated by the existing device receipts.
