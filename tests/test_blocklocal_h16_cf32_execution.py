@@ -28,6 +28,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
     receipt = {
         "bf16_layers": [3], "redirected_tensors": 864,
         "carrier": str(stock.resolve()), "required_load_format": "instanttensor",
+        "chunks": [{"path": str((tmp_path / "chunk.safetensors").resolve())}],
     }
     receipt_path = _write(candidate / "BF16_LAYER_RECEIPT.json", receipt)
     full = {
@@ -43,6 +44,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         hypothesis_plan=files["hypothesis"], full_build=_write(tmp_path / "full.json", full),
         candidate=candidate, stock=stock, roles=_write(tmp_path / "roles.json", roles),
         runtime_manifest=files["runtime"], runtime_image="image:test", image_id="sha256:abc",
+        model_aux_mount_root=tmp_path,
         runner=files["runner"], run_kld=files["run_kld"], role_eval=files["role_eval"],
         paired_analysis_code=files["analysis_code"], run_root=tmp_path / "runs",
         execution_receipt=tmp_path / "execution.json", paired_analysis=tmp_path / "paired.json",
