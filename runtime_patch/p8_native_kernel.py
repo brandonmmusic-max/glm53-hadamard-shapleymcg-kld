@@ -557,20 +557,11 @@ class P8NativeTPMoE:
             scale_flat = torch.zeros(
                 scale_elements, dtype=torch.uint8, device=self.device
             )
-            intermediate_words = (
-                rows_padded * (self.intermediate + self.intermediate // 32) // 4
-            )
-            intermediate_u32 = torch.full(
-                (intermediate_words,),
-                -1 if self.diagnostic_raw_fc1 else 0,
+            intermediate_u32 = torch.zeros(
+                rows_padded * (self.intermediate + self.intermediate // 32) // 4,
                 dtype=torch.int32,
                 device=self.device,
             )
-            if self.diagnostic_raw_fc1:
-                # Diagnostic tail layout starts after 128 payload words/row:
-                # metadata[32] | atomic write_count[32] | sentinel[448].
-                trace_base = rows_padded * (self.intermediate // 4)
-                intermediate_u32[trace_base + 32 : trace_base + 64].zero_()
 
             def z1():
                 return torch.zeros(1, dtype=torch.int32, device=self.device)
@@ -590,6 +581,12 @@ class P8NativeTPMoE:
             token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
             token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
             output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
+        if self.diagnostic_raw_fc1:
+            # Keep the ordinary allocation block exactly unchanged. Only the
+            # diagnostic arm fills NaN payload sentinels and zeroes counters.
+            intermediate_u32.fill_(-1)
+            trace_base = rows_padded * (self.intermediate // 4)
+            intermediate_u32[trace_base + 32 : trace_base + 64].zero_()
         kernel_output = (
             torch.empty(
                 m * self.topk,
