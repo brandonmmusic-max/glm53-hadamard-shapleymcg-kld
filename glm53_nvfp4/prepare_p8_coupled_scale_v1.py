@@ -124,6 +124,7 @@ def main() -> None:
         "encoder": _file(encoder),
         "coupled_reference": _file(reference),
         "trellis_codec": _file(trellis),
+        "activation_quantizer": _file(Path(__file__).with_name("canary_mxfp6_reap.py")),
         "encoder_transform": _file(transform_receipt),
         "source_index": _file(args.source_index),
         "fit_roles": _file(args.roles),

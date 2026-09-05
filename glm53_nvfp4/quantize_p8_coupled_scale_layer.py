@@ -87,6 +87,7 @@ def _validate_design(
         "encoder": Path(__file__),
         "coupled_reference": Path(__file__).with_name("p8_coupled_scale.py"),
         "trellis_codec": Path(__file__).with_name("trellis_mxf.py"),
+        "activation_quantizer": Path(__file__).with_name("canary_mxfp6_reap.py"),
         "encoder_transform": (
             Path(__file__).resolve().parents[1]
             / "experiments/p8-coupled-transform-draw0-silu10-v1.json"
