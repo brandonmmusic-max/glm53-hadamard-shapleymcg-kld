@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,8 @@ from glm53_nvfp4.build_p8_coupled_scale_tp4_sidecars import (
     _rank_metadata,
     expected_metadata_bpw,
 )
+from glm53_nvfp4.shard_index import sha256_file
+from glm53_nvfp4.verify_p8_coupled_scale_tp4_sidecars import verify_postwrite
 from glm53_nvfp4.p8_coupled_scale import (
     COUPLED_ACTIVATION,
     COUPLED_BOUNDARY,
@@ -109,6 +112,57 @@ def _chunks(tmp_path: Path):
     return paths
 
 
+def _write_packed_fixture(tmp_path: Path, chunks: list[Path]):
+    sidecars = []
+    receipt = {
+        "schema": "glm53-p8-mcg-coupled-scale-tp4-sidecars.v2",
+        "layer": 3,
+        "world_size": 4,
+        "boundary": COUPLED_BOUNDARY,
+        "weight_payload_bpw": 4.25,
+        "ldlq": False,
+        "ranks": [],
+    }
+    for rank in range(4):
+        tensors, sources, design_hash, scale_hash = _load_rank_coupled(
+            chunks, layer=3, rank=rank, world_size=4
+        )
+        weight_bytes, metadata_bytes, weight_bpw, metadata_bpw = _payload_rates(tensors)
+        metadata = _rank_metadata(
+            tensors,
+            layer=3,
+            rank=rank,
+            design_sha256=design_hash,
+            scale_source_sha256=scale_hash,
+            metadata_bpw=metadata_bpw,
+        )
+        sidecar = tmp_path / f"rank-{rank}.safetensors"
+        save_file(tensors, sidecar, metadata=metadata)
+        tensor_hashes = {name: _tensor_sha256(value) for name, value in tensors.items()}
+        receipt["ranks"].append(
+            {
+                "rank": rank,
+                "path": str(sidecar.resolve()),
+                "bytes": sidecar.stat().st_size,
+                "sha256": sha256_file(sidecar),
+                "weight_payload_bytes": weight_bytes,
+                "metadata_bytes": metadata_bytes,
+                "weight_payload_bpw": weight_bpw,
+                "metadata_bpw": metadata_bpw,
+                "stored_bpw": weight_bpw + metadata_bpw,
+                "shapes": {name: list(value.shape) for name, value in tensors.items()},
+                "tensor_sha256": tensor_hashes,
+                "source_design_sha256": design_hash,
+                "exl3_scale_source_sha256": scale_hash,
+                "sources": sources,
+            }
+        )
+        sidecars.append(sidecar)
+    receipt_path = tmp_path / "packer-receipt.json"
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True))
+    return sidecars, receipt_path
+
+
 def test_coupled_chunks_build_one_tp_rank_without_changing_weight_abi(tmp_path: Path):
     tensors, sources, design_hash, scale_hash = _load_rank_coupled(
         _chunks(tmp_path), layer=3, rank=2, world_size=4
@@ -194,4 +248,74 @@ def test_coupled_builder_rejects_nonproduction_geometry_at_cli_gate(tmp_path: Pa
             world_size=4,
             expected_hidden=4096,
             expected_intermediate=2048,
+        )
+
+
+def test_postwrite_verifier_reopens_every_rank_and_source_closes_all_tensors(
+    tmp_path: Path,
+):
+    chunks = _chunks(tmp_path)
+    sidecars, receipt = _write_packed_fixture(tmp_path, chunks)
+    result = verify_postwrite(
+        chunks=chunks,
+        sidecars=sidecars,
+        packer_receipt=receipt,
+        layer=3,
+        expected_hidden=None,
+        expected_intermediate=None,
+    )
+    assert result["status"] == "pass"
+    assert result["retirement_authorized"] is False
+    assert result["runtime_loader_closure"] == "not tested"
+    assert [row["tensor_count"] for row in result["ranks"]] == [8, 8, 8, 8]
+    assert all(row["source_exact"] is True for row in result["ranks"])
+
+
+def test_postwrite_verifier_rejects_self_consistent_file_hash_with_bad_tensor(
+    tmp_path: Path,
+):
+    chunks = _chunks(tmp_path)
+    sidecars, receipt_path = _write_packed_fixture(tmp_path, chunks)
+    changed = sidecars[2]
+    with safe_open(changed, framework="pt", device="cpu") as src:
+        tensors = {name: src.get_tensor(name) for name in src.keys()}
+        metadata = src.metadata()
+    tensors["w13_trellis"][0, 0, 0, 0, 0] += 1
+    save_file(tensors, changed, metadata=metadata)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["ranks"][2]["bytes"] = changed.stat().st_size
+    receipt["ranks"][2]["sha256"] = sha256_file(changed)
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True))
+    with pytest.raises(RuntimeError, match="tensor w13_trellis differs from source"):
+        verify_postwrite(
+            chunks=chunks,
+            sidecars=sidecars,
+            packer_receipt=receipt_path,
+            layer=3,
+            expected_hidden=None,
+            expected_intermediate=None,
+        )
+
+
+def test_postwrite_verifier_rejects_serialized_metadata_drift(tmp_path: Path):
+    chunks = _chunks(tmp_path)
+    sidecars, receipt_path = _write_packed_fixture(tmp_path, chunks)
+    changed = sidecars[1]
+    with safe_open(changed, framework="pt", device="cpu") as src:
+        tensors = {name: src.get_tensor(name) for name in src.keys()}
+        metadata = src.metadata()
+    metadata["boundary"] = "identity"
+    save_file(tensors, changed, metadata=metadata)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["ranks"][1]["bytes"] = changed.stat().st_size
+    receipt["ranks"][1]["sha256"] = sha256_file(changed)
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True))
+    with pytest.raises(RuntimeError, match="metadata differs from source-derived"):
+        verify_postwrite(
+            chunks=chunks,
+            sidecars=sidecars,
+            packer_receipt=receipt_path,
+            layer=3,
+            expected_hidden=None,
+            expected_intermediate=None,
         )
