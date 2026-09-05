@@ -99,9 +99,10 @@ if [ -n "$P4_NATIVE" ]; then
 fi
 LEARNED_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v3-large
 FULL_H16_CHUNK_ROOT=/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-v9-large/had16-all
-CAPTURES=$CAMPAIGN/kld-v3/captures/$RUN_ID
-SESSION=$CAMPAIGN/kld-v3/sessions/$RUN_ID
-mkdir -p "$CAPTURES" "$SESSION" "$CAMPAIGN/kld-v3/records" "$CACHE_DIR"
+RUN_ROOT=${GLM53_KLD_RUN_ROOT:-$CAMPAIGN/kld-v3}
+CAPTURES=${GLM53_KLD_CAPTURE_ROOT:-$RUN_ROOT/captures/$RUN_ID}
+SESSION=${GLM53_KLD_SESSION_ROOT:-$RUN_ROOT/sessions/$RUN_ID}
+mkdir -p "$CAPTURES" "$SESSION" "$RUN_ROOT/records" "$CACHE_DIR"
 cd "$REPO"
 RUNTIME_PATCH_MANIFEST=${GLM53_RUNTIME_PATCH_MANIFEST:-$CAMPAIGN/codec-v2/e0-corrections/runtime-patch-manifest.json}
 PYTHONPATH=. python3 -m glm53_nvfp4.hash_tree \
@@ -318,7 +319,7 @@ if [ -n "$ROUTE_CAPTURE_OUTPUT" ]; then
     --output "$ROUTE_CAPTURE_OUTPUT" --resume 2>&1 | tee "$SESSION/route-eval.log"
 else
   python3 -m glm53_nvfp4.role_eval --role "$ROLE" --roles "$ROLES" \
-    --teacher-root "$CAMPAIGN/teacher" --run-root "$CAMPAIGN/kld-v3" --run-id "$RUN_ID" \
+    --teacher-root "$CAMPAIGN/teacher" --run-root "$RUN_ROOT" --run-id "$RUN_ID" \
     --config-id "$CONFIG_ID" \
     --url "http://127.0.0.1:$PORT/v1/completions" --model-name "$MODEL_NAME" \
     --capture-root "$CAPTURES" --container "$TEST" --resume "${extra[@]}" 2>&1 | tee "$SESSION/role-eval.log"
