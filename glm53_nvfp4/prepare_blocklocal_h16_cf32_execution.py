@@ -20,6 +20,12 @@ def _file(path: Path) -> dict[str, object]:
 
 
 def build(args: argparse.Namespace) -> dict[str, object]:
+    experiment_id = getattr(args, "experiment_id", "rotation-v6-blocklocal-h16-l3")
+    execution_schema = getattr(
+        args,
+        "execution_schema",
+        "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3",
+    )
     roles = json.loads(args.roles.read_text())
     if len(roles["roles"]["conditional-fit"]) != 32:
         raise RuntimeError("execution role must contain exactly 32 conditional-fit windows")
@@ -55,13 +61,14 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         raise RuntimeError("candidate overlay does not close against the all-expert build")
 
     return {
-        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3",
+        "schema": execution_schema,
+        "experiment_id": experiment_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decision_before_result": True,
         "run_order": ["stock", "candidate"],
         "run_ids": {
-            "stock": "rotation-v6-blocklocal-h16-l3-stock-cf32-v3",
-            "candidate": "rotation-v6-blocklocal-h16-l3-candidate-cf32-v3",
+            "stock": f"{experiment_id}-stock-cf32-v1",
+            "candidate": f"{experiment_id}-candidate-cf32-v1",
         },
         "stopping_rule": "one fresh complete run per arm; no resume, reroll, exclusion, or substitution",
         "decision_rule": (
@@ -109,6 +116,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "run_kld": _file(args.run_kld),
             "role_eval": _file(args.role_eval),
             "paired_analysis_code": _file(args.paired_analysis_code),
+            "analysis_python": _file(args.analysis_python.resolve()),
         },
         "protected_roles_opened": [],
     }
@@ -129,6 +137,12 @@ def main() -> None:
     parser.add_argument("--run-kld", type=Path, required=True)
     parser.add_argument("--role-eval", type=Path, required=True)
     parser.add_argument("--paired-analysis-code", type=Path, required=True)
+    parser.add_argument("--analysis-python", type=Path, required=True)
+    parser.add_argument("--experiment-id", default="rotation-v6-blocklocal-h16-l3")
+    parser.add_argument(
+        "--execution-schema",
+        default="glm53-rotation.blocklocal-h16-layer3-cf32-execution.v1",
+    )
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--execution-receipt", type=Path, required=True)
     parser.add_argument("--paired-analysis", type=Path, required=True)
