@@ -1,9 +1,9 @@
 """Experimental TP-local P8 procedural-MCG MoE runtime for GLM-5.3.
 
-This is a direct device path: the K4 trellis stream is decoded to E4M3 inside
+This is a direct device path: a K4 or K5 trellis stream is decoded to E4M3 inside
 the MMA kernel and physical UE8M0/32 scales are consumed by the tensor core.
-It intentionally implements only the frozen TP4, layer-3, identity-boundary
-development contract used by the kernel-versus-pseudoquant KLD gate.
+It implements the frozen TP4 identity-boundary P8 contract for any GLM routed
+layer whose sidecar carries the matching immutable layer identity.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ import torch
 from cutlass.base_dsl.compiler import OptLevel
 from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
+from p8_smallm_schedule import P8SmallMGeometry, p8_small_m_scratch_layout, use_small_m
 
 from b12x._lib.compiler import KernelCompileSpec, compile as b12x_compile
 from b12x._lib.utils import get_max_active_clusters
@@ -63,6 +64,8 @@ class P8NativeTPMoE:
         *,
         device: torch.device,
         tp_rank: int,
+        layer: int = 3,
+        expected_design_sha256: str | None = None,
         topk: int = 8,
         hidden: int = 4096,
         intermediate: int = 512,
@@ -70,9 +73,16 @@ class P8NativeTPMoE:
         force_materialized: bool | None = None,
         mac_override: int | None = None,
         deterministic_output: bool = True,
+        small_m_scheduler: bool = False,
+        fc1_tile_n: int = 128,
+        debug_capture: bool = False,
+        fuse_scratch_zero: bool = False,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
+        self.layer = int(layer)
+        if not 3 <= self.layer <= 44:
+            raise ValueError("P8 native layer must be in GLM routed layers 3..44")
         self.topk = int(topk)
         self.hidden = int(hidden)
         self.intermediate = int(intermediate)
@@ -80,40 +90,100 @@ class P8NativeTPMoE:
         self.force_materialized = force_materialized
         self.mac_override = None if mac_override is None else int(mac_override)
         self.deterministic_output = bool(deterministic_output)
+        # Explicit developmental opt-in. M2/M3 and prefill retain baseline
+        # selection; this is not enabled through a serving environment flag.
+        self.small_m_scheduler = bool(small_m_scheduler)
+        self.fc1_tile_n = int(fc1_tile_n)
+        self.debug_capture = bool(debug_capture)
+        self.fuse_scratch_zero = bool(fuse_scratch_zero)
+        self._scratch_layout = (
+            p8_small_m_scratch_layout() if self.fuse_scratch_zero else None
+        )
+        self.debug_tensors = {}
+        if self.fc1_tile_n not in (32, 64, 128):
+            raise ValueError("FC1 tile N must be 32, 64, or 128")
+        if self.fc1_tile_n != 128 and (
+            not self.small_m_scheduler or self.swiglu_limit != 10.0
+        ):
+            raise ValueError("Narrow FC1 requires small-M and SwiGLU limit 10")
+        if self.small_m_scheduler and (
+            not self.deterministic_output or force_materialized is not None
+            or (topk, hidden, intermediate) != (8, 4096, 512)
+        ):
+            raise ValueError("P8 small-M requires deterministic GLM TP4 and automatic fallback")
         if self.mac_override is not None and self.mac_override <= 0:
             raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
             metadata = src.metadata() or {}
+            schema = metadata.get("schema")
+            source_design_sha256 = metadata.get("source_design_sha256")
+            bits_text = metadata.get("bits", "")
+            if bits_text not in {"4", "5"}:
+                raise RuntimeError(f"invalid P8 trellis rate: {bits_text!r}")
+            self.trellis_bits = int(bits_text)
             required = {
-                "schema": "glm53-p8-identity-mcg-tp4-rank.v1",
-                "layer": "3",
+                "layer": str(self.layer),
                 "rank": str(self.tp_rank),
                 "world_size": "4",
-                "bits": "4",
+                "bits": bits_text,
                 "alphabet": "e4m3",
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",
                 "boundary": "identity",
                 "ldlq": "false",
             }
-            if any(metadata.get(key) != value for key, value in required.items()):
+            if (
+                schema not in {
+                    "glm53-p8-identity-mcg-tp4-rank.v1",
+                    "glm53-p8-mcg-tp4-rank.v2",
+                }
+                or any(metadata.get(key) != value for key, value in required.items())
+            ):
                 raise RuntimeError(f"invalid P8 native sidecar metadata: {metadata}")
+            if schema == "glm53-p8-mcg-tp4-rank.v2":
+                if (
+                    not isinstance(source_design_sha256, str)
+                    or len(source_design_sha256) != 64
+                    or any(char not in "0123456789abcdef" for char in source_design_sha256)
+                ):
+                    raise RuntimeError("v2 P8 sidecar lacks a valid source design hash")
+                if (
+                    expected_design_sha256 is not None
+                    and source_design_sha256 != expected_design_sha256
+                ):
+                    raise RuntimeError("P8 sidecar does not match the expected design")
+            elif expected_design_sha256 is not None:
+                raise RuntimeError("historical P8 sidecars cannot satisfy a v2 design pin")
             w13 = src.get_tensor("w13_trellis")
             w2 = src.get_tensor("w2_trellis")
             w13_scale = src.get_tensor("w13_scale_ue8m0")
             w2_scale = src.get_tensor("w2_scale_ue8m0")
+        self.source_design_sha256 = source_design_sha256
         experts = int(w13.shape[1])
-        if tuple(w13.shape) != (2, experts, hidden // 16, intermediate // 16, 64):
+        stream_words = 16 * self.trellis_bits
+        if tuple(w13.shape) != (
+            2, experts, hidden // 16, intermediate // 16, stream_words
+        ):
             raise RuntimeError(f"unexpected W13 trellis shape {tuple(w13.shape)}")
-        if tuple(w2.shape) != (experts, intermediate // 16, hidden // 16, 64):
+        if tuple(w2.shape) != (
+            experts, intermediate // 16, hidden // 16, stream_words
+        ):
             raise RuntimeError(f"unexpected W2 trellis shape {tuple(w2.shape)}")
         if tuple(w13_scale.shape) != (experts, 2 * intermediate, hidden // 32):
             raise RuntimeError(f"unexpected W13 scale shape {tuple(w13_scale.shape)}")
         if tuple(w2_scale.shape) != (experts, hidden, intermediate // 32):
             raise RuntimeError(f"unexpected W2 scale shape {tuple(w2_scale.shape)}")
         self.experts = experts
-        self.w13_stream = w13.to(device=self.device).contiguous().view(torch.int32).reshape(-1)
-        self.w2_stream = w2.to(device=self.device).contiguous().view(torch.int32).reshape(-1)
+        # The trellis storage is byte-for-byte the same size as the packed
+        # E2M1 descriptor carrier expected by the inherited W4A8 launch ABI.
+        # Alias it for the descriptor-only arguments instead of allocating a
+        # second ~0.9 GiB of unread dummy weights per layer and TP rank.  The
+        # kernel reads the procedural stream through the uint32 pointers below;
+        # it never dereferences the descriptor carrier values.
+        w13_stream_storage = w13.to(device=self.device).contiguous()
+        w2_stream_storage = w2.to(device=self.device).contiguous()
+        self.w13_stream = w13_stream_storage.view(torch.int32).reshape(-1)
+        self.w2_stream = w2_stream_storage.view(torch.int32).reshape(-1)
         w13_scale = w13_scale.to(device=self.device).contiguous()
         w2_scale = w2_scale.to(device=self.device).contiguous()
         # The monolithic kernel consumes the logical [E, N, K/32] UE8M0
@@ -136,24 +206,36 @@ class P8NativeTPMoE:
             rows=hidden,
             k_dim=intermediate,
         ).reshape(-1)
-        # These are descriptor carriers only; trellis staging never reads them.
-        self.w13_dummy = torch.zeros(
-            experts, 2 * intermediate, hidden // 2, dtype=torch.uint8, device=self.device
+        # These are descriptor carriers only; they alias the trellis storage
+        # above and therefore add zero payload bytes.
+        w13_dummy_bytes = experts * 2 * intermediate * (hidden // 2)
+        w2_dummy_bytes = experts * hidden * (intermediate // 2)
+        self.w13_dummy = w13_stream_storage.view(torch.uint8).reshape(-1)[
+            :w13_dummy_bytes
+        ].reshape(
+            experts, 2 * intermediate, hidden // 2
         )
-        self.w2_dummy = torch.zeros(
-            experts, hidden, intermediate // 2, dtype=torch.uint8, device=self.device
+        self.w2_dummy = w2_stream_storage.view(torch.uint8).reshape(-1)[
+            :w2_dummy_bytes
+        ].reshape(
+            experts, hidden, intermediate // 2
         )
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_rotation = torch.zeros(1, dtype=torch.float16, device=self.device)
         self.ones = torch.ones(experts, dtype=torch.float32, device=self.device)
-        self._compiled: dict[bool, _CompiledArm] = {}
+        if self.small_m_scheduler and self.experts != 288:
+            raise ValueError("P8 small-M requires 288 experts")
+        if self.small_m_scheduler and self.trellis_bits != 4:
+            raise ValueError("P8 K5 does not use the K4-only small-M specialization")
+        self._compiled: dict[tuple[bool, bool], _CompiledArm] = {}
 
-    def _compile(self, materialized: bool) -> _CompiledArm:
-        cached = self._compiled.get(materialized)
+    def _compile(self, materialized: bool, small_m: bool = False) -> _CompiledArm:
+        cache_key = (materialized, small_m)
+        cached = self._compiled.get(cache_key)
         if cached is not None:
             return cached
-        tile_m = 64 if materialized else 16
+        tile_m = 64 if materialized and not small_m else 16
         mac = (
             self.mac_override
             if self.mac_override is not None
@@ -166,12 +248,14 @@ class P8NativeTPMoE:
             quant_recipe="w4a8_trellis",
             w4a8_repacked=True,
             num_topk=self.topk,
-            trellis_bits=4,
+            trellis_bits=self.trellis_bits,
             trellis_codebook="mcg",
             trellis_scaled=True,
             trellis_identity_boundary=True,
-            direct_routing=False,
+            direct_routing=small_m,
             materialize_intermediate=materialized,
+            p8_small_m=small_m,
+            p8_fc1_tile_n=self.fc1_tile_n if small_m else 128,
             share_input_across_experts=materialized,
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
@@ -244,6 +328,8 @@ class P8NativeTPMoE:
                 "glm53.p8.native.tp4",
                 1,
                 ("materialized", int(materialized)),
+                ("small_m_scheduler", int(small_m)),
+                ("fc1_tile_n", self.fc1_tile_n if small_m else 128),
                 ("experts", self.experts),
                 ("hidden", self.hidden),
                 ("intermediate", self.intermediate),
@@ -257,7 +343,7 @@ class P8NativeTPMoE:
             dsl_compile_options=OptLevel(2),
         )
         arm = _CompiledArm(compiled=compiled, tile_m=tile_m, materialized=materialized, mac=mac)
-        self._compiled[materialized] = arm
+        self._compiled[cache_key] = arm
         return arm
 
     @torch.inference_mode()
@@ -280,45 +366,86 @@ class P8NativeTPMoE:
             if self.force_materialized is None
             else self.force_materialized
         )
-        arm = self._compile(materialized)
+        small_m = use_small_m(self.small_m_scheduler, m)
+        materialized = materialized or small_m
+        arm = self._compile(materialized, small_m=small_m)
         tile_m = arm.tile_m
         x = x.contiguous()
         flat_ids = topk_ids.to(dtype=torch.int32).contiguous().reshape(-1)
         flat_weights = topk_weights.to(dtype=torch.float32).contiguous().reshape(-1)
-        physical_tiles = self.experts + (m * self.topk + tile_m - 1) // tile_m
+        physical_tiles = (
+            P8SmallMGeometry().physical_tiles if small_m
+            else self.experts + (m * self.topk + tile_m - 1) // tile_m
+        )
         rows_padded = physical_tiles * tile_m
         gate_tile_count = ((2 * self.intermediate) // 128) // 2
         max_tasks = physical_tiles * max(gate_tile_count, 1)
-        packed_a = torch.zeros(rows_padded * self.hidden, dtype=torch.uint8, device=self.device)
-        scale_flat = torch.zeros(
-            (self.experts + m * self.topk + 1) * tile_m * (self.hidden // 8),
-            dtype=torch.uint8,
-            device=self.device,
-        )
-        intermediate_u32 = torch.zeros(
-            rows_padded * (self.intermediate + self.intermediate // 32) // 4,
-            dtype=torch.int32,
-            device=self.device,
-        )
+        fused_scratch_zero = self.fuse_scratch_zero and small_m
+        if fused_scratch_zero:
+            layout = self._scratch_layout
+            assert layout is not None
+            # A single GPU fill initializes all original bytes plus alignment
+            # padding. The views add no casts, copies, or device kernels.
+            arena = torch.zeros(layout.nbytes, dtype=torch.uint8, device=self.device)
+            buffers = {
+                region.name: arena.narrow(0, region.offset, region.nbytes)
+                .view(getattr(torch, region.dtype)).reshape(region.shape)
+                for region in layout.regions
+            }
+            packed_a = buffers["packed_a"]
+            scale_flat = buffers["scale_flat"]
+            intermediate_u32 = buffers["intermediate_u32"]
+            barrier_count = buffers["barrier_count"]
+            barrier_epoch = buffers["barrier_epoch"]
+            pair_head = buffers["pair_head"]
+            producers_done = buffers["producers_done"]
+            all_published = buffers["all_published"]
+            task_head = buffers["task_head"]
+            task_tail = buffers["task_tail"]
+            task_ready = buffers["task_ready"]
+            task_expert = buffers["task_expert"]
+            task_m_tile = buffers["task_m_tile"]
+            task_slice_begin = buffers["task_slice_begin"]
+            task_slice_count = buffers["task_slice_count"]
+            task_valid_rows = buffers["task_valid_rows"]
+            tile_write_count = buffers["tile_write_count"]
+            row_counts = buffers["row_counts"]
+            expert_write_rows = buffers["expert_write_rows"]
+            expert_tile_base = buffers["expert_tile_base"]
+            token_map = buffers["token_map"]
+            token_weights = buffers["token_weights"]
+            output = buffers["output"]
+        else:
+            packed_a = torch.zeros(rows_padded * self.hidden, dtype=torch.uint8, device=self.device)
+            scale_flat = torch.zeros(
+                (self.experts + m * self.topk + 1) * tile_m * (self.hidden // 8),
+                dtype=torch.uint8,
+                device=self.device,
+            )
+            intermediate_u32 = torch.zeros(
+                rows_padded * (self.intermediate + self.intermediate // 32) // 4,
+                dtype=torch.int32,
+                device=self.device,
+            )
 
-        def z1():
-            return torch.zeros(1, dtype=torch.int32, device=self.device)
+            def z1():
+                return torch.zeros(1, dtype=torch.int32, device=self.device)
 
-        def ztask():
-            return torch.zeros(max_tasks, dtype=torch.int32, device=self.device)
+            def ztask():
+                return torch.zeros(max_tasks, dtype=torch.int32, device=self.device)
 
-        barrier_count, barrier_epoch = z1(), z1()
-        pair_head, producers_done, all_published = z1(), z1(), z1()
-        task_head, task_tail = z1(), z1()
-        task_ready, task_expert, task_m_tile = ztask(), ztask(), ztask()
-        task_slice_begin, task_slice_count, task_valid_rows = ztask(), ztask(), ztask()
-        tile_write_count = torch.zeros(physical_tiles, dtype=torch.int32, device=self.device)
-        row_counts = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
-        expert_write_rows = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
-        expert_tile_base = torch.zeros(self.experts + 1, dtype=torch.int32, device=self.device)
-        token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
-        token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
-        output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
+            barrier_count, barrier_epoch = z1(), z1()
+            pair_head, producers_done, all_published = z1(), z1(), z1()
+            task_head, task_tail = z1(), z1()
+            task_ready, task_expert, task_m_tile = ztask(), ztask(), ztask()
+            task_slice_begin, task_slice_count, task_valid_rows = ztask(), ztask(), ztask()
+            tile_write_count = torch.zeros(physical_tiles, dtype=torch.int32, device=self.device)
+            row_counts = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
+            expert_write_rows = torch.zeros(self.experts, dtype=torch.int32, device=self.device)
+            expert_tile_base = torch.zeros(self.experts + 1, dtype=torch.int32, device=self.device)
+            token_map = torch.zeros(rows_padded, dtype=torch.int32, device=self.device)
+            token_weights = torch.zeros(rows_padded, dtype=torch.float32, device=self.device)
+            output = torch.zeros(m, self.hidden, dtype=torch.bfloat16, device=self.device)
         kernel_output = (
             torch.empty(
                 m * self.topk,
@@ -384,4 +511,16 @@ class P8NativeTPMoE:
                 k=self.hidden,
                 stream=current_cuda_stream(),
             )
+        if self.debug_capture:
+            self.debug_tensors = {
+                "packed_a": packed_a, "scale_flat": scale_flat,
+                "intermediate_u32": intermediate_u32,
+                "route_output": kernel_output,
+                "token_map": token_map, "row_counts": row_counts,
+                "expert_tile_base": expert_tile_base,
+            }
+            self.debug_dispatch = {"small_m": small_m, "materialized": materialized,
+                                   "fused_scratch_zero": fused_scratch_zero,
+                                   "fc1_tile_n": self.fc1_tile_n if small_m else 128,
+                                   "tile_m": tile_m}
         return output

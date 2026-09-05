@@ -1,0 +1,58 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 6,
+  "parent_amendment": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-5.json",
+    "sha256": "bcfae5496d7b0ff53a7bddbab3f98a2ca2aedf05b958be9d879bcb511526f19c"
+  },
+  "trigger": "The unrotated reference passed exhaustive semantic closure and both three-layer BF16 overlays were assembled before opening target KLD. Freeze the exact execution identities and run IDs now.",
+  "run_order": [
+    "trellismx-p8-rot3-cf32-stock-v1",
+    "trellismx-p8-rot3-cf32-unrotated-v1",
+    "trellismx-p8-rot3-cf32-rotated-v1"
+  ],
+  "execution": {
+    "runtime_image": "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate",
+    "runtime_image_id": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "runtime_patch_manifest_sha256": "fc44b8926c66729959217c4c84f674a1c78bbfa32c12dfa19f1049959d3cb3e4",
+    "runtime_patch_files_sha256": "30aa2ac0ea646265f198466d4d3539737d90d75330981ccefc63844a8c2172dd",
+    "runtime_patch_file_count": 37,
+    "kld_runner_sha256": "a78c5d0a2e9101efc0c00c660fc670f8a5f0bf02664322816efb70734d5ad0fe",
+    "tensor_parallel": 4,
+    "decode_context_parallel": 4,
+    "expert_parallel": false,
+    "moe_backend": "humming",
+    "humming_activation": "bf16",
+    "mtp": false,
+    "eager": true,
+    "kv_cache": "fp8_ds_mla"
+  },
+  "inputs": {
+    "roles_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+    "stock_index_sha256": "0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb",
+    "stock_config_sha256": "676382abd1e90a6c85f0c8f33d45441ecd45fd514fd7b63ce5610e732d8e4996",
+    "unrotated_overlay_receipt_sha256": "51bf2c007ffe0c0f30fdc6018a0751225c077db97eca1586a7e66e75b901a62f",
+    "rotated_overlay_receipt_sha256": "b48fe16e0a249270883d6a23c6ba5a68c126d749011bbe046aa79f11245a2edd",
+    "unrotated_layer3_semantic_closure_evidence_sha256": "7f27f4e275b67f17f4f559161f2494d632d9d2f7edd6b3c8190c54bb1f44cdf1"
+  },
+  "unrotated_boundary_file_sha256": [
+    "30a8b09198ae626eae9b888a60b006fefeb5f1b37a8ff9fb403aebbb61cf2641",
+    "96610afce206482dc6b17df112edf5d0e71a2b50a78a313795e6545cf11a761d",
+    "1b45a4b10dde749017558a2e4d0ee1213ff39e5b9c70cf768e437dae4a26a154",
+    "9bbe2cf0c40eb73ac185437d4ed4f812e877cdda174876a713b19373a77f94c3"
+  ],
+  "arm_details": {
+    "stock": "stock carrier, identity, no P8 patch, safetensors loader",
+    "unrotated_p8": "three-layer BF16 overlay, P8 control arm, layers 3,20,22, InstantTensor loader",
+    "rotated_p8": "three-layer BF16 overlay, P8 mid-butterfly arm, angle_pi 0.0625, layers 3,20,22, InstantTensor loader"
+  },
+  "output_root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/kld",
+  "unchanged": [
+    "32 conditional-fit windows and teacher logits",
+    "stock then unrotated then rotated order",
+    "primary and secondary estimands and decision rules",
+    "no exclusions, substitutions, rerolls, or angle search",
+    "no LDLQ and no protected role opening"
+  ],
+  "interpretation": "Execution seal only. It fixes all runtime, overlay, and run identities before the first target KLD arm and changes no experimental variable."
+}

@@ -1,0 +1,143 @@
+{
+  "schema": "glm53-p4-astra-kernel-structural-receipt.v1",
+  "recorded_at_utc": "2026-09-04T23:25:57.480528+00:00",
+  "base_commit": "74471a7cba6a5058088608d71949f36a541045b1",
+  "branch": "astra-p4-kernel",
+  "worktree": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-astra-p4-kernel",
+  "evidence_level": "structural",
+  "plan": "experiments/p4-astra-agent-plan-v1.json",
+  "authorization": "User-authorized isolated implementation, CPU/static checks and local commit only; no push.",
+  "inputs": "Only synthetic fixtures and the exhaustive 16-bit state census; no model or role data.",
+  "gpu_executed": false,
+  "roles_opened": [],
+  "reserved_confirmation_logits_inspected": 0,
+  "models_downloaded": false,
+  "services_modified_or_launched": false,
+  "ldlq_or_blockldlq": false,
+  "p8_runtime_and_dynamic_backend_unchanged": true,
+  "lookup_table_bytes": 0,
+  "compander": 1,
+  "weight_rounding": "nearest-ties-low-magnitude; positive zero; half addition nearest-even",
+  "physical_abi": "docs/P4_NATIVE.md",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "torch": "2.12.0.dev20260410+cu132",
+    "cuda_visible_devices": "",
+    "omp_num_threads": 1,
+    "mkl_num_threads": 1,
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Mar_02_09:52:23_PM_PST_2026\nCuda compilation tools, release 13.2, V13.2.51\nBuild cuda_13.2.r13.2/compiler.37434383_0",
+    "cxx": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+  },
+  "validation": [
+    {
+      "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0 python3 -m pytest -q -s tests/test_p4_native_kernel.py tests/test_trellis_nvfp4.py tests/test_build_p8_tp4_sidecars.py tests/test_p8_h128.py tests/test_modelopt.py tests/test_export_native_endpoint.py",
+      "exit_code": 0,
+      "passed": 46,
+      "skipped": 1,
+      "skip": "Existing CUDA Viterbi encoder test; no device run.",
+      "output": "kernel-tests-final.txt"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0 python3 -m glm53_nvfp4.probe_p4_native --output evidence/opened/codec-v2/p4-astra/kernel-cpu-probe.json",
+      "exit_code": 0,
+      "output": "kernel-cpu-probe.json"
+    }
+  ],
+  "preserved_attempts": [
+    {
+      "output": "kernel-tests-attempt-1.txt",
+      "exit_code": 1,
+      "result": "27 passed, full-launch-library link failed: generic sm_120 target rejected block-scaled MMA."
+    },
+    {
+      "output": "kernel-tests-attempt-2.txt",
+      "exit_code": 0,
+      "result": "28 passed after explicit compute_120a/sm_120a library code generation."
+    }
+  ],
+  "offline_compilation": {
+    "device_target": "sm_120a",
+    "library_codegen": "arch=compute_120a,code=sm_120a",
+    "ptx_mma": "mma.sync.aligned.m16n8k64.row.col.kind::mxf4nvf4.block_scale.scale_vec::4X.f32.e2m1.e2m1.f32.ue4m3",
+    "sass_mma": "OMMA.SF.16864.F32.E2M1.E2M1.UE4M3.4X",
+    "static_mma_sites": 15,
+    "projection_registers": 72,
+    "projection_shared_bytes": 1728,
+    "projection_stack_bytes": 0,
+    "projection_spill_store_bytes": 0,
+    "projection_spill_load_bytes": 0,
+    "library_loaded": false,
+    "artifacts": {
+      "p4.ptx": {
+        "sha256": "aa72e2ec1cabdbbb222cafb17aca18f1fef65ff9d9b75e146d9b63ffd8b755cf",
+        "bytes": 209749
+      },
+      "p4.cubin": {
+        "sha256": "b6d3dfe73a2e891b88d579922ef0674f60a1856c2f9a44775abc0196f0cc3f9d",
+        "bytes": 333240
+      },
+      "library/c17f9ee959c3a74e8fa7/p4_moe.so": {
+        "sha256": "64e096cf7a143c3432325709323aa982b119340328c82358b64ba67c881362fd",
+        "bytes": 1410016
+      }
+    },
+    "artifact_retention": "Compiler artifacts in temporary test directory; hashes and all MMA SASS sites retained here; rebuild from committed source and logged commands."
+  },
+  "deterministic_hashes": {
+    "state_census": "5800155d0332487e8a0f7d1d2a8e4a8fc32e719136877e07048049ea641d59fe",
+    "test_cpu_output": "331299fe762e2bcfda78eeb06c5a83aeb02c756f346766b5e4e259d3930fea87",
+    "probe_output_and_payload": "kernel-cpu-probe.json",
+    "repetitions": 5,
+    "scope": "CPU/reference only"
+  },
+  "not_tested": [
+    "GPU byte equality",
+    "GPU arithmetic or race/sanitizer closure",
+    "real GLM dimensions or sidecars",
+    "integrated KLD",
+    "CUDA graph parity",
+    "thermals",
+    "GPU determinism",
+    "TP4 prefill/decode speed"
+  ],
+  "speed_claim": "blocked: parent device closure, pipeline profiling, matched TP4 controls and repeated performance/determinism are still required",
+  "implementation_limits": [
+    "two fused projection kernels plus activation and reduction kernels",
+    "stable route sorting and per-call scratch",
+    "M16/N8 two-warp tiles",
+    "activation scale policy unqualified against stock NVFP4",
+    "no model sidecar conversion or production integration"
+  ],
+  "source_sha256": {
+    "runtime_patch/p4/p4_decode.cuh": "1c3c2b6c5a83530e8ba2e41e11d94a7285e5c2ca3bf3ed54153c298116db5ae3",
+    "runtime_patch/p4/p4_moe.cu": "1a67e8616cc8ff494deb341621cafe937fd12dbfc4b6da15ee0c34231a708e74",
+    "runtime_patch/p4_native_kernel.py": "19275f8090230e422b39802a3401fcb5f336e475c59f48db627adfd695aacd73",
+    "glm53_nvfp4/p4_reference.py": "f260c4e22eddf46f044fa898a1f5df7031a9b26061e096195d80b2ee8f981e27",
+    "glm53_nvfp4/probe_p4_native.py": "723a1cded43f73bcb8f90639b957187d3a2c10dfa138058c5d7d8bc5a38ea869",
+    "tests/p4_host_bridge.cpp": "d5dd3c630d8c3936be1829797a83dad5fd6017268d033857a742b8f02bcd56b4",
+    "tests/test_p4_native_kernel.py": "acb009f5a035f9800d74159cdda96ddb745b8e59b5315289255bd3a802228bcb",
+    "docs/P4_NATIVE.md": "5916f200d94c4e283f5c43d2325259e859b9af43a392b584a19788ba1b7c5668",
+    "README.md": "df15a01d41f8b10924324226ce84aaed76a8a4f76328cb29aa5a0caf3249e386",
+    "THIRD_PARTY_NOTICES.md": "30337c6c44ed95ce2145289c993f2b7ceca3655f44dbb2bdcb7d049d9ee563d2",
+    "glm53_nvfp4/trellis_nvfp4.py": "4b4b59cdab24c4e5b51c2cb78687126dce474b4dcce0953b6e0e39f66b2c5fa0",
+    "runtime_patch/p8_native_kernel.py": "a1f04de129e9e088137b869182fc03ea5e2268f5123ba8a5abbceeb0534b43b4",
+    "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py": "2428e8a6abaec75348181e6afee37deb2edf7697c820dd762029a453c8b071e4",
+    "experiments/p4-astra-agent-plan-v1.json": "259d1daeb1329111efc9e1f6efddb6181854ac179dad4f6329586e68c5312789"
+  },
+  "receipt_artifact_sha256": {
+    "kernel-cpu-probe.json": "b56f729f22ad6d6e9e2b9c3abdfd54b0cd94bd90d87b8578ce07a718decab48b",
+    "kernel-isa.txt": "b412156853f1a0978ea2a658af4cd5941a4020b1deb14367393d913143dc923d",
+    "kernel-receipt.md": "e673d77b9abba452d9402d7df91d17ca67fb95fb6deae4c8bf602043288be0c3",
+    "kernel-tests-attempt-1.txt": "f54660734dd7bb85c788c8110a8b40af104670e3fe3c6968957aa0f2d925e714",
+    "kernel-tests-attempt-2.txt": "1941f9e3455c0c22cf1d407eddd5771d3833240cd32554b3f61df41394c64037",
+    "kernel-tests-final.txt": "172ce1d83e08ad9fba3c605fe6600911ac165cc12c09519ca9335dd50eb5d0c3"
+  },
+  "diff_review": {
+    "complete_staged_implementation_reviewed": true,
+    "code_and_documentation_whitespace_check": "pass",
+    "full_diff_check": "Only original pytest traceback trailing spaces in kernel-tests-attempt-1.txt; raw output preserved.",
+    "p8_sources": "Both SHA-256 pins match the base commit."
+  }
+}

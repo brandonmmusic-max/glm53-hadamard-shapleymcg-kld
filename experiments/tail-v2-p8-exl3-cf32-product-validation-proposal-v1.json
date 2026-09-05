@@ -1,0 +1,69 @@
+{
+  "schema": "glm53.tail-v2-product-validation-proposal.v1",
+  "status": "preparation-only-unsealed-no-gpu-run",
+  "question": "Under the same Tail-V2 B12X/NVFP4 attention path and CUDA-graph state, what are full-CF32 KLD, five-cold-run determinism, and product prefill/decode speed for native P8 versus production EXL3?",
+  "quality_panel": {
+    "role": "conditional-fit",
+    "windows": 32,
+    "balance": "8 each: general, legal, code-agentic, reasoning-termination",
+    "metric": "paired per-window KL(teacher || student), nats, causal rows, pinned FP64 CPU implementation",
+    "analysis_unit": "window; repeat 1 only after determinism passes",
+    "protected_roles_opened": []
+  },
+  "common_runtime": {
+    "physical_gpus": [0, 1, 2, 3],
+    "tp": 4,
+    "attention_backend": "B12X_MLA_SPARSE",
+    "kv_cache_dtype": "nvfp4_ds_mla",
+    "tail_selector": "tail-after-valid-history-v2, identical patched source SHA in both image receipts",
+    "cuda_graphs": true,
+    "mtp": false,
+    "max_num_seqs": 1
+  },
+  "arm_specific_runtime": {
+    "p8": {
+      "topology": "TP4/noEP/DCP1",
+      "moe": "native P8 mxf8f6f4 N64 fused scratch",
+      "activation": "E4M3 UE8M0_K32",
+      "payload_bpw": 4.25,
+      "image": "existing immutable Tail-V2 P8 capture image"
+    },
+    "exl3": {
+      "topology": "TP4/EP4/DCP4",
+      "moe": "B12X full-expert EXL3 K4",
+      "activation": "BF16 model/kernel boundary",
+      "payload_bpw": 4.0,
+      "image": "TO BUILD: production EXL3 capture image plus identical Tail-V2 patch"
+    }
+  },
+  "storage": {
+    "raw_bytes_per_window": 1268157440,
+    "hard_peak_new_bytes": 30000000000,
+    "method": "capture one window, validate and score, write and fsync score receipt, unlink only the authenticated raw, write retirement receipt, then request the next window",
+    "retained": "capture metadata, raw SHA-256, per-row score NPZ, window score receipt, runtime receipt, retirement receipt",
+    "failed_or_partial_policy": "stop and retain all failure/partial artifacts; never clean them automatically"
+  },
+  "determinism": {
+    "cold_process_runs_per_arm": 5,
+    "order_by_repeat": [["exl3", "p8"], ["p8", "exl3"], ["exl3", "p8"], ["p8", "exl3"], ["exl3", "p8"]],
+    "pass": "for every one of 64 arm-window cells, all five raw-logit SHA-256 values are identical",
+    "failure": "preserve hashes and KLD but fail qualification; do not average repeats as n=160"
+  },
+  "speed": {
+    "capture_enabled": false,
+    "cold_process_runs_per_arm": 5,
+    "primary_prefill": "32K Prometheus kv_computed server input tokens/s",
+    "primary_decode": "C1 32K OpenAI continuous-usage output tokens/s",
+    "secondary": "64K prefill and C1 decode",
+    "pass": "P8 five-run median strictly exceeds EXL3 five-run median for both primary metrics",
+    "failure": "tie, regression, fewer than five valid runs, or any runtime-contract drift"
+  },
+  "blocking_prerequisites": [
+    "build and receipt the EXL3 Tail-V2 image without GPU",
+    "verify identical patched KPool source SHA across P8 and EXL3 image receipts",
+    "fresh payload byte audit",
+    "generate and seal the resolved execution plan",
+    "production-service maintenance authority before later GPU execution"
+  ],
+  "claim_boundary": "This is the requested product comparison. The unavoidable P8 noEP/DCP1/E4M3 versus EXL3 EP4/DCP4/BF16 differences mean it is not a codec-only or matched-topology causal estimate."
+}

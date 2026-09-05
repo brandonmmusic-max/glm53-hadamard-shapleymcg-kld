@@ -1,0 +1,32 @@
+{
+  "created_at": "2026-09-04T18:39:04-04:00",
+  "decision": "pass for immutable hashed campaign artifacts; retain active code and manifests on ext4",
+  "direct_io_probe": {
+    "bytes": 268435456,
+    "cleanup": "pass",
+    "oflag_direct_and_fsync": "pass",
+    "sha256": "a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484"
+  },
+  "encryption_visibility": "No dm-crypt layer is visible in lsblk for /dev/nvme2n1p3; at-rest encryption is not established by this preflight.",
+  "filesystem": {
+    "available_bytes": 673738801152,
+    "device": "/dev/nvme2n1p3",
+    "fstype": "ntfs via fuseblk",
+    "mount": "/media/brandonmusic/nvme1n1p3",
+    "mount_options": "rw,relatime,user_id=0,group_id=0,default_permissions,allow_other,blksize=4096",
+    "user_write_probe": "pass"
+  },
+  "limitations": [
+    "NTFS/fuseblk is not the preferred native-Linux training filesystem; every retained safetensors artifact must therefore carry a content hash.",
+    "The NVMe device advertises a 512-byte discard granularity, but periodic TRIM and mount-level discard were not established.",
+    "The direct-I/O probe establishes successful API-level direct writes plus fsync, not independent power-loss durability."
+  ],
+  "projected_capacity": {
+    "all_42_p8_sidecars_bytes_approx": 162000000000,
+    "all_42_scalar_mxfp8_sidecars_bytes_approx": 314000000000,
+    "combined_bytes_approx": 476000000000,
+    "headroom_after_combined_bytes_approx": 197738801152
+  },
+  "protected_data_opened": false,
+  "schema": "glm53-native6-storage-preflight.v1"
+}

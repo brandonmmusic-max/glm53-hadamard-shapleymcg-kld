@@ -1,0 +1,135 @@
+{
+  "advance": "only a pseudoquant pass advances the selected rotation into the fused device prologue and all-layer build",
+  "base_p8_design": {
+    "bytes": 28592,
+    "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/experiments/p8-kld-shapley-native6-v2.json",
+    "sha256": "74637836d2680d3040ef000167a052c68519f89cdbc5fdeba03231c180a4d781"
+  },
+  "created_at": "2026-09-05T15:08:17.266707+00:00",
+  "decision_before_result": true,
+  "decision_record": "DECISIONS_GLM53.md#21",
+  "device_closure_gate": {
+    "comparison": "fused rotated P8 kernel minus exact staged rotated P8 pseudoquant",
+    "decision_rule": "absolute paired mean delta <= 0.0014 and paired BCa 95 percent interval contains zero",
+    "determinism": "five bitwise-identical runs"
+  },
+  "encoder": {
+    "activation_order": "static within each native 16-column trellis group",
+    "down": "encode W2 @ R with K4 procedural-MCG E4M3 UE8M0-K32, full-Hessian GPTQ feedback",
+    "gate_up": "K4 procedural-MCG E4M3 UE8M0-K32, full-Hessian GPTQ feedback",
+    "ldlq": false,
+    "rotation_arithmetic": "post-SwiGLU BF16 input; four FP32 Givens stages; final BF16 round; E4M3 UE8M0-K32 quantization",
+    "rotation_table_bytes": 0,
+    "scale_refits": 2,
+    "stored_weight_bpw": 4.25
+  },
+  "git_commit": "405e658a9c30c78e4283e4068e344eaa0b13ce14",
+  "inputs": {
+    "block_rotation": {
+      "bytes": 13600,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/block_rotation.py",
+      "sha256": "478e3becb8287ce0f9eac235d924f9c8640c2cd6c82aa717c9f76cab510827b5"
+    },
+    "encoder": {
+      "bytes": 16368,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/quantize_rotated_hessian_trellis_layer.py",
+      "sha256": "f88b5d335153547b2217d010effe28ca8cf0174206ac0b8aa104a7f295f5cb18"
+    },
+    "roles": {
+      "bytes": 18477,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/experiments/rotation-v8-fit-tune32.json",
+      "sha256": "08ac5b6dbd0982b437d5930602d0f4a777966507efb562f6f567a9dbfc43a0a9"
+    },
+    "run_kld": {
+      "bytes": 20859,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/scripts/run_kld_v3.sh",
+      "sha256": "4e8a4e35dcedf6df707ed40ef2b221abadb79cfcc91eb2978ba5554ac6cbca6f"
+    },
+    "runtime_patch": {
+      "bytes": 55880,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/runtime_patch/sitecustomize.py",
+      "sha256": "55dfeaaac097751efb7d45c33ec3e1a8a4ce93954e77819ba68b877c097f39f3"
+    },
+    "train_analysis": {
+      "bytes": 7501,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/results/rotation-v8-shared-mid-butterfly-layer3/train32-analysis-v2.json",
+      "sha256": "d8f470e22841417c21c41b108ef656c45ea35513a11831c1bc066c18fc451dc0"
+    },
+    "trellis_codec": {
+      "bytes": 27010,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/glm53_nvfp4/trellis_mxf.py",
+      "sha256": "bb4309ef2be5f008c8091c8be44e4596f367c50fffcdeac9d7ebe1f1a0bef07c"
+    },
+    "tune_analysis": {
+      "bytes": 1683,
+      "path": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-rotation-v6-blocklocal-kld/results/rotation-v8-shared-mid-butterfly-layer3/tune32-analysis-v1.json",
+      "sha256": "105c54116f1230225c1cdb26714497a456880c21de866be63d26526446df467c"
+    }
+  },
+  "isa_cost_statement": "P8 uses mxf8f6f4 at twice NVFP4 MMA issue count; it is the quality product, not the P4 speed product",
+  "layers": [
+    3
+  ],
+  "ldlq": false,
+  "prior_preflight_failure": {
+    "classification": "pre-output deterministic dtype mismatch in diagnostic metric; no codec, dense chunk, receipt, or KLD result written",
+    "logs": [
+      {
+        "bytes": 702,
+        "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v1/logs/chunk-000-072.log",
+        "sha256": "a38cd5cd7251bd9189e38bc52791bed992e73c9e00da20b52af6abb7a1be1fe8"
+      },
+      {
+        "bytes": 702,
+        "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v1/logs/chunk-072-144.log",
+        "sha256": "a38cd5cd7251bd9189e38bc52791bed992e73c9e00da20b52af6abb7a1be1fe8"
+      },
+      {
+        "bytes": 702,
+        "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v1/logs/chunk-144-216.log",
+        "sha256": "a38cd5cd7251bd9189e38bc52791bed992e73c9e00da20b52af6abb7a1be1fe8"
+      },
+      {
+        "bytes": 702,
+        "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v1/logs/chunk-216-288.log",
+        "sha256": "a38cd5cd7251bd9189e38bc52791bed992e73c9e00da20b52af6abb7a1be1fe8"
+      }
+    ],
+    "root": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotated-p8-mid-butterfly-l3-v1"
+  },
+  "protected_boundary": "selection, confirmation, final, and 28 reserved confirmation logits remain unopened",
+  "protected_roles_opened": [],
+  "pseudoquant_gate": {
+    "arms": [
+      "fresh-stock-nvfp4",
+      "unrotated-p8",
+      "rotated-p8-p00625"
+    ],
+    "decision_rule": "rotated P8 mean KLD below unrotated P8 and no greater than stock",
+    "domain_counts": {
+      "axis1_general": 8,
+      "axis2_legal": 8,
+      "axis3_code_agentic": 8,
+      "axis4_reasoning_termination": 8
+    },
+    "paired_bca": "reported as nonblocking development control",
+    "role": "fit/tune32",
+    "run_order": [
+      "fresh-stock-nvfp4",
+      "unrotated-p8",
+      "rotated-p8-p00625"
+    ],
+    "stopping": "one run per arm; no exclusions, substitutions, rerolls, or replacement angles",
+    "windows": 32
+  },
+  "rotation": {
+    "angle_pi": 0.0625,
+    "bytes": 1224,
+    "id": "p00625",
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-rotation-v8/shared-mid-butterfly-layer3/rotations/p00625.safetensors",
+    "selection": "fixed before tune close; one interaction regardless of tune outcome",
+    "sha256": "b95f53f0bb0d9c1593172c17057163cc747db73ea6c4787f94b4ffadb6605c12",
+    "tune_decision_control": "fail"
+  },
+  "schema": "glm53-trellismx-p8.shared-mid-butterfly-design.v1"
+}

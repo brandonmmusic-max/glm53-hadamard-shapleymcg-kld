@@ -24,6 +24,28 @@ and software. Those components are not relicensed by the ShapleyMCG License.
   QSRT SQG-XOR-Cheb-T12 decoder. Reuse of its pipeline, lane mapping, or T12
   table must be described as a port and retain the KQuant/QSRT attribution and
   unverified-license notice above.
+- The separate `runtime_patch/p4/` endpoint ports the ExLlamaV3 cyclic K4
+  stream, MCG constants, and tensor-core tile convention through this
+  repository's KQuant/QSRT codec. Its producer/consumer organization follows
+  the vendored B12X `w4a8_trellis` design. The integer P4 decoder, CUDA C launch
+  ABI, and E2M1/E4M3/16 staging are new; no T12 table or P8 K32 operand
+  permutation is used. `glm53_nvfp4/p4_reference.py` independently implements
+  the same frozen law/layout for CPU verification. Retain all notices above.
+- The GLM P4 serving adapter in `runtime_patch/p4_glm_serving.py` and the
+  `b12x_h16/.../p4_native.py` backend entry are new integration work against
+  vLLM's existing factory/modular-method contracts. The v2 P4 decoder adopts
+  the matrix codec's native RNE and signed-zero semantics. Native activation
+  prepass reuse and shape/stream workspace caching are new implementation;
+  the underlying ExLlamaV3/KQuant/QSRT/B12X port attribution still applies.
+
+- The P8 narrow-FC1 implementation in
+  `runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_narrow_fc1.py`
+  is a port and modification of B12X's materialized phase-1 pipeline, not an
+  independently invented pipeline. It preserves this campaign's MCG decoder,
+  FP32 clipped SwiGLU and BF16 rounding boundary while changing output-tile
+  ownership and staging ranges. The aligned scratch-arena layout and serving
+  selector plumbing are new integration work; all underlying notices above
+  continue to apply.
 
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be

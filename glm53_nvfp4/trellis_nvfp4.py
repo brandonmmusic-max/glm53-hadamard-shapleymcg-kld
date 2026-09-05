@@ -11,6 +11,10 @@ snapshot.  That snapshot did not contain a license file; provenance and the
 unverified license status are recorded in THIRD_PARTY_NOTICES.md.  KQuant's
 CUDA Viterbi encoder is loaded lazily so the format,
 packer, and reference decoder remain testable without that optional encoder.
+
+These legacy encoder LUTs use lower-magnitude midpoint ties and canonical
+positive zero. The independently versioned, table-free native RNE P4 matrix
+interchange is in p4_codec.py; do not relabel legacy payloads as that law.
 """
 from __future__ import annotations
 
@@ -542,6 +546,8 @@ def _encode_nvfp4_with_gptq_feedback(
     tailbite_context: int,
     percdamp: float,
     column_block: int,
+    prepared_inverse: tuple[torch.Tensor, torch.Tensor] | None = None,
+    tile_encoder=None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Encode native NVFP4 groups with GPTQ-style inter-group feedback.
 
@@ -557,7 +563,11 @@ def _encode_nvfp4_with_gptq_feedback(
         raise ValueError("block scales must have one E4M3 value per NVFP4 group")
     if column_block % 16:
         raise ValueError("column block must preserve native trellis groups")
-    hinv, permutation = _prepare_full_inverse(hessian, percdamp, 16)
+    hinv, permutation = (prepared_inverse if prepared_inverse is not None
+                         else _prepare_full_inverse(hessian, percdamp, 16))
+    if hinv.shape != (width, width) or permutation.shape != (width,):
+        raise ValueError("prepared GPTQ inverse/permutation shape mismatch")
+    select_tiles = _encode_tiles if tile_encoder is None else tile_encoder
     inverse = torch.empty_like(permutation)
     inverse[permutation] = torch.arange(width, device=weight.device)
     work = weight.float()[:, permutation].clone()
@@ -583,7 +593,7 @@ def _encode_nvfp4_with_gptq_feedback(
             scale = real_scales[:, absolute_start // 16]
             normalized_native = current_native / scale[:, None].clamp_min(1e-30)
             tiles = _prepare_native_group_tiles(normalized_native)
-            quantized_tiles, states = _encode_tiles(
+            quantized_tiles, states = select_tiles(
                 tiles, lut, bits=bits, tailbite_context=tailbite_context
             )
             quantized_native = _decode_native_group_tiles(

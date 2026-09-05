@@ -1,0 +1,2121 @@
+From 0c878821cf46c99729c7936bcbd4d868ad40e44e Mon Sep 17 00:00:00 2001
+From: Luke Alonso <lalonso@gmail.com>
+Date: Thu, 27 Aug 2026 04:41:34 -0700
+Subject: [PATCH] feat(b12x): add GLM-5.3 backend integration
+
+Signed-off-by: Luke Alonso <lalonso@gmail.com>
+
+diff --git a/tests/v1/attention/test_b12x_sparse_mla_api.py b/tests/v1/attention/test_b12x_sparse_mla_api.py
+index f4477986c4..c010ddf58f 100644
+--- a/tests/v1/attention/test_b12x_sparse_mla_api.py
++++ b/tests/v1/attention/test_b12x_sparse_mla_api.py
+@@ -5,12 +5,17 @@
+ from types import SimpleNamespace
+ from typing import Any
+ 
++import pytest
+ import torch
+ 
+ from vllm.config import AttentionConfig, set_current_vllm_config
+ from vllm.model_executor.layers.attention.mla_attention import (
++    MLAAttention,
+     _canonicalize_sparse_mla_kv_cache_dtype,
+ )
++from vllm.model_executor.layers.attention.sparse_mla_attention import (
++    SparseMLACommonMetadataBuilder,
++)
+ from vllm.models.deepseek_v4.nvidia import b12x as b12x_mla
+ from vllm.models.deepseek_v4.nvidia import b12x_indexer
+ from vllm.models.deepseek_v32.attention import (
+@@ -23,8 +28,20 @@ from vllm.v1.attention.backends.b12x import B12xPagedAttentionBackend
+ from vllm.v1.attention.backends.mla import b12x_indexer as generic_b12x_indexer
+ from vllm.v1.attention.backends.mla import b12x_mla_sparse
+ from vllm.v1.attention.backends.mla.b12x_indexer import B12xIndexerBackend
+-from vllm.v1.attention.backends.mla.b12x_mla_sparse import B12xMLASparseBackend
++from vllm.v1.attention.backends.mla.b12x_mla_sparse import (
++    B12xGLM5NextMLASparseBackend,
++    B12xGLM5NextMLASparseMetadataBuilder,
++    B12xMLASparseBackend,
++    B12xMLASparseImpl,
++    B12xMLASparseMetadata,
++    B12xMLASparseMetadataBuilder,
++    _selected_index_block_stride_rows,
++)
++from vllm.v1.attention.backends.mla.sparse_utils import _remap_tiling
+ from vllm.v1.attention.backends.registry import AttentionBackendEnum
++from vllm.v1.kv_cache_interface import MLAAttentionSpec
++from vllm.v1.kv_cache_layout import KVCacheLayout
++from vllm.v1.worker.utils import select_common_block_size
+ 
+ 
+ class _Workspace:
+@@ -87,6 +104,459 @@ def test_b12x_sparse_mla_accepts_glm_dsa_contract(monkeypatch) -> None:
+     )
+ 
+ 
++def _glm5_next_config(*, dcp_size: int = 1, **overrides: int) -> SimpleNamespace:
++    recipe = dict(
++        model_type="glm5_next_text",
++        kv_lora_rank=512,
++        qk_nope_head_dim=256,
++        qk_rope_head_dim=0,
++        v_head_dim=256,
++        index_n_heads=32,
++        index_head_dim=128,
++        index_topk=2048,
++        index_kpool=4,
++    )
++    recipe.update(overrides)
++    return SimpleNamespace(
++        model_config=SimpleNamespace(hf_text_config=SimpleNamespace(**recipe)),
++        parallel_config=SimpleNamespace(decode_context_parallel_size=dcp_size),
++    )
++
++
++def test_b12x_glm5_next_cache_spec_and_layout(monkeypatch) -> None:
++    monkeypatch.setattr(b12x_mla_sparse, "get_b12x_sparse_mla", lambda: object())
++    config = _glm5_next_config()
++    probe = MLAAttentionSpec(
++        block_size=64,
++        num_kv_heads=1,
++        head_size=512,
++        dtype=torch.uint8,
++        cache_dtype_str="fp8_ds_mla",
++        state_content_bytes=656,
++    )
++
++    unidentified = B12xMLASparseBackend.customize_spec(probe)
++    packed_by_glm_backend = B12xGLM5NextMLASparseBackend.customize_spec(probe)
++    with set_current_vllm_config(config):
++        invalid_reasons = B12xMLASparseBackend.validate_configuration(
++            head_size=512,
++            dtype=torch.bfloat16,
++            kv_cache_dtype="fp8",
++            block_size=64,
++            use_mla=True,
++            has_sink=False,
++            use_sparse=True,
++            use_mm_prefix=False,
++            use_per_head_quant_scales=False,
++            device_capability=DeviceCapability(12, 0),
++            attn_type="decoder",
++        )
++        packed = B12xMLASparseBackend.customize_spec(probe)
++        layouts = B12xMLASparseBackend.supported_kv_cache_layouts()
++    packed_without_config_context = B12xMLASparseBackend.customize_spec(packed)
++
++    assert invalid_reasons == []
++    assert unidentified == probe
++    assert packed_by_glm_backend.state_content_bytes == 528
++    assert packed_by_glm_backend.page_size_padded == 64 * 528 + 16 * 128 * 2
++    assert packed_by_glm_backend.model_version == "glm5_next"
++    assert packed.state_content_bytes == 528
++    assert packed.page_size_padded == 64 * 528 + 16 * 128 * 2
++    assert packed.model_version == "glm5_next"
++    assert packed_without_config_context == packed
++    assert layouts == (KVCacheLayout.BLHNC,)
++
++
++def test_b12x_glm5_next_keeps_hybrid_manager_page_unsplit() -> None:
++    supported = B12xGLM5NextMLASparseBackend.get_supported_kernel_block_sizes()
++
++    assert len(supported) == 1
++    assert supported[0].base == 64
++    assert select_common_block_size(2304, [B12xGLM5NextMLASparseBackend]) == 2304
++    assert B12xGLM5NextMLASparseBackend.supported_kv_cache_layouts() == (
++        KVCacheLayout.BLHNC,
++    )
++
++
++def test_b12x_glm5_next_rejects_dcp(monkeypatch) -> None:
++    monkeypatch.setattr(b12x_mla_sparse, "get_b12x_sparse_mla", lambda: object())
++    with set_current_vllm_config(_glm5_next_config(dcp_size=2)):
++        invalid_reasons = B12xMLASparseBackend.validate_configuration(
++            head_size=512,
++            dtype=torch.bfloat16,
++            kv_cache_dtype="fp8",
++            block_size=64,
++            use_mla=True,
++            has_sink=False,
++            use_sparse=True,
++            use_mm_prefix=False,
++            use_per_head_quant_scales=False,
++            device_capability=DeviceCapability(12, 0),
++            attn_type="decoder",
++        )
++
++    assert invalid_reasons == [
++        "B12X GLM5Next sparse MLA does not support decode context parallelism"
++    ]
++
++
++def test_b12x_glm5_next_rejects_dsv4_head_size(monkeypatch) -> None:
++    monkeypatch.setattr(b12x_mla_sparse, "get_b12x_sparse_mla", lambda: object())
++    with set_current_vllm_config(_glm5_next_config()):
++        invalid_reasons = B12xMLASparseBackend.validate_configuration(
++            head_size=576,
++            dtype=torch.bfloat16,
++            kv_cache_dtype="fp8",
++            block_size=64,
++            use_mla=True,
++            has_sink=False,
++            use_sparse=True,
++            use_mm_prefix=False,
++            use_per_head_quant_scales=False,
++            device_capability=DeviceCapability(12, 0),
++            attn_type="decoder",
++        )
++
++    assert invalid_reasons == ["B12X GLM5Next sparse MLA requires head_size=512"]
++
++
++def test_b12x_glm5_next_rejects_recipe_drift(monkeypatch) -> None:
++    monkeypatch.setattr(b12x_mla_sparse, "get_b12x_sparse_mla", lambda: object())
++    with set_current_vllm_config(_glm5_next_config(index_kpool=8)):
++        invalid_reasons = B12xMLASparseBackend.validate_configuration(
++            head_size=512,
++            dtype=torch.bfloat16,
++            kv_cache_dtype="fp8",
++            block_size=64,
++            use_mla=True,
++            has_sink=False,
++            use_sparse=True,
++            use_mm_prefix=False,
++            use_per_head_quant_scales=False,
++            device_capability=DeviceCapability(12, 0),
++            attn_type="decoder",
++        )
++
++    assert invalid_reasons == [
++        "B12X GLM5Next sparse MLA requires index_kpool=8 (expected 4)"
++    ]
++
++
++def test_b12x_glm5_next_selected_indices_use_physical_slots() -> None:
++    storage = torch.empty((2 * 37888,), dtype=torch.uint8)
++    cache = torch.as_strided(
++        storage,
++        size=(2, 64, 528),
++        stride=(37888, 528, 1),
++    )
++    assert (
++        _selected_index_block_stride_rows(
++            cache,
++            block_size=64,
++            is_glm_next=True,
++        )
++        == 64
++    )
++
++
++def test_sparse_index_remap_tiling_covers_glm5_next_width() -> None:
++    assert _remap_tiling(2048, 128, True) == (True, 2048, 1, 8)
++    assert _remap_tiling(2051, 128, True) == (False, 128, 17, 4)
++
++
++def test_b12x_glm5_next_cache_writer_ignores_empty_rope() -> None:
++    calls: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
++    impl = object.__new__(B12xMLASparseImpl)
++    impl._is_glm_next = True
++    impl._concat_and_cache_glm_next_mla = lambda *args: calls.append(args)
++    kv_c = torch.empty((3, 512), dtype=torch.bfloat16)
++    kv_cache = torch.empty((2, 64, 528), dtype=torch.uint8)
++    slots = torch.tensor([0, 64, -1], dtype=torch.int64)
++
++    impl.do_kv_cache_update(
++        kv_c,
++        torch.empty((3, 1, 0), dtype=torch.bfloat16),
++        kv_cache,
++        slots,
++        "fp8_ds_mla",
++        torch.ones((), dtype=torch.float32),
++    )
++
++    assert calls == [(kv_c, kv_cache, slots)]
++
++
++def test_b12x_glm5_next_cache_bind_replans_aligned_manager_page(monkeypatch) -> None:
++    planned: list[SimpleNamespace] = []
++    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 0)
++
++    class FakeCaps(SimpleNamespace):
++        def __init__(self, **kwargs):
++            super().__init__(**kwargs)
++
++    class FakeModule:
++        Caps = FakeCaps
++
++        @staticmethod
++        def plan(caps):
++            planned.append(caps)
++            return caps
++
++    impl = object.__new__(B12xMLASparseImpl)
++    impl._is_glm_next = True
++    impl._module = FakeModule
++    impl._kernel_page_size = 64
++    impl._input_num_heads = 64
++    impl._max_tokens = 4096
++    impl._max_seqs = 4
++    impl._topk_tokens = 2051
++    impl._kv_dtype = torch.uint8
++    impl._q_head_dim = 512
++    impl.kv_lora_rank = 512
++    impl._model_type = 1
++    impl._decode_plan = SimpleNamespace()
++    impl._extend_plan = SimpleNamespace()
++    owner = SimpleNamespace(impl=impl, indexer=None)
++    cache = torch.empty((2, 1, 2304, 528), dtype=torch.uint8)
++
++    MLAAttention.bind_kv_cache(owner, cache)
++
++    assert owner.kv_cache.shape == (2, 2304, 528)
++    assert impl._kernel_page_size == 2304
++    assert [(caps.mode, caps.page_size) for caps in planned] == [
++        ("decode", 2304),
++        ("extend", 2304),
++    ]
++    assert [(caps.max_q_rows, caps.max_batch) for caps in planned] == [
++        (4096, 4096),
++        (4096, 4096),
++    ]
++
++
++def _bare_glm_selector_metadata_builder() -> B12xMLASparseMetadataBuilder:
++    builder = B12xMLASparseMetadataBuilder.__new__(B12xMLASparseMetadataBuilder)
++    builder.requires_glm_next_selector_metadata = True
++    builder.supports_draft_decode_metadata_update = True
++    builder.dcp_world_size = 1
++    builder._capture_default_state_slot_ids = torch.arange(4, dtype=torch.int32)
++    builder._capture_state_slot_ids = torch.empty(4, dtype=torch.int32)
++    builder._capture_state_is_fresh = torch.ones(4, dtype=torch.bool)
++    builder._capture_num_accepted_tokens = torch.ones(4, dtype=torch.int32)
++    builder._capture_is_prefilling = torch.zeros(4, dtype=torch.bool)
++    return builder
++
++
++def _build_short_packed_metadata(
++    builder_cls: type[B12xMLASparseMetadataBuilder],
++    *,
++    seq_lens: list[int],
++    query_lens: list[int],
++    is_prefilling: list[bool],
++) -> B12xMLASparseMetadata:
++    builder = object.__new__(builder_cls)
++    builder.metadata_cls = B12xMLASparseMetadata
++    builder.require_uniform_decodes = False
++    builder.use_pcp = False
++    builder.reorder_batch_threshold = 128
++    builder._prefill_backend = None
++    builder.topk_tokens = 2048
++    builder.cp_kv_cache_interleave_size = 1
++    builder.kv_cache_spec = SimpleNamespace(block_size=64)
++    builder.model_config = SimpleNamespace(dtype=torch.bfloat16)
++    rows = sum(query_lens)
++    query_start_loc = torch.tensor(
++        [0, *torch.tensor(query_lens).cumsum(0).tolist()],
++        dtype=torch.int32,
++    )
++    request_ids = torch.repeat_interleave(
++        torch.arange(len(query_lens), dtype=torch.int32),
++        torch.tensor(query_lens),
++    )
++    builder._build_req_id_per_token = lambda common: request_ids
++    positions = torch.cat(
++        [torch.arange(length, dtype=torch.int64) for length in query_lens]
++    )
++    common = SimpleNamespace(
++        num_reqs=len(seq_lens),
++        num_actual_tokens=rows,
++        max_query_len=max(query_lens),
++        max_seq_len=max(seq_lens),
++        query_start_loc=query_start_loc,
++        query_start_loc_cpu=query_start_loc,
++        seq_lens=torch.tensor(seq_lens, dtype=torch.int32),
++        block_table_tensor=torch.arange(len(seq_lens), dtype=torch.int32).view(-1, 1),
++        slot_mapping=torch.arange(rows, dtype=torch.int64),
++        positions=positions,
++        is_prefilling=torch.tensor(is_prefilling),
++    )
++    return SparseMLACommonMetadataBuilder.build(builder, 0, common)
++
++
++def test_glm_short_packed_prefills_do_not_use_selector_decode_transactions() -> None:
++    fresh = _build_short_packed_metadata(
++        B12xGLM5NextMLASparseMetadataBuilder,
++        seq_lens=[2, 3],
++        query_lens=[2, 3],
++        is_prefilling=[True, True],
++    )
++    assert fresh.num_decodes == 0
++    assert fresh.num_prefills == 2
++    assert fresh.num_decode_tokens == 0
++    assert fresh.req_id_per_token.tolist() == [0, 0, 1, 1, 1]
++    assert fresh.query_start_loc.tolist() == [0, 2, 5]
++
++    mixed = _build_short_packed_metadata(
++        B12xGLM5NextMLASparseMetadataBuilder,
++        seq_lens=[4, 2],
++        query_lens=[1, 2],
++        is_prefilling=[False, True],
++    )
++    assert mixed.num_decodes == 1
++    assert mixed.num_prefills == 1
++    assert mixed.num_decode_tokens == 1
++    assert mixed.req_id_per_token.tolist() == [0, 1, 1]
++    assert mixed.query_start_loc.tolist() == [0, 1, 3]
++
++    dsv4 = _build_short_packed_metadata(
++        B12xMLASparseMetadataBuilder,
++        seq_lens=[2, 3],
++        query_lens=[2, 3],
++        is_prefilling=[True, True],
++    )
++    assert dsv4.num_decodes == 2
++    assert dsv4.num_prefills == 0
++    assert dsv4.num_decode_tokens == 5
++
++
++def test_glm_selector_metadata_builder_stages_padded_rows_and_capture(
++    monkeypatch,
++) -> None:
++    monkeypatch.setattr(
++        SparseMLACommonMetadataBuilder,
++        "build",
++        lambda *args, **kwargs: SimpleNamespace(),
++    )
++    builder = _bare_glm_selector_metadata_builder()
++    common = SimpleNamespace(
++        num_reqs=4,
++        num_actual_tokens=4,
++        max_query_len=1,
++        seq_lens=torch.tensor([8, 9, 0, 0], dtype=torch.int32),
++        dcp_local_seq_lens=None,
++    )
++
++    captured = builder.build_for_cudagraph_capture(common)
++    pointers = tuple(
++        tensor.data_ptr()
++        for tensor in (
++            captured.selector_state_slot_ids,
++            captured.selector_state_is_fresh,
++            captured.selector_num_accepted_tokens,
++            captured.selector_is_prefilling,
++        )
++    )
++    assert torch.equal(
++        captured.selector_state_slot_ids,
++        torch.arange(4, dtype=torch.int32),
++    )
++    assert captured.selector_state_is_fresh.all()
++    assert torch.equal(
++        captured.selector_num_accepted_tokens,
++        torch.ones(4, dtype=torch.int32),
++    )
++    assert not captured.selector_is_prefilling.any()
++
++    runtime = builder.build(
++        common_prefix_len=0,
++        common_attn_metadata=common,
++        selector_state_slot_ids=torch.tensor([7, 3, -1, -1], dtype=torch.int32),
++        selector_state_is_fresh=torch.tensor([False, True, True, True]),
++        selector_num_accepted_tokens=torch.tensor([4, 2, 1, 1], dtype=torch.int32),
++        selector_is_prefilling=torch.tensor([False, True, False, False]),
++    )
++    assert (
++        tuple(
++            tensor.data_ptr()
++            for tensor in (
++                runtime.selector_state_slot_ids,
++                runtime.selector_state_is_fresh,
++                runtime.selector_num_accepted_tokens,
++                runtime.selector_is_prefilling,
++            )
++        )
++        == pointers
++    )
++    assert torch.equal(
++        runtime.selector_state_slot_ids,
++        torch.tensor([7, 3, -1, -1], dtype=torch.int32),
++    )
++    assert torch.equal(
++        runtime.selector_state_is_fresh,
++        torch.tensor([False, True, True, True]),
++    )
++    assert torch.equal(
++        runtime.selector_num_accepted_tokens,
++        torch.tensor([4, 2, 1, 1], dtype=torch.int32),
++    )
++    assert torch.equal(
++        runtime.selector_is_prefilling,
++        torch.tensor([False, True, False, False]),
++    )
++
++
++def test_glm_selector_metadata_builder_requires_complete_runtime_state(
++    monkeypatch,
++) -> None:
++    monkeypatch.setattr(
++        SparseMLACommonMetadataBuilder,
++        "build",
++        lambda *args, **kwargs: SimpleNamespace(),
++    )
++    builder = _bare_glm_selector_metadata_builder()
++    common = SimpleNamespace(
++        num_reqs=1,
++        num_actual_tokens=1,
++        max_query_len=1,
++        seq_lens=torch.ones(1, dtype=torch.int32),
++        dcp_local_seq_lens=None,
++    )
++
++    with pytest.raises(RuntimeError, match="requires selector state slots"):
++        builder.build(common_prefix_len=0, common_attn_metadata=common)
++
++
++def test_glm_selector_metadata_builder_updates_draft_acceptance() -> None:
++    builder = _bare_glm_selector_metadata_builder()
++    accepted = torch.tensor([4, 2, 1, 1], dtype=torch.int32)
++    metadata = SimpleNamespace(selector_num_accepted_tokens=accepted)
++
++    builder.update_draft_decode_metadata(metadata)
++
++    assert torch.equal(accepted, torch.ones(4, dtype=torch.int32))
++
++
++def test_dsv4_metadata_builder_does_not_claim_glm_selector_state() -> None:
++    builder = B12xMLASparseMetadataBuilder.__new__(B12xMLASparseMetadataBuilder)
++    builder.requires_glm_next_selector_metadata = False
++
++    assert builder._stage_glm_next_selector_metadata(
++        num_reqs=2,
++        for_cudagraph_capture=False,
++        selector_state_slot_ids=None,
++        selector_state_is_fresh=None,
++        selector_num_accepted_tokens=None,
++        selector_is_prefilling=None,
++    ) == (None, None, None, None)
++    with pytest.raises(TypeError, match="non-GLM"):
++        builder._stage_glm_next_selector_metadata(
++            num_reqs=2,
++            for_cudagraph_capture=False,
++            selector_state_slot_ids=torch.arange(2, dtype=torch.int32),
++            selector_state_is_fresh=None,
++            selector_num_accepted_tokens=None,
++            selector_is_prefilling=None,
++        )
++
++
+ def test_b12x_dsv4_backend_preserves_cache_contract() -> None:
+     backend = b12x_mla.DeepseekV4B12xSparseMLABackend
+ 
+diff --git a/tests/v1/attention/test_sparse_mla_backends.py b/tests/v1/attention/test_sparse_mla_backends.py
+index be58cf8b46..dc95ab651f 100644
+--- a/tests/v1/attention/test_sparse_mla_backends.py
++++ b/tests/v1/attention/test_sparse_mla_backends.py
+@@ -611,7 +611,7 @@ def _triton_convert_reference_impl(
+ 
+ 
+ @pytest.mark.parametrize("block_size", [16, 64, 128])
+-@pytest.mark.parametrize("num_topk_tokens", [128, 256, 512])
++@pytest.mark.parametrize("num_topk_tokens", [128, 256, 512, 2051])
+ @pytest.mark.skipif(
+     torch.cuda.get_device_capability() < (9, 0),
+     reason="FlashMLASparseBackend requires CUDA 9.0 or higher",
+@@ -1251,9 +1251,9 @@ def test_split_indexer_prefill_chunks_single_request_overflow():
+     assert out == expected
+ 
+ 
+-# 384 is not a power of two, so it counts via the tiled atomic accumulation
+-# rather than the single-tile path 128 takes.
+-@pytest.mark.parametrize("num_topk_tokens", [128, 384])
++# 384 and 2051 count via tiled atomic accumulation rather than the single-tile
++# path 128 takes. 2051 also exercises a masked final tile.
++@pytest.mark.parametrize("num_topk_tokens", [128, 384, 2051])
+ def test_triton_convert_returns_valid_counts(num_topk_tokens: int):
+     """Test that return_valid_counts correctly counts non-negative indices."""
+     device = torch.device(DEVICE_TYPE)
+diff --git a/tests/v1/spec_decode/test_llm_base_proposer_sampling.py b/tests/v1/spec_decode/test_llm_base_proposer_sampling.py
+index cb390b992f..9701a58b5e 100644
+--- a/tests/v1/spec_decode/test_llm_base_proposer_sampling.py
++++ b/tests/v1/spec_decode/test_llm_base_proposer_sampling.py
+@@ -78,6 +78,7 @@ def test_compute_probs_and_sample_next_token_uses_fp64_exponential_race():
+     ("architecture", "expected"),
+     [
+         ("DeepSeekMTPModel", True),
++        ("Glm5NextMTPModel", True),
+         ("KimiK3MTPModel", True),
+         ("MiniMaxM3ForCausalLM", False),
+     ],
+diff --git a/tests/v1/worker/test_gpu_autoregressive_speculator.py b/tests/v1/worker/test_gpu_autoregressive_speculator.py
+index 3010686830..97ed969e94 100644
+--- a/tests/v1/worker/test_gpu_autoregressive_speculator.py
++++ b/tests/v1/worker/test_gpu_autoregressive_speculator.py
+@@ -115,6 +115,47 @@ def _mock_base_model_load(monkeypatch):
+     )
+ 
+ 
++def test_glm5next_mtp_uses_collapsed_hidden_size() -> None:
++    draft_model_config = SimpleNamespace(
++        get_hidden_size=lambda: 4096,
++        get_vocab_size=lambda: 154880,
++        hf_config=SimpleNamespace(
++            model_type="glm5_next_mtp",
++            hc_mult=4,
++            mhc=True,
++        ),
++        uses_mrope=False,
++    )
++    speculative_config = SimpleNamespace(
++        method="mtp",
++        num_speculative_tokens=5,
++        draft_model_config=draft_model_config,
++        use_local_argmax_reduction=False,
++        draft_sample_method="greedy",
++    )
++    vllm_config = SimpleNamespace(
++        speculative_config=speculative_config,
++        scheduler_config=SimpleNamespace(
++            max_num_seqs=2,
++            max_num_batched_tokens=8,
++        ),
++        model_config=SimpleNamespace(
++            max_model_len=1024,
++            dtype=torch.bfloat16,
++            use_fp64_gumbel=False,
++        ),
++        parallel_config=SimpleNamespace(
++            data_parallel_size=1,
++            data_parallel_rank=0,
++        ),
++    )
++
++    speculator = _TestSpeculator(vllm_config, torch.device("cpu"))
++
++    assert speculator.hidden_size == 4096
++    assert speculator.hidden_states.shape == (8, 4096)
++
++
+ def test_mtp_speculator_rolls_back_qsa_anchor_around_lookahead() -> None:
+     lifecycle = _QSAIntervalLifecycle()
+     speculator = object.__new__(MTPSpeculator)
+diff --git a/vllm/config/speculative.py b/vllm/config/speculative.py
+index 9bc357176c..0e83e3ba5e 100644
+--- a/vllm/config/speculative.py
++++ b/vllm/config/speculative.py
+@@ -60,6 +60,7 @@ MTPModelTypes = Literal[
+     "hy_v3_mtp",
+     "gemma4_mtp",
+     "inkling_mtp",
++    "glm5_next_mtp",
+ ]
+ NgramGPUTypes = Literal["ngram_gpu"]
+ DFlashModelTypes = Literal["dflash"]
+@@ -1000,6 +1001,13 @@ class SpeculativeConfig:
+                 {"n_predict": n_predict, "architectures": ["MiniMaxM3MTP"]}
+             )
+ 
++        if hf_config.model_type == "glm5_next":
++            hf_config.model_type = "glm5_next_mtp"
++            n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
++            hf_config.update(
++                {"n_predict": n_predict, "architectures": ["Glm5NextMTPModel"]}
++            )
++
+         return hf_config
+ 
+     @staticmethod
+diff --git a/vllm/model_executor/layers/attention/mla_attention.py b/vllm/model_executor/layers/attention/mla_attention.py
+index 59ef3cdb53..0a9a332bec 100644
+--- a/vllm/model_executor/layers/attention/mla_attention.py
++++ b/vllm/model_executor/layers/attention/mla_attention.py
+@@ -658,6 +658,18 @@ class MLAAttention(nn.Module, AttentionLayerBase):
+     def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
+         # [B, H=1, N, C] -> [B, N, C]
+         self.kv_cache = kv_cache.squeeze(1)
++        bind_impl = getattr(self.impl, "bind_kv_cache", None)
++        if bind_impl is not None:
++            bind_impl(self.kv_cache)
++        bind_indexer = getattr(self.indexer, "bind_main_kv_cache", None)
++        if bind_indexer is not None:
++            bind_indexer(self.kv_cache)
++
++    def unbind_kv_cache(self) -> None:
++        unbind_indexer = getattr(self.indexer, "unbind_main_kv_cache", None)
++        if unbind_indexer is not None:
++            unbind_indexer()
++        super().unbind_kv_cache()
+ 
+     @property
+     def chunked_prefill_workspace_size(self) -> int:
+@@ -1469,7 +1481,7 @@ class MLACommonBackend(AttentionBackend):
+ 
+     @classmethod
+     def get_supported_head_sizes(cls) -> list[int]:
+-        return [320, 576]
++        return [320, 512, 576]
+ 
+     @classmethod
+     def is_mla(cls) -> bool:
+diff --git a/vllm/model_executor/layers/attention/sparse_mla_attention.py b/vllm/model_executor/layers/attention/sparse_mla_attention.py
+index 1fe267f3c8..5d4ed7fa41 100644
+--- a/vllm/model_executor/layers/attention/sparse_mla_attention.py
++++ b/vllm/model_executor/layers/attention/sparse_mla_attention.py
+@@ -104,6 +104,7 @@ def _is_masked_mha_available(
+ class SparseMLACommonMetadataBuilder(AttentionMetadataBuilder[T]):
+     metadata_cls: type[T]
+     require_uniform_decodes: ClassVar[bool] = False
++    treat_short_extends_as_decodes: ClassVar[bool] = True
+ 
+     def __init__(
+         self,
+@@ -262,7 +263,9 @@ class SparseMLACommonMetadataBuilder(AttentionMetadataBuilder[T]):
+         num_decodes, num_prefills, num_decode_tokens, _ = split_decodes_and_prefills(
+             common_attn_metadata,
+             decode_threshold=self.reorder_batch_threshold or 1,
+-            treat_short_extends_as_decodes=not self.use_pcp,
++            treat_short_extends_as_decodes=(
++                self.treat_short_extends_as_decodes and not self.use_pcp
++            ),
+             require_uniform=self.require_uniform_decodes,
+         )
+         (
+diff --git a/vllm/model_executor/layers/mamba/gdn/kimi_gdn_linear_attn.py b/vllm/model_executor/layers/mamba/gdn/kimi_gdn_linear_attn.py
+index bf81cdd75f..a6760cb856 100644
+--- a/vllm/model_executor/layers/mamba/gdn/kimi_gdn_linear_attn.py
++++ b/vllm/model_executor/layers/mamba/gdn/kimi_gdn_linear_attn.py
+@@ -2,7 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
+ from collections.abc import Callable
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, Any
+ 
+ import torch
+ from einops import rearrange
+@@ -24,6 +24,7 @@ from vllm.model_executor.utils import set_weight_attrs
+ from vllm.platforms import current_platform
+ from vllm.third_party.flash_linear_attention.ops.kda import FusedRMSNormGated
+ from vllm.transformers_utils.configs.kimi_linear import KimiLinearConfig
++from vllm.utils.b12x import get_b12x_gdn_decode
+ from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
+ 
+ from ...linear import (
+@@ -154,6 +155,9 @@ class _KimiGDNMergedColumnParallelLinear(MergedColumnParallelLinear):
+ 
+ @PluggableLayer.register("kimi_gated_delta_net_attention")
+ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
++    enable_b12x_kda_decode = False
++    b12x_kda_null_state_index: int | None = None
++
+     def get_state_dtype(
+         self,
+     ) -> tuple[torch.dtype, torch.dtype]:
+@@ -302,6 +306,10 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                 prefix=f"{prefix}.g_b_proj",
+             )
+         self.o_norm = FusedRMSNormGated(self.head_dim, activation="sigmoid")
++        self._b12x_kda_api: Any | None = None
++        self._b12x_kda_plan = None
++        self._b12x_kda_binding = None
++        self._initialize_b12x_kda_decode(vllm_config)
+         self.o_proj = RowParallelLinear(
+             self.projection_size,
+             self.hidden_size,
+@@ -315,6 +323,157 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+             raise ValueError(f"Duplicate layer name: {prefix}")
+         compilation_config.static_forward_context[prefix] = self
+ 
++    def _initialize_b12x_kda_decode(self, vllm_config: VllmConfig) -> None:
++        if (
++            not self.enable_b12x_kda_decode
++            or self.gate_lower_bound is None
++            or self.head_dim != 128
++            or self.model_config.dtype != torch.bfloat16
++            or self.get_state_dtype()[1] not in (torch.bfloat16, torch.float32)
++            or not current_platform.is_cuda()
++        ):
++            return
++
++        api = get_b12x_gdn_decode()
++        device = torch.device(current_platform.current_device())
++        if (
++            api is None
++            or not hasattr(api, "bind_kda")
++            or not hasattr(api, "run_kda")
++            or not api.is_supported(device)
++        ):
++            return
++
++        max_seqs = int(vllm_config.scheduler_config.max_num_seqs)
++        state_index_columns = max(1, self.num_spec + 1)
++        if state_index_columns > 8:
++            return
++        max_tokens = max_seqs * state_index_columns
++
++        self._b12x_kda_api = api
++        self._b12x_kda_max_tokens = max_tokens
++        self._b12x_kda_max_seqs = max_seqs
++        self._b12x_kda_state_index_columns = state_index_columns
++
++        provisional = self._make_b12x_kda_plan(max_state_slots=1)
++        factory = dict(device=device, dtype=torch.bfloat16)
++        self.register_buffer(
++            "_b12x_kda_mixed_qkv",
++            torch.empty(max_tokens, provisional.caps.packed_qkv_width, **factory),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_raw_g",
++            torch.empty(max_tokens, self.local_num_heads, self.head_dim, **factory),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_raw_beta",
++            torch.empty(max_tokens, self.local_num_heads, **factory),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_z",
++            torch.empty(max_tokens, self.local_num_heads, self.head_dim, **factory),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_output",
++            torch.empty(max_tokens, self.local_num_heads, self.head_dim, **factory),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_query_start_loc",
++            torch.zeros(max_seqs + 1, dtype=torch.int32, device=device),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_num_accepted_tokens",
++            torch.ones(max_seqs, dtype=torch.int32, device=device),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_state_indices",
++            torch.zeros(
++                max_seqs,
++                state_index_columns,
++                dtype=torch.int32,
++                device=device,
++            ),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_num_seqs",
++            torch.zeros(1, dtype=torch.int32, device=device),
++            persistent=False,
++        )
++        self.register_buffer(
++            "_b12x_kda_num_tokens",
++            torch.zeros(1, dtype=torch.int32, device=device),
++            persistent=False,
++        )
++        scratch_spec = provisional.scratch_specs()[0]
++        self.register_buffer(
++            "_b12x_kda_scratch",
++            torch.empty(scratch_spec.shape, dtype=scratch_spec.dtype, device=device),
++            persistent=False,
++        )
++
++    def _make_b12x_kda_plan(self, max_state_slots: int):
++        api = self._b12x_kda_api
++        if api is None:
++            raise RuntimeError("b12x KDA decode was not initialized")
++        return api.plan(
++            api.Caps(
++                device=current_platform.current_device(),
++                max_tokens=self._b12x_kda_max_tokens,
++                max_seqs=self._b12x_kda_max_seqs,
++                max_state_slots=max_state_slots,
++                key_heads=self.local_num_heads,
++                value_heads=self.local_num_heads,
++                key_head_dim=self.head_dim,
++                value_head_dim=self.head_dim,
++                state_index_columns=self._b12x_kda_state_index_columns,
++                model_dtype=self.model_config.dtype,
++                state_dtype=self.get_state_dtype()[1],
++                gate_activation="sigmoid",
++                qk_l2norm=True,
++                null_state_index=self.b12x_kda_null_state_index,
++            )
++        )
++
++    def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
++        super().bind_kv_cache(kv_cache)
++        api = self._b12x_kda_api
++        if api is None:
++            return
++        recurrent_state = self.kv_cache[1]
++        plan = self._make_b12x_kda_plan(max_state_slots=recurrent_state.shape[0])
++        self._b12x_kda_plan = plan
++        self._b12x_kda_binding = api.bind_kda(
++            plan,
++            scratch=self._b12x_kda_scratch,
++            mixed_qkv=self._b12x_kda_mixed_qkv,
++            raw_g=self._b12x_kda_raw_g,
++            raw_beta=self._b12x_kda_raw_beta,
++            z=self._b12x_kda_z,
++            A_log=self.A_log,
++            dt_bias=self.dt_bias.view(self.local_num_heads, self.head_dim),
++            norm_weight=self.o_norm.weight,
++            recurrent_state=recurrent_state,
++            query_start_loc=self._b12x_kda_query_start_loc,
++            num_accepted_tokens=self._b12x_kda_num_accepted_tokens,
++            state_indices=self._b12x_kda_state_indices,
++            num_seqs=self._b12x_kda_num_seqs,
++            num_tokens=self._b12x_kda_num_tokens,
++            output=self._b12x_kda_output,
++        )
++
++    def unbind_kv_cache(self) -> None:
++        self._b12x_kda_binding = None
++        self._b12x_kda_plan = None
++        super().unbind_kv_cache()
++
+     def rearrange_mixed_qkv(
+         self, mixed_qkv: torch.Tensor
+     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+@@ -325,6 +484,89 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+         qkv = qkv.permute(1, 0, 2, 3).contiguous().unsqueeze(1)
+         return qkv.unbind(0)
+ 
++    def _can_use_b12x_kda_decode(self, m: GDNAttentionMetadata) -> bool:
++        if (
++            self._b12x_kda_binding is None
++            or m.num_prefills != 0
++            or (m.num_decodes == 0 and m.num_spec_decodes == 0)
++        ):
++            return False
++        if m.spec_sequence_masks is None:
++            return (
++                m.num_spec_decodes == 0
++                and m.non_spec_state_indices_tensor is not None
++                and m.non_spec_query_start_loc is not None
++            )
++        return (
++            m.num_decodes == 0
++            and m.num_spec_decodes > 0
++            and m.spec_state_indices_tensor is not None
++            and m.spec_query_start_loc is not None
++            and m.num_accepted_tokens is not None
++        )
++
++    def _run_b12x_kda_decode_post_conv(
++        self,
++        *,
++        mixed_qkv: torch.Tensor,
++        raw_g: torch.Tensor,
++        raw_beta: torch.Tensor,
++        z: torch.Tensor,
++        output: torch.Tensor,
++        state_indices: torch.Tensor,
++        query_start_loc: torch.Tensor,
++        num_accepted_tokens: torch.Tensor | None,
++        num_requests: int,
++    ) -> None:
++        binding = self._b12x_kda_binding
++        api = self._b12x_kda_api
++        if binding is None or api is None:
++            raise RuntimeError("b12x KDA KV cache was not bound before inference")
++        num_tokens = int(mixed_qkv.shape[0])
++        state_columns = int(state_indices.shape[1])
++        if (
++            num_tokens > self._b12x_kda_max_tokens
++            or num_requests > self._b12x_kda_max_seqs
++            or state_columns > self._b12x_kda_state_index_columns
++        ):
++            raise ValueError(
++                "b12x KDA capacity exceeded: "
++                f"tokens={num_tokens}/{self._b12x_kda_max_tokens}, "
++                f"requests={num_requests}/{self._b12x_kda_max_seqs}, "
++                f"state_columns={state_columns}/"
++                f"{self._b12x_kda_state_index_columns}"
++            )
++
++        self._b12x_kda_mixed_qkv[:num_tokens].copy_(mixed_qkv)
++        self._b12x_kda_raw_g[:num_tokens].copy_(raw_g)
++        self._b12x_kda_raw_beta[:num_tokens].copy_(raw_beta)
++        self._b12x_kda_z[:num_tokens].copy_(z)
++        self._b12x_kda_query_start_loc.zero_()
++        self._b12x_kda_query_start_loc[: num_requests + 1].copy_(
++            query_start_loc[: num_requests + 1]
++        )
++        self._b12x_kda_num_accepted_tokens.fill_(1)
++        if num_accepted_tokens is not None:
++            self._b12x_kda_num_accepted_tokens[:num_requests].copy_(
++                num_accepted_tokens[:num_requests]
++            )
++        self._b12x_kda_state_indices.zero_()
++        self._b12x_kda_state_indices[:num_requests, :state_columns].copy_(
++            state_indices[:num_requests]
++        )
++        self._b12x_kda_num_seqs.fill_(num_requests)
++        self._b12x_kda_num_tokens.copy_(
++            query_start_loc[num_requests : num_requests + 1]
++        )
++
++        api.run_kda(
++            binding,
++            lower_bound=self.gate_lower_bound,
++            eps=self.o_norm.eps,
++            scale=self.head_dim**-0.5,
++        )
++        output[:num_tokens].copy_(self._b12x_kda_output[:num_tokens])
++
+     def forward(
+         self,
+         hidden_states: torch.Tensor,
+@@ -435,6 +677,8 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+         mixed_qkv = mixed_qkv[:num_actual_tokens]
+         g1 = g1[:, :num_actual_tokens]
+         beta = beta[:, :num_actual_tokens]
++        g2_actual = g2[:num_actual_tokens]
++        use_b12x_kda = self._can_use_b12x_kda_decode(m)
+ 
+         constant_caches = self.kv_cache
+ 
+@@ -461,6 +705,7 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                 mixed_qkv_spec = mixed_qkv
+                 g1_spec, beta_spec = g1, beta
+                 mixed_qkv_ns = g1_ns = beta_ns = None
++                g2_spec, g2_ns = g2_actual, None
+             else:
+                 mixed_qkv_spec = mixed_qkv.index_select(0, spec_token_indx)
+                 g1_spec = g1.index_select(1, spec_token_indx)
+@@ -468,9 +713,11 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                 mixed_qkv_ns = mixed_qkv.index_select(0, non_spec_token_indx)
+                 g1_ns = g1.index_select(1, non_spec_token_indx)
+                 beta_ns = beta.index_select(1, non_spec_token_indx)
++                g2_spec = g2_ns = None
+         else:
+             mixed_qkv_spec = g1_spec = beta_spec = None
+             mixed_qkv_ns, g1_ns, beta_ns = mixed_qkv, g1, beta
++            g2_spec, g2_ns = None, g2_actual
+ 
+         # ---------- spec-decode multi-query path ----------
+         core_attn_out_spec = None
+@@ -500,32 +747,47 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                 validate_data=False,
+                 out=spec_conv_out,
+             )
+-            q_spec, k_spec, v_spec = (
+-                rearrange(x, "n (h d) -> 1 n h d", d=self.head_dim)
+-                for x in mixed_qkv_spec.split(self.local_projection_size, dim=-1)
+-            )
+             spec_cu_seqlens = spec_query_start_loc[: m.num_spec_decodes + 1]
+-            # Spec-only batches write directly into core_attn_out.
+-            spec_out = (
+-                core_attn_out[:, : q_spec.shape[1]]
+-                if m.num_prefills == 0 and m.num_decodes == 0
+-                else None
+-            )
+-            core_attn_out_spec, _ = fused_recurrent_kda(
+-                q=q_spec,
+-                k=k_spec,
+-                v=v_spec,
+-                raw_g=g1_spec,
+-                raw_beta=beta_spec,
+-                A_log=self.A_log,
+-                dt_bias=self.dt_bias,
+-                lower_bound=self.gate_lower_bound,
+-                initial_state=recurrent_state,
+-                cu_seqlens=spec_cu_seqlens,
+-                ssm_state_indices=spec_state_indices_tensor,
+-                num_accepted_tokens=num_accepted_tokens,
+-                out=spec_out,
+-            )
++            if use_b12x_kda:
++                assert g2_spec is not None
++                core_attn_out_spec = core_attn_out[:, : mixed_qkv_spec.shape[0]]
++                self._run_b12x_kda_decode_post_conv(
++                    mixed_qkv=mixed_qkv_spec,
++                    raw_g=g1_spec[0],
++                    raw_beta=beta_spec[0],
++                    z=g2_spec,
++                    output=core_attn_out_spec[0],
++                    state_indices=spec_state_indices_tensor,
++                    query_start_loc=spec_cu_seqlens,
++                    num_accepted_tokens=num_accepted_tokens,
++                    num_requests=m.num_spec_decodes,
++                )
++            else:
++                q_spec, k_spec, v_spec = (
++                    rearrange(x, "n (h d) -> 1 n h d", d=self.head_dim)
++                    for x in mixed_qkv_spec.split(self.local_projection_size, dim=-1)
++                )
++                # Spec-only batches write directly into core_attn_out.
++                spec_out = (
++                    core_attn_out[:, : q_spec.shape[1]]
++                    if m.num_prefills == 0 and m.num_decodes == 0
++                    else None
++                )
++                core_attn_out_spec, _ = fused_recurrent_kda(
++                    q=q_spec,
++                    k=k_spec,
++                    v=v_spec,
++                    raw_g=g1_spec,
++                    raw_beta=beta_spec,
++                    A_log=self.A_log,
++                    dt_bias=self.dt_bias,
++                    lower_bound=self.gate_lower_bound,
++                    initial_state=recurrent_state,
++                    cu_seqlens=spec_cu_seqlens,
++                    ssm_state_indices=spec_state_indices_tensor,
++                    num_accepted_tokens=num_accepted_tokens,
++                    out=spec_out,
++                )
+ 
+         # ---------- non-spec path (prefill or plain decode) ----------
+         core_attn_out_non_spec = None
+@@ -568,10 +830,50 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+ 
+                 assert non_spec_state_indices_tensor is not None
+                 assert has_initial_state is not None
++
++                # Mixed non-spec batches are decode-first. Peel the length-one
++                # decodes off because the chunk kernel only consumes the
++                # prefill-tail metadata produced by the GDN builder.
++                core_attn_out_decode = None
++                split_non_spec = spec_sequence_masks is None and m.num_decodes > 0
++                if split_non_spec:
++                    assert non_spec_query_start_loc is not None
++                    nd_tok = m.num_decode_tokens
++                    core_attn_out_decode, _ = fused_recurrent_kda(
++                        q=q_ns[:, :nd_tok],
++                        k=k_ns[:, :nd_tok],
++                        v=v_ns[:, :nd_tok],
++                        raw_g=g1_ns[:, :nd_tok],
++                        raw_beta=beta_ns[:, :nd_tok],
++                        A_log=self.A_log,
++                        dt_bias=self.dt_bias,
++                        lower_bound=self.gate_lower_bound,
++                        initial_state=recurrent_state,
++                        cu_seqlens=non_spec_query_start_loc[: m.num_decodes + 1],
++                        ssm_state_indices=non_spec_state_indices_tensor[
++                            : m.num_decodes
++                        ],
++                    )
++                    q_ns = q_ns[:, nd_tok:]
++                    k_ns = k_ns[:, nd_tok:]
++                    v_ns = v_ns[:, nd_tok:]
++                    g1_ns = g1_ns[:, nd_tok:]
++                    beta_ns = beta_ns[:, nd_tok:]
++                    prefill_query_start_loc = m.prefill_query_start_loc
++                    prefill_state_indices = m.prefill_state_indices
++                    prefill_has_initial_state = m.prefill_has_initial_state
++                    assert prefill_query_start_loc is not None
++                    assert prefill_state_indices is not None
++                    assert prefill_has_initial_state is not None
++                else:
++                    prefill_query_start_loc = non_spec_query_start_loc
++                    prefill_state_indices = non_spec_state_indices_tensor
++                    prefill_has_initial_state = has_initial_state
++
+                 initial_state = gather_initial_states(
+                     recurrent_state,
+-                    non_spec_state_indices_tensor,
+-                    has_initial_state,
++                    prefill_state_indices,
++                    prefill_has_initial_state,
+                 )
+                 (
+                     core_attn_out_non_spec,
+@@ -588,10 +890,17 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                     initial_state=initial_state,
+                     output_final_state=True,
+                     use_qk_l2norm_in_kernel=True,
+-                    cu_seqlens=non_spec_query_start_loc,
++                    cu_seqlens=prefill_query_start_loc,
++                    chunk_indices=m.chunk_indices,
++                    chunk_offsets=m.chunk_offsets,
+                 )
+                 # Init cache
+-                recurrent_state[non_spec_state_indices_tensor] = last_recurrent_state
++                recurrent_state[prefill_state_indices] = last_recurrent_state
++
++                if split_non_spec:
++                    core_attn_out_non_spec = torch.cat(
++                        [core_attn_out_decode, core_attn_out_non_spec], dim=1
++                    )
+ 
+             else:
+                 # pure-decode non-spec batch
+@@ -616,16 +925,34 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+                     validate_data=True,
+                     out=packed_conv_out,
+                 )
+-                core_attn_out_non_spec, _ = fused_recurrent_kda_packed_decode(
+-                    mixed_qkv=mixed_qkv_ns,
+-                    raw_g=g1_ns,
+-                    raw_beta=beta_ns,
+-                    A_log=self.A_log,
+-                    dt_bias=self.dt_bias,
+-                    lower_bound=self.gate_lower_bound,
+-                    initial_state=recurrent_state,
+-                    state_indices=decode_conv_indices,
+-                )
++                if use_b12x_kda:
++                    assert non_spec_query_start_loc is not None
++                    assert g2_ns is not None
++                    core_attn_out_non_spec = core_attn_out[:, : mixed_qkv_ns.shape[0]]
++                    self._run_b12x_kda_decode_post_conv(
++                        mixed_qkv=mixed_qkv_ns,
++                        raw_g=g1_ns[0],
++                        raw_beta=beta_ns[0],
++                        z=g2_ns,
++                        output=core_attn_out_non_spec[0],
++                        state_indices=non_spec_state_indices_tensor[
++                            : m.num_decodes, None
++                        ],
++                        query_start_loc=non_spec_query_start_loc,
++                        num_accepted_tokens=None,
++                        num_requests=m.num_decodes,
++                    )
++                else:
++                    core_attn_out_non_spec, _ = fused_recurrent_kda_packed_decode(
++                        mixed_qkv=mixed_qkv_ns,
++                        raw_g=g1_ns,
++                        raw_beta=beta_ns,
++                        A_log=self.A_log,
++                        dt_bias=self.dt_bias,
++                        lower_bound=self.gate_lower_bound,
++                        initial_state=recurrent_state,
++                        state_indices=decode_conv_indices,
++                    )
+ 
+         # ---------- merge spec and non-spec outputs ----------
+         if core_attn_out_spec is not None and core_attn_out_non_spec is not None:
+@@ -644,4 +971,5 @@ class KimiGatedDeltaNetAttention(GatedDeltaNetAttention):
+             ]
+         else:
+             assert core_attn_out_spec is not None
+-        core_attn_out.copy_(self.o_norm(core_attn_out, g2))
++        if not use_b12x_kda:
++            core_attn_out.copy_(self.o_norm(core_attn_out, g2))
+diff --git a/vllm/model_executor/layers/mla.py b/vllm/model_executor/layers/mla.py
+index 6c0e8e069f..f1b0328586 100644
+--- a/vllm/model_executor/layers/mla.py
++++ b/vllm/model_executor/layers/mla.py
+@@ -17,7 +17,7 @@ class MLAModules:
+ 
+     kv_a_layernorm: torch.nn.Module
+     kv_b_proj: torch.nn.Module
+-    rotary_emb: torch.nn.Module
++    rotary_emb: torch.nn.Module | None
+     o_proj: torch.nn.Module
+     fused_qkv_a_proj: torch.nn.Module | None
+     kv_a_proj_with_mqa: torch.nn.Module | None
+@@ -69,6 +69,7 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
+         skip_topk: bool = False,
+         non_causal_multi_token_decode: bool = False,
+         allow_short_prefill_indexer_scoring_skip: bool = False,
++        attn_backend: type | None = None,
+     ) -> None:
+         super().__init__()
+         self.hidden_size = hidden_size
+@@ -118,6 +119,7 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
+             cache_config=cache_config,
+             quant_config=quant_config,
+             prefix=f"{prefix}.attn",
++            attn_backend=attn_backend,
+             kv_b_proj=self.kv_b_proj,
+             dcp_q_replicate=self.dcp_q_replicate,
+             use_sparse=self.is_sparse,
+diff --git a/vllm/utils/b12x.py b/vllm/utils/b12x.py
+index 62ad46b4b5..8362ccef0e 100644
+--- a/vllm/utils/b12x.py
++++ b/vllm/utils/b12x.py
+@@ -38,6 +38,7 @@ _B12X_SUBMODULES = {
+         "b12x.attention.sparse_mla",
+         "b12x.attention.compressed_sparse_mla",
+         "b12x.attention.dsa_indexer",
++        "b12x.attention.glm_pooled_indexer",
+         "b12x.attention.qsa",
+         "b12x.gemm.blockscaled",
+         "b12x.gemm.wo_projection",
+@@ -90,6 +91,10 @@ def get_b12x_dsa_indexer() -> ModuleType | None:
+     return _get_submodule("b12x.attention.dsa_indexer")
+ 
+ 
++def get_b12x_glm_pooled_indexer() -> ModuleType | None:
++    return _get_submodule("b12x.attention.glm_pooled_indexer")
++
++
+ def get_b12x_intrinsics() -> ModuleType | None:
+     return _get_submodule("b12x._lib.intrinsics")
+ 
+diff --git a/vllm/v1/attention/backends/mla/b12x_mla_sparse.py b/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
+index 3093d25537..6c64a223cf 100644
+--- a/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
++++ b/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
+@@ -2,14 +2,14 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """B12x sparse MLA attention backend."""
+ 
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ from typing import TYPE_CHECKING, ClassVar
+ 
+ import numpy as np
+ import torch
+ 
+ from vllm import _custom_ops as ops
+-from vllm.config import VllmConfig
++from vllm.config import VllmConfig, get_current_vllm_config_or_none
+ from vllm.config.cache import CacheDType
+ from vllm.distributed import get_dcp_group
+ from vllm.model_executor.layers.attention.mla_attention import MLACommonPrefillMetadata
+@@ -33,7 +33,8 @@ from vllm.v1.attention.backends.mla.sparse_utils import (
+     triton_filter_and_convert_dcp_index,
+ )
+ from vllm.v1.attention.backends.utils import get_dcp_local_seq_lens
+-from vllm.v1.kv_cache_interface import AttentionSpec
++from vllm.v1.kv_cache_interface import AttentionSpec, MLAAttentionSpec
++from vllm.v1.kv_cache_layout import KVCacheLayout
+ from vllm.v1.worker.workspace import current_workspace_manager
+ 
+ if TYPE_CHECKING:
+@@ -41,6 +42,65 @@ if TYPE_CHECKING:
+     from vllm.v1.attention.backend import CommonAttentionMetadata
+ 
+ 
++_GLM_NEXT_MODEL_TYPES = frozenset(("glm5_next", "glm5_next_text"))
++_GLM_NEXT_CACHE_RECORD_BYTES = 528
++_GLM_NEXT_INDEX_CACHE_BYTES = 128 * torch.bfloat16.itemsize
++
++
++def _is_glm_next_config(hf_config: object | None) -> bool:
++    return getattr(hf_config, "model_type", None) in _GLM_NEXT_MODEL_TYPES
++
++
++def _current_hf_text_config() -> object | None:
++    vllm_config = get_current_vllm_config_or_none()
++    if vllm_config is None or vllm_config.model_config is None:
++        return None
++    return vllm_config.model_config.hf_text_config
++
++
++def _is_glm_next_spec(spec: AttentionSpec) -> bool:
++    if isinstance(spec, MLAAttentionSpec) and spec.model_version == "glm5_next":
++        return True
++    hf_config = _current_hf_text_config()
++    return hf_config is not None and _is_glm_next_config(hf_config)
++
++
++def _glm_next_recipe_error(hf_config: object) -> str | None:
++    expected = {
++        "kv_lora_rank": 512,
++        "qk_nope_head_dim": 256,
++        "qk_rope_head_dim": 0,
++        "v_head_dim": 256,
++        "index_n_heads": 32,
++        "index_head_dim": 128,
++        "index_topk": 2048,
++        "index_kpool": 4,
++    }
++    mismatches = [
++        f"{name}={getattr(hf_config, name, None)!r} (expected {value})"
++        for name, value in expected.items()
++        if getattr(hf_config, name, None) != value
++    ]
++    if mismatches:
++        return "B12X GLM5Next sparse MLA requires " + ", ".join(mismatches)
++    return None
++
++
++def _selected_index_block_stride_rows(
++    kv_cache: torch.Tensor,
++    *,
++    block_size: int,
++    is_glm_next: bool,
++) -> int:
++    if is_glm_next:
++        # GLM_NEXT selected indices are physical token slots. The b12x kernel
++        # applies the cache's byte page stride itself, including the adjacent
++        # pooled-index tail, so padding must not be expressed as fake rows.
++        return block_size
++    record_width = int(kv_cache.shape[-1])
++    return int(kv_cache.stride(0)) // record_width
++
++
+ class B12xMLASparseBackend(AttentionBackend):
+     supported_dtypes: ClassVar[list[torch.dtype]] = [torch.bfloat16]
+     supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+@@ -64,7 +124,44 @@ class B12xMLASparseBackend(AttentionBackend):
+ 
+     @classmethod
+     def get_supported_head_sizes(cls) -> list[int]:
+-        return [576]
++        return [512, 576]
++
++    @classmethod
++    def customize_spec(cls, spec: AttentionSpec) -> AttentionSpec:
++        if not _is_glm_next_spec(spec):
++            return spec
++        if not isinstance(spec, MLAAttentionSpec):
++            raise TypeError(
++                "B12X GLM5Next sparse MLA requires an MLAAttentionSpec, got "
++                f"{type(spec).__name__}."
++            )
++        if spec.head_size != 512:
++            raise ValueError(
++                "B12X GLM5Next sparse MLA requires head_size=512, got "
++                f"{spec.head_size}."
++            )
++        if spec.block_size % 4 != 0:
++            raise ValueError(
++                "B12X GLM5Next pooled-index cache requires block_size divisible "
++                f"by index_kpool=4, got {spec.block_size}."
++            )
++        index_tail_bytes = spec.block_size // 4 * _GLM_NEXT_INDEX_CACHE_BYTES
++        return replace(
++            spec,
++            state_content_bytes=_GLM_NEXT_CACHE_RECORD_BYTES,
++            page_size_padded=(
++                spec.block_size * _GLM_NEXT_CACHE_RECORD_BYTES + index_tail_bytes
++            ),
++            model_version="glm5_next",
++        )
++
++    @classmethod
++    def supported_kv_cache_layouts(cls) -> tuple[KVCacheLayout, ...]:
++        # Sparse index caches share manager blocks with their MLA layer. Keep
++        # the layer dimension inside the manager's block so block copies and
++        # swaps carry both cache regions together. DeepSeek-V4's index backend
++        # already imposes the same constraint, so this preserves its layout.
++        return (KVCacheLayout.BLHNC,)
+ 
+     @staticmethod
+     def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+@@ -109,6 +206,26 @@ class B12xMLASparseBackend(AttentionBackend):
+             hf_config = vllm_config.model_config.hf_text_config
+             if getattr(hf_config, "index_topk", None) is None:
+                 return "B12X sparse MLA requires a model with index_topk"
++            if _is_glm_next_config(hf_config):
++                if recipe_error := _glm_next_recipe_error(hf_config):
++                    return recipe_error
++                if head_size != 512:
++                    return "B12X GLM5Next sparse MLA requires head_size=512"
++                dcp_size = int(
++                    getattr(
++                        getattr(vllm_config, "parallel_config", None),
++                        "decode_context_parallel_size",
++                        1,
++                    )
++                )
++                if dcp_size > 1:
++                    return (
++                        "B12X GLM5Next sparse MLA does not support decode "
++                        "context parallelism"
++                    )
++                return None
++            if head_size != 576:
++                return "B12X sparse MLA requires head_size=576"
+             if int(getattr(hf_config, "kv_lora_rank", 0)) != 512:
+                 return "B12X sparse MLA requires kv_lora_rank=512"
+             if int(getattr(hf_config, "qk_rope_head_dim", 0)) != 64:
+@@ -116,6 +233,28 @@ class B12xMLASparseBackend(AttentionBackend):
+         return None
+ 
+ 
++class B12xGLM5NextMLASparseBackend(B12xMLASparseBackend):
++    @staticmethod
++    def get_builder_cls() -> type["B12xGLM5NextMLASparseMetadataBuilder"]:
++        return B12xGLM5NextMLASparseMetadataBuilder
++
++    @classmethod
++    def customize_spec(cls, spec: AttentionSpec) -> AttentionSpec:
++        if not isinstance(spec, MLAAttentionSpec):
++            raise TypeError(
++                "B12X GLM5Next sparse MLA requires an MLAAttentionSpec, got "
++                f"{type(spec).__name__}."
++            )
++        return super().customize_spec(replace(spec, model_version="glm5_next"))
++
++    @staticmethod
++    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
++        # GLM's B12x kernels specialize on the physical page size. Keeping the
++        # hybrid manager page intact also keeps its pooled-index tail inside
++        # BLHNC block copies.
++        return [MultipleOf(64)]
++
++
+ @dataclass
+ class B12xMLASparseMetadata(AttentionMetadata):
+     num_reqs: int
+@@ -136,6 +275,10 @@ class B12xMLASparseMetadata(AttentionMetadata):
+     topk_tokens: int = 2048
+     cp_kv_cache_interleave_size: int = 1
+     cache_seq_lens_per_token: torch.Tensor | None = None
++    selector_state_slot_ids: torch.Tensor | None = None
++    selector_state_is_fresh: torch.Tensor | None = None
++    selector_num_accepted_tokens: torch.Tensor | None = None
++    selector_is_prefilling: torch.Tensor | None = None
+ 
+ 
+ class B12xMLASparseMetadataBuilder(
+@@ -143,6 +286,7 @@ class B12xMLASparseMetadataBuilder(
+ ):
+     metadata_cls = B12xMLASparseMetadata
+     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
++    requires_glm_next_selector_metadata: bool
+ 
+     def __init__(
+         self,
+@@ -151,12 +295,50 @@ class B12xMLASparseMetadataBuilder(
+         vllm_config: VllmConfig,
+         device: torch.device,
+     ) -> None:
++        hf_config = vllm_config.model_config.hf_text_config
++        self.requires_glm_next_selector_metadata = _is_glm_next_config(hf_config)
++        configured_dcp_size = int(
++            getattr(
++                vllm_config.parallel_config,
++                "decode_context_parallel_size",
++                1,
++            )
++        )
++        if self.requires_glm_next_selector_metadata and configured_dcp_size > 1:
++            raise ValueError(
++                "B12X GLM5Next sparse MLA does not support decode context parallelism"
++            )
+         super().__init__(kv_cache_spec, layer_names, vllm_config, device)
++        if self.requires_glm_next_selector_metadata and self.dcp_world_size > 1:
++            raise ValueError(
++                "B12X GLM5Next sparse MLA does not support decode context parallelism"
++            )
++        self.supports_draft_decode_metadata_update = (
++            self.requires_glm_next_selector_metadata
++        )
+         self.dcp_rank = get_dcp_group().rank_in_group if self.dcp_world_size > 1 else 0
+-        max_tokens = vllm_config.scheduler_config.max_num_batched_tokens
++        scheduler_config = vllm_config.scheduler_config
++        max_tokens = scheduler_config.max_num_batched_tokens
+         self.cache_seq_lens_per_token_buffer = torch.empty(
+             (max_tokens,), dtype=torch.int32, device=device
+         )
++        if self.requires_glm_next_selector_metadata:
++            max_reqs = int(scheduler_config.max_num_seqs)
++            self._capture_default_state_slot_ids = torch.arange(
++                max_reqs, dtype=torch.int32, device=device
++            )
++            self._capture_state_slot_ids = torch.empty(
++                max_reqs, dtype=torch.int32, device=device
++            )
++            self._capture_state_is_fresh = torch.ones(
++                max_reqs, dtype=torch.bool, device=device
++            )
++            self._capture_num_accepted_tokens = torch.ones(
++                max_reqs, dtype=torch.int32, device=device
++            )
++            self._capture_is_prefilling = torch.zeros(
++                max_reqs, dtype=torch.bool, device=device
++            )
+         num_q_heads = vllm_config.model_config.get_num_attention_heads(
+             vllm_config.parallel_config
+         )
+@@ -169,11 +351,102 @@ class B12xMLASparseMetadataBuilder(
+             supports_dcp_with_varlen=True,
+         )
+ 
+-    def build(
++    def _stage_glm_next_selector_metadata(
++        self,
++        *,
++        num_reqs: int,
++        for_cudagraph_capture: bool,
++        selector_state_slot_ids: torch.Tensor | None,
++        selector_state_is_fresh: torch.Tensor | None,
++        selector_num_accepted_tokens: torch.Tensor | None,
++        selector_is_prefilling: torch.Tensor | None,
++    ) -> tuple[
++        torch.Tensor | None,
++        torch.Tensor | None,
++        torch.Tensor | None,
++        torch.Tensor | None,
++    ]:
++        values = (
++            selector_state_slot_ids,
++            selector_state_is_fresh,
++            selector_num_accepted_tokens,
++            selector_is_prefilling,
++        )
++        if not self.requires_glm_next_selector_metadata:
++            if any(value is not None for value in values):
++                raise TypeError(
++                    "GLM5Next selector metadata was provided to a non-GLM "
++                    "B12X sparse MLA builder"
++                )
++            return (None, None, None, None)
++
++        capacity = int(self._capture_state_slot_ids.numel())
++        if not 0 <= num_reqs <= capacity:
++            raise ValueError(
++                "GLM5Next selector request count exceeds the metadata buffer "
++                f"capacity: num_reqs={num_reqs}, capacity={capacity}"
++            )
++        if not for_cudagraph_capture and any(value is None for value in values):
++            raise RuntimeError(
++                "B12X GLM5Next sparse MLA requires selector state slots, fresh "
++                "flags, accepted-token counts, and prefill flags"
++            )
++
++        if for_cudagraph_capture:
++            self._capture_state_slot_ids[:num_reqs].copy_(
++                self._capture_default_state_slot_ids[:num_reqs]
++            )
++            self._capture_state_is_fresh[:num_reqs].fill_(True)
++            self._capture_num_accepted_tokens[:num_reqs].fill_(1)
++            self._capture_is_prefilling[:num_reqs].fill_(False)
++        else:
++            typed_values = tuple(value for value in values if value is not None)
++            if any(
++                value.ndim != 1 or value.numel() < num_reqs for value in typed_values
++            ):
++                raise ValueError(
++                    "GLM5Next selector metadata must be one-dimensional and "
++                    "cover every padded request row"
++                )
++            self._capture_state_slot_ids[:num_reqs].fill_(-1)
++            self._capture_state_is_fresh[:num_reqs].fill_(True)
++            self._capture_num_accepted_tokens[:num_reqs].fill_(1)
++            self._capture_is_prefilling[:num_reqs].fill_(False)
++            assert selector_state_slot_ids is not None
++            assert selector_state_is_fresh is not None
++            assert selector_num_accepted_tokens is not None
++            assert selector_is_prefilling is not None
++            self._capture_state_slot_ids[:num_reqs].copy_(
++                selector_state_slot_ids[:num_reqs]
++            )
++            self._capture_state_is_fresh[:num_reqs].copy_(
++                selector_state_is_fresh[:num_reqs]
++            )
++            self._capture_num_accepted_tokens[:num_reqs].copy_(
++                selector_num_accepted_tokens[:num_reqs]
++            )
++            self._capture_is_prefilling[:num_reqs].copy_(
++                selector_is_prefilling[:num_reqs]
++            )
++
++        return (
++            self._capture_state_slot_ids[:num_reqs],
++            self._capture_state_is_fresh[:num_reqs],
++            self._capture_num_accepted_tokens[:num_reqs],
++            self._capture_is_prefilling[:num_reqs],
++        )
++
++    def _build(
+         self,
+         common_prefix_len: int,
+         common_attn_metadata: "CommonAttentionMetadata",
+         fast_build: bool = False,
++        *,
++        for_cudagraph_capture: bool,
++        selector_state_slot_ids: torch.Tensor | None = None,
++        selector_state_is_fresh: torch.Tensor | None = None,
++        selector_num_accepted_tokens: torch.Tensor | None = None,
++        selector_is_prefilling: torch.Tensor | None = None,
+     ) -> B12xMLASparseMetadata:
+         metadata = super().build(
+             common_prefix_len, common_attn_metadata, fast_build=fast_build
+@@ -227,8 +500,69 @@ class B12xMLASparseMetadataBuilder(
+             per_token_lens = self.cache_seq_lens_per_token_buffer[:num_tokens]
+ 
+         metadata.cache_seq_lens_per_token = per_token_lens
++        (
++            metadata.selector_state_slot_ids,
++            metadata.selector_state_is_fresh,
++            metadata.selector_num_accepted_tokens,
++            metadata.selector_is_prefilling,
++        ) = self._stage_glm_next_selector_metadata(
++            num_reqs=common.num_reqs,
++            for_cudagraph_capture=for_cudagraph_capture,
++            selector_state_slot_ids=selector_state_slot_ids,
++            selector_state_is_fresh=selector_state_is_fresh,
++            selector_num_accepted_tokens=selector_num_accepted_tokens,
++            selector_is_prefilling=selector_is_prefilling,
++        )
+         return metadata
+ 
++    def build(
++        self,
++        common_prefix_len: int,
++        common_attn_metadata: "CommonAttentionMetadata",
++        fast_build: bool = False,
++        selector_state_slot_ids: torch.Tensor | None = None,
++        selector_state_is_fresh: torch.Tensor | None = None,
++        selector_num_accepted_tokens: torch.Tensor | None = None,
++        selector_is_prefilling: torch.Tensor | None = None,
++    ) -> B12xMLASparseMetadata:
++        return self._build(
++            common_prefix_len,
++            common_attn_metadata,
++            fast_build,
++            for_cudagraph_capture=False,
++            selector_state_slot_ids=selector_state_slot_ids,
++            selector_state_is_fresh=selector_state_is_fresh,
++            selector_num_accepted_tokens=selector_num_accepted_tokens,
++            selector_is_prefilling=selector_is_prefilling,
++        )
++
++    def build_for_cudagraph_capture(
++        self,
++        common_attn_metadata: "CommonAttentionMetadata",
++    ) -> B12xMLASparseMetadata:
++        return self._build(
++            common_prefix_len=0,
++            common_attn_metadata=common_attn_metadata,
++            for_cudagraph_capture=True,
++        )
++
++    def update_draft_decode_metadata(
++        self,
++        metadata: B12xMLASparseMetadata,
++    ) -> None:
++        accepted = metadata.selector_num_accepted_tokens
++        if not self.requires_glm_next_selector_metadata or accepted is None:
++            raise RuntimeError(
++                "GLM5Next draft decode metadata requires accepted-token counts"
++            )
++        accepted.fill_(1)
++
++
++class B12xGLM5NextMLASparseMetadataBuilder(B12xMLASparseMetadataBuilder):
++    # The pooled selector must commit every fresh or extended prompt row
++    # through run_prefill; decode commits only accepted prior rows.
++    treat_short_extends_as_decodes: ClassVar[bool] = False
++
+ 
+ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+     can_return_lse_for_decode = True
+@@ -277,12 +611,35 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+             topk_indices_buffer=topk_indices_buffer,
+             **mla_args,
+         )
+-        if self.kv_lora_rank != 512 or self.qk_rope_head_dim != 64:
+-            raise ValueError(
+-                "B12X sparse MLA requires kv_lora_rank=512 and qk_rope_head_dim=64."
++        from vllm.config import get_current_vllm_config
++
++        vllm_config = get_current_vllm_config()
++        hf_config = vllm_config.model_config.hf_text_config
++        self._is_glm_next = _is_glm_next_config(hf_config)
++        if self._is_glm_next:
++            if recipe_error := _glm_next_recipe_error(hf_config):
++                raise ValueError(recipe_error)
++            configured_dcp_size = int(
++                getattr(
++                    vllm_config.parallel_config,
++                    "decode_context_parallel_size",
++                    1,
++                )
+             )
+-        if head_size != 576:
+-            raise ValueError("B12X sparse MLA requires head_size=576.")
++            if configured_dcp_size > 1 or self.dcp_world_size > 1:
++                raise ValueError(
++                    "B12X GLM5Next sparse MLA does not support decode context "
++                    "parallelism"
++                )
++            if head_size != 512:
++                raise ValueError("B12X GLM5Next sparse MLA requires head_size=512.")
++        else:
++            if self.kv_lora_rank != 512 or self.qk_rope_head_dim != 64:
++                raise ValueError(
++                    "B12X sparse MLA requires kv_lora_rank=512 and qk_rope_head_dim=64."
++                )
++            if head_size != 576:
++                raise ValueError("B12X sparse MLA requires head_size=576.")
+         if self.topk_indices_buffer is None:
+             raise ValueError("B12X sparse MLA requires a top-k index buffer.")
+         if kv_cache_dtype != "fp8_ds_mla":
+@@ -300,42 +657,114 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+             getattr(module, name)
+         self._run_decode = module.run_decode
+         self._run_extend = module.run_extend
++        self._model_type: int | None = None
++        self._concat_and_cache_glm_next_mla = None
++        if self._is_glm_next:
++            self._model_type = int(module.ModelType.GLM_NEXT)
++            self._concat_and_cache_glm_next_mla = module.concat_and_cache_glm_next_mla
+ 
+-        from vllm.config import get_current_vllm_config
+-
+-        vllm_config = get_current_vllm_config()
+         scheduler_config = vllm_config.scheduler_config
+         max_tokens = int(scheduler_config.max_num_batched_tokens)
+         max_seqs = int(scheduler_config.max_num_seqs)
+         self._input_num_heads = self.num_heads * self.dcp_world_size
+         self._q_head_dim = self.kv_lora_rank + self.qk_rope_head_dim
+         self._topk_tokens = int(self.topk_indices_buffer.shape[-1])
++        if self._is_glm_next:
++            expected_width = int(hf_config.index_topk) + int(hf_config.index_kpool) - 1
++            if self._topk_tokens != expected_width:
++                raise ValueError(
++                    "B12X GLM5Next sparse MLA requires a selector output width "
++                    f"of {expected_width}, got {self._topk_tokens}."
++                )
+         self._max_tokens = max_tokens
++        self._max_seqs = max_seqs
+         self._kv_dtype = torch.uint8
++        kernel_page_size = (
++            int(vllm_config.cache_config.block_size) if self._is_glm_next else 64
++        )
++
++        self._module = module
++        self._kernel_page_size = 0
++        self._set_kernel_page_size(kernel_page_size)
++        self.supports_quant_query_input = False
++
++    def _set_kernel_page_size(self, kernel_page_size: int) -> None:
++        if kernel_page_size <= 0 or kernel_page_size % 64:
++            raise ValueError(
++                "B12X sparse MLA kernel page size must be a positive multiple "
++                f"of 64, got {kernel_page_size}."
++            )
++        if kernel_page_size == self._kernel_page_size:
++            return
+ 
+         def make_plan(mode: str):
+-            return module.plan(
+-                module.Caps(
+-                    device=torch.device(
+-                        "cuda", torch.accelerator.current_device_index()
+-                    ),
+-                    num_q_heads=self._input_num_heads,
+-                    max_q_rows=max_tokens,
+-                    max_width=self._topk_tokens,
+-                    dtype=torch.bfloat16,
+-                    kv_dtype=self._kv_dtype,
+-                    head_dim=self._q_head_dim,
+-                    v_head_dim=self.kv_lora_rank,
+-                    mode=mode,
+-                    max_batch=max_seqs,
+-                    max_chunks_per_row=max(1, (self._topk_tokens + 63) // 64),
+-                    page_size=64,
+-                )
++            caps_kwargs = dict(
++                device=torch.device("cuda", torch.accelerator.current_device_index()),
++                num_q_heads=self._input_num_heads,
++                max_q_rows=self._max_tokens,
++                max_width=self._topk_tokens,
++                dtype=torch.bfloat16,
++                kv_dtype=self._kv_dtype,
++                head_dim=self._q_head_dim,
++                v_head_dim=self.kv_lora_rank,
++                mode=mode,
++                max_batch=self._max_tokens,
++                max_chunks_per_row=max(1, (self._topk_tokens + 63) // 64),
++                page_size=kernel_page_size,
+             )
++            if self._model_type is not None:
++                caps_kwargs["model_type"] = self._model_type
++            return self._module.plan(self._module.Caps(**caps_kwargs))
++
++        decode_plan = make_plan("decode")
++        extend_plan = make_plan("extend")
++        self._decode_plan = decode_plan
++        self._extend_plan = extend_plan
++        self._kernel_page_size = kernel_page_size
++
++    def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
++        if self._is_glm_next:
++            if kv_cache.ndim != 3 or int(kv_cache.shape[-1]) != 528:
++                raise ValueError(
++                    "B12X GLM5Next cache must have shape "
++                    "[pages, page_size, 528], got "
++                    f"shape={tuple(kv_cache.shape)}, stride={kv_cache.stride()}, "
++                    f"dtype={kv_cache.dtype}"
++                )
++            self._set_kernel_page_size(int(kv_cache.shape[1]))
+ 
+-        self._decode_plan = make_plan("decode")
+-        self._extend_plan = make_plan("extend")
+-        self.supports_quant_query_input = False
++    def do_kv_cache_update(
++        self,
++        kv_c_normed: torch.Tensor,
++        k_pe: torch.Tensor,
++        kv_cache: torch.Tensor,
++        slot_mapping: torch.Tensor,
++        kv_cache_dtype: str,
++        k_scale: torch.Tensor,
++    ) -> None:
++        if not self._is_glm_next:
++            return super().do_kv_cache_update(
++                kv_c_normed,
++                k_pe,
++                kv_cache,
++                slot_mapping,
++                kv_cache_dtype,
++                k_scale,
++            )
++        del k_scale
++        if kv_cache.numel() == 0:
++            return
++        if int(k_pe.shape[-1]) != 0:
++            raise ValueError(
++                "B12X GLM5Next cache updates require a zero-width RoPE tensor, "
++                f"got shape={tuple(k_pe.shape)}."
++            )
++        assert self._concat_and_cache_glm_next_mla is not None
++        self._concat_and_cache_glm_next_mla(
++            kv_c_normed,
++            kv_cache,
++            slot_mapping.flatten(),
++        )
+ 
+     def forward_mqa(
+         self,
+@@ -345,6 +774,17 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+         layer: AttentionLayer,
+     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+         del layer
++        cache_page_size = int(kv_c_and_k_pe_cache.shape[1])
++        metadata_page_size = int(attn_metadata.block_size)
++        if self._is_glm_next and (
++            cache_page_size != self._kernel_page_size
++            or metadata_page_size != self._kernel_page_size
++        ):
++            raise RuntimeError(
++                "B12X GLM5Next page geometry does not match the bound plan: "
++                f"cache={cache_page_size}, metadata={metadata_page_size}, "
++                f"plan={self._kernel_page_size}"
++            )
+         plan = (
+             self._decode_plan if attn_metadata.max_query_len <= 1 else self._extend_plan
+         )
+@@ -362,7 +802,10 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+             q_nope, q_pe = q
+             num_tokens = int(q_nope.shape[0])
+             q_all = q_buffer[:num_tokens]
+-            ops.concat_mla_q(q_nope, q_pe, q_all)
++            if int(q_pe.shape[-1]) == 0:
++                q_all.copy_(q_nope)
++            else:
++                ops.concat_mla_q(q_nope, q_pe, q_all)
+         else:
+             num_tokens = int(q.shape[0])
+             q_all = q_buffer[:num_tokens]
+@@ -376,8 +819,11 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+ 
+         assert self.topk_indices_buffer is not None
+         topk_indices = self.topk_indices_buffer[:num_tokens]
+-        record_width = int(kv_c_and_k_pe_cache.shape[-1])
+-        block_stride_rows = int(kv_c_and_k_pe_cache.stride(0)) // record_width
++        block_stride_rows = _selected_index_block_stride_rows(
++            kv_c_and_k_pe_cache,
++            block_size=attn_metadata.block_size,
++            is_glm_next=self._is_glm_next,
++        )
+         if self.dcp_world_size > 1:
+             selected_indices, active_counts = triton_filter_and_convert_dcp_index(
+                 attn_metadata.req_id_per_token[:num_tokens],
+@@ -413,7 +859,7 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+             nsa_cache_seqlens_int32=active_counts,
+         )
+         run = self._run_decode if plan is self._decode_plan else self._run_extend
+-        result = run(
++        run_kwargs = dict(
+             binding=binding,
+             kv_cache=kv_c_and_k_pe_cache,
+             sm_scale=self.scale,
+@@ -421,6 +867,9 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+             return_lse=self.need_to_return_lse_for_decode,
+             lse_scale="natural",
+         )
++        if self._model_type is not None:
++            run_kwargs["model_type"] = self._model_type
++        result = run(**run_kwargs)
+         if self.need_to_return_lse_for_decode:
+             output, lse = result
+             return output, lse
+diff --git a/vllm/v1/attention/backends/mla/sparse_utils.py b/vllm/v1/attention/backends/mla/sparse_utils.py
+index 00679d5e26..1d74df143a 100644
+--- a/vllm/v1/attention/backends/mla/sparse_utils.py
++++ b/vllm/v1/attention/backends/mla/sparse_utils.py
+@@ -43,6 +43,7 @@ def _convert_req_index_to_global_index_kernel(
+     max_num_blocks_per_req: tl.constexpr,
+     BLOCK_SIZE: tl.constexpr,
+     BLOCK_STRIDE_ROWS: tl.constexpr,
++    NUM_TOPK_TOKENS: tl.constexpr,
+     BLOCK_N: tl.constexpr,  # tile width along columns
+     HAS_PREFILL: tl.constexpr,
+     COUNT_VALID: tl.constexpr,  # whether to count valid indices
+@@ -74,16 +75,17 @@ def _convert_req_index_to_global_index_kernel(
+ 
+     # Each program covers BLOCK_N consecutive columns
+     indice_id = tile_id * BLOCK_N + tl.arange(0, BLOCK_N)
++    in_bounds = indice_id < NUM_TOPK_TOKENS
+ 
+     # Load request id for this token (no mask: grid is exact)
+     req = tl.load(req_id_ptr + token_id)
+ 
+     # Load token indices for this tile
+     ti_ptr = token_indices_ptr + token_id * ti_stride0 + indice_id * ti_stride1
+-    tok = tl.load(ti_ptr)  # int32
++    tok = tl.load(ti_ptr, mask=in_bounds, other=-1)  # int32
+ 
+     # Only token == -1 should propagate as -1
+-    is_invalid_tok = tok < 0
++    is_invalid_tok = (tok < 0) | ~in_bounds
+     is_prefill = False
+     if HAS_PREFILL:
+         prefill_req_id = tl.load(prefill_request_id_ptr + token_id)
+@@ -140,7 +142,7 @@ def _convert_req_index_to_global_index_kernel(
+     else:
+         # Store results in place (input column == output column).
+         out_ptr_ij = out_ptr + token_id * out_stride0 + indice_id * out_stride1
+-        tl.store(out_ptr_ij, out_val)
++        tl.store(out_ptr_ij, out_val, mask=in_bounds)
+ 
+         # Accumulate the tile's valid count into the row total; a single tile's
+         # reduction *is* the total.
+@@ -166,12 +168,14 @@ def _remap_tiling(
+     Returns:
+         (single_tile, block_n, tiles_per_row, num_warps)
+     """
+-    single_tile = (
+-        count_valid and triton.next_power_of_2(NUM_TOPK_TOKENS) == NUM_TOPK_TOKENS
++    assert NUM_TOPK_TOKENS > 0, "NUM_TOPK_TOKENS must be positive"
++    assert BLOCK_N > 0 and BLOCK_N & (BLOCK_N - 1) == 0, (
++        f"BLOCK_N ({BLOCK_N}) must be a positive power of two"
+     )
++    single_tile = count_valid and NUM_TOPK_TOKENS & (NUM_TOPK_TOKENS - 1) == 0
+     if single_tile:
+         return True, NUM_TOPK_TOKENS, 1, 8
+-    return False, BLOCK_N, NUM_TOPK_TOKENS // BLOCK_N, 4
++    return False, BLOCK_N, (NUM_TOPK_TOKENS + BLOCK_N - 1) // BLOCK_N, 4
+ 
+ 
+ def triton_convert_req_index_to_global_index(
+@@ -218,9 +222,6 @@ def triton_convert_req_index_to_global_index(
+         "is allocated like token_indices, so a longer req_id writes out of bounds"
+     )
+     assert token_indices.shape[1] == NUM_TOPK_TOKENS
+-    assert NUM_TOPK_TOKENS % BLOCK_N == 0, (
+-        f"NUM_TOPK_TOKENS ({NUM_TOPK_TOKENS}) must be divisible by BLOCK_N ({BLOCK_N})"
+-    )
+ 
+     if HAS_PREFILL_WORKSPACE:
+         assert prefill_workspace_request_ids is not None
+@@ -274,6 +275,7 @@ def triton_convert_req_index_to_global_index(
+         max_num_blocks_per_req,
+         BLOCK_SIZE,
+         BLOCK_STRIDE_ROWS if BLOCK_STRIDE_ROWS is not None else BLOCK_SIZE,
++        NUM_TOPK_TOKENS,
+         block_n,
+         HAS_PREFILL_WORKSPACE,
+         return_valid_counts,
+@@ -336,7 +338,6 @@ def triton_filter_and_convert_dcp_index(
+     assert block_table.dtype == torch.int32
+     assert token_indices.dtype == torch.int32
+     assert token_indices.shape[1] == NUM_TOPK_TOKENS
+-    assert NUM_TOPK_TOKENS % BLOCK_N == 0
+ 
+     if dcp_size == 1:
+         return triton_convert_req_index_to_global_index(
+@@ -393,6 +394,7 @@ def triton_filter_and_convert_dcp_index(
+         max_num_blocks_per_req,
+         BLOCK_SIZE,
+         BLOCK_STRIDE_ROWS if BLOCK_STRIDE_ROWS is not None else BLOCK_SIZE,
++        NUM_TOPK_TOKENS,
+         block_n,
+         False,  # HAS_PREFILL
+         count_valid,
+diff --git a/vllm/v1/spec_decode/llm_base_proposer.py b/vllm/v1/spec_decode/llm_base_proposer.py
+index 0eaba01294..1556ddb441 100644
+--- a/vllm/v1/spec_decode/llm_base_proposer.py
++++ b/vllm/v1/spec_decode/llm_base_proposer.py
+@@ -1021,6 +1021,7 @@ class SpecDecodeBaseProposer:
+                 {
+                     "DeepSeekMTPModel",
+                     "DeepseekV32MTPModel",
++                    "Glm5NextMTPModel",
+                     "KimiK3MTPModel",
+                 }.intersection(architectures)
+             )
+diff --git a/vllm/v1/worker/gpu/spec_decode/eagle/utils.py b/vllm/v1/worker/gpu/spec_decode/eagle/utils.py
+index 579652bc7d..eb9362df7e 100644
+--- a/vllm/v1/worker/gpu/spec_decode/eagle/utils.py
++++ b/vllm/v1/worker/gpu/spec_decode/eagle/utils.py
+@@ -9,6 +9,36 @@ from vllm.lora.layers.base import BaseLayerWithLoRA
+ from vllm.model_executor.model_loader import get_model
+ 
+ 
++def _make_eagle_draft_vllm_config(vllm_config: VllmConfig) -> VllmConfig:
++    speculative_config = vllm_config.speculative_config
++    assert speculative_config is not None
++
++    if speculative_config.moe_backend is not None:
++        vllm_config = replace(
++            vllm_config,
++            kernel_config=replace(
++                vllm_config.kernel_config,
++                moe_backend=speculative_config.moe_backend,
++            ),
++        )
++    vllm_config = replace(
++        vllm_config,
++        attention_config=replace(
++            vllm_config.attention_config,
++            backend=speculative_config.attention_backend,
++        ),
++    )
++    if speculative_config.kv_cache_dtype is not None:
++        vllm_config = replace(
++            vllm_config,
++            cache_config=replace(
++                vllm_config.cache_config,
++                cache_dtype=speculative_config.kv_cache_dtype,
++            ),
++        )
++    return vllm_config
++
++
+ def _should_share(eagle: nn.Module, flag: str, draft, target) -> bool:
+     """Share when the draft has no own copy, or its copy matches the target."""
+ 
+@@ -36,17 +66,10 @@ def get_target_lm_head(target_model: nn.Module, target_language_model: nn.Module
+ def load_eagle_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Module:
+     from vllm.compilation.backends import set_model_tag
+ 
++    vllm_config = _make_eagle_draft_vllm_config(vllm_config)
+     speculative_config = vllm_config.speculative_config
+     assert speculative_config is not None
+     draft_model_config = speculative_config.draft_model_config
+-    if speculative_config.kv_cache_dtype is not None:
+-        vllm_config = replace(
+-            vllm_config,
+-            cache_config=replace(
+-                vllm_config.cache_config,
+-                cache_dtype=speculative_config.kv_cache_dtype,
+-            ),
+-        )
+     with set_model_tag("eagle_head"):
+         eagle_model = get_model(
+             vllm_config=vllm_config, model_config=draft_model_config
+diff --git a/vllm/v1/worker/gpu/spec_decode/speculator.py b/vllm/v1/worker/gpu/spec_decode/speculator.py
+index 9afd1c0284..f861b1b389 100644
+--- a/vllm/v1/worker/gpu/spec_decode/speculator.py
++++ b/vllm/v1/worker/gpu/spec_decode/speculator.py
+@@ -97,6 +97,14 @@ class DraftModelSpeculator(BaseSpeculator):
+         # draft the target's pre-hc_head (T, hc_mult * hidden_size) residual).
+         # Non-HC models default to hc_mult=1 and are unaffected.
+         hc_mult = getattr(self.draft_model_config.hf_config, "hc_mult", 1)
++        # GLM-5.3-Flash MTP drafts from the regular hidden state + token embed
++        # (eh_proj: hidden*2 -> hidden), not the HC-multiplexed pre-hc_head
++        # residual, so never widen for it regardless of mhc. Covers the target
++        # (glm5_next) and MTP draft (glm5_next_mtp) config model_types.
++        if getattr(self.draft_model_config.hf_config, "model_type", "").startswith(
++            "glm5_next"
++        ):
++            hc_mult = 1
+         self.hidden_size = self.hidden_size * hc_mult
+         self.vocab_size = self.draft_model_config.get_vocab_size()
+         self.dtype = vllm_config.model_config.dtype

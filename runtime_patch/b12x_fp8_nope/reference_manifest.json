@@ -1,0 +1,62 @@
+{
+  "schema": "glm53-b12x-fp8-nope-reference-v1",
+  "created_utc": "2026-09-05",
+  "record_contract": {
+    "model": "GLM-5.3-Flash NoPE MLA",
+    "kv_cache_dtype": "fp8_ds_mla",
+    "latent_dim": 512,
+    "rope_dim": 0,
+    "group_size": 128,
+    "groups": 4,
+    "payload_dtype": "E4M3FN",
+    "payload_bytes": 512,
+    "scale_dtype": "FP32 little-endian",
+    "scale_rule": "amax(group) / 448; 1.0 for an all-zero group",
+    "scale_offset": 512,
+    "scale_bytes": 16,
+    "record_bytes": 528
+  },
+  "active_targets": {
+    "b12x_commit": "30aafad96b7a78064651c4a5ac177791e7bdee30",
+    "vllm_commit": "df684ff47dcbf088b41311494fd20347a702e56a",
+    "vllm_backend_sha256_at_audit": "0499c674b6890266b50fa0d5724dcfbb83cba3917714a6787e5dddc6feb65572",
+    "base_image": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "p8_image": "sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9"
+  },
+  "references": [
+    {
+      "file": "reference-b12x-fp8-nope-f7c7fd9.patch",
+      "sha256": "43f8b62fcfa61bd0ca864021a21088833f179a7f98616b6211acde734b0bb17b",
+      "commit": "f7c7fd9da1b6f700b46ec0fd9787779cf86f18b6",
+      "parent": "296cb864705005f623a8b81d428cf7a792106113",
+      "tree": "6b885439b7a8722e58fecf0b09844e96878ef2f2",
+      "role": "complete B12X FP8 NoPE implementation"
+    },
+    {
+      "file": "reference-b12x-dual-format-c845ea1.patch",
+      "sha256": "d6a0bea5b91af38a933129da8b6626531138df424d77e4d2dc2eafe341f583a7",
+      "commit": "c845ea1b090bbe1227ab7d03280c4dd8b02a1005",
+      "parent": "86b7c235b0224fe6288f63a1d7bbc1d4c5342737",
+      "tree": "5467d2ea12f048fe9260259750ebd95cefc20f34",
+      "role": "B12X dual FP8-NoPE and NVFP4-NoPE composition"
+    },
+    {
+      "file": "reference-vllm-fp8-nope-0c87882.patch",
+      "sha256": "a8ea9eca9e0c01feffebd14d7f1dd611f85cc0625de10ec97e1c8bbe120cb8e2",
+      "commit": "0c878821cf46c99729c7936bcbd4d868ad40e44e",
+      "parent": "3e63556c2b79de0b3a2f04648e575cb06e8ad276",
+      "tree": "ea77062aa1413dbe264460d72c802e0d5c49e8ea",
+      "role": "vLLM host integration for 528-byte FP8 NoPE"
+    },
+    {
+      "file": "reference-vllm-dual-format-fc2904b.patch",
+      "sha256": "828bda7beef51997b8f9ea13b98033ab3a927615695f2e032b734be6b835f44e",
+      "commit": "fc2904b50748d056f1d33cb3cda0d1bcfa862e72",
+      "parent": "5afd29ae7ba2532fdb81740913917d0153736af4",
+      "tree": "068efbf1462ed97fdd54654672a80ce9236dd793",
+      "role": "vLLM dual FP8-NoPE and NVFP4-NoPE composition"
+    }
+  ],
+  "application_policy": "reference commits are independent provenance artifacts; rebase semantically and do not apply as a linear series"
+}
+

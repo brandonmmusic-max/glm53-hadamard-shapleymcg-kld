@@ -1,0 +1,61 @@
+{
+  "schema": "glm53.p8-tail-omission-repair-prereg.v1",
+  "status": "predeclared-before-tail-source-implementation-image-build-or-GPU-run",
+  "created_at": "2026-09-05T12:05:00-04:00",
+  "question": "Does consuming the incomplete current KPool tail repair the shared approximately 0.11 forced-decode KLD endpoint?",
+  "baseline": {
+    "product": "uniform all-42-layer TrellisMX-P8 K4",
+    "physical_bpw": 4.25,
+    "capture": "p8-index-order-full-v1, N64 arm",
+    "selected4_equal_window_mean_kld": 0.11747408351921039,
+    "window_kld": {
+      "conditional-fit-0032": 0.097427959573676,
+      "conditional-fit-0021": 0.20159250798813763,
+      "conditional-fit-0090": 0.09817271669377985,
+      "conditional-fit-0003": 0.07270314982124808
+    }
+  },
+  "single_variable_change": {
+    "current": "The KPool expander emits 2048 ordered history columns followed by 1-3 incomplete-current-pool tail columns; B12X consumes only columns 0:2048.",
+    "candidate": "For tail_count t, emit ordered history columns 0:(2048-t), then the t causal tail tokens, in consumed columns 0:2048. Emit -1 in the three unconsumed suffix columns.",
+    "displacement": "Replace exactly t final ordered-history entries; retain all preceding history order and every tail token.",
+    "unchanged": [
+      "index scorer and its input bytes",
+      "fixed ordered compressed-pool selection",
+      "K4 procedural-MCG codec bytes and 4.25 bpw rate",
+      "P8 fused MoE kernel and E4M3/UE8M0-K32 arithmetic",
+      "B12X sparse-attention implementation after selected-index construction",
+      "TP4/no-EP/DCP1 topology, NVFP4 MLA KV, CUDA graphs, MTP off",
+      "forced-token pre-mask FP32 capture hook, teacher logits, tokens, windows, and CPU KLD implementation"
+    ]
+  },
+  "windows": [
+    {"id": "conditional-fit-0032", "domain": "axis1_general"},
+    {"id": "conditional-fit-0021", "domain": "axis2_legal"},
+    {"id": "conditional-fit-0090", "domain": "axis3_code_agentic"},
+    {"id": "conditional-fit-0003", "domain": "axis4_reasoning_termination"}
+  ],
+  "metric": "KL(teacher || student), nats, FP64 CPU, all 154880 vocabulary entries; true-decode-only mean reported separately",
+  "decision_before_result": {
+    "material_tail_cause_supported": "Candidate equal-window mean is at least 20 percent lower than 0.11747408351921039 and at least three of four windows improve.",
+    "material_tail_cause_rejected": "Candidate relative improvement is at most 5 percent.",
+    "otherwise": "Directional but inconclusive serving-path evidence; preserve the point estimate and do not reroll.",
+    "confidence_interval": "Four deliberately selected diagnostic windows are underpowered; report a paired window bootstrap interval as a nonblocking control."
+  },
+  "storage": {
+    "destination_filesystem": "/media/brandonmusic/nvme1n1p3",
+    "raw_bytes_new": 5072629760,
+    "baseline_raw_bytes_reused": true,
+    "required_additional_headroom_bytes": 21474836480,
+    "klcstore_raw_writes": 0
+  },
+  "roles": {"opened": ["conditional-fit"], "protected_opened": []},
+  "retry_policy": "No silent retry, alternative ordering, window substitution, or threshold change.",
+  "claim_boundary": "Targeted serving-path causal diagnostic, not full32 product qualification.",
+  "downstream_constraints": {
+    "proxy_rotation": "stopped after tune32 failure",
+    "rotation": "only inside the P8 encoder on exactly three layers after this diagnostic",
+    "k5": "retained as the exact 5.25-bpw quality lever",
+    "ldlq": false
+  }
+}

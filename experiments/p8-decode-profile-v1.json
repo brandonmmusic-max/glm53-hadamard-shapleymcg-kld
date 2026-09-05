@@ -1,0 +1,71 @@
+{
+  "schema": "glm53-p8-decode-diagnostic-plan.v1",
+  "evidence_level": "exploratory diagnostic, not product throughput or KLD qualification",
+  "decision_before_result": {
+    "question": "Where is time spent during native P8 single-request decode, and which source-audited candidate deserves the first semantics-preserving optimization?",
+    "prerequisite": "The unchanged five-pair speed-v2a3 service is terminal, its analysis exists, and the complete cold-run receipt audit passes. Preserve its verdict even if a later kernel improves.",
+    "decision": "Inspect captured device time, launch activity and actual graph-padded M before selecting an optimization. No causal bottleneck or speedup claim from source inspection alone.",
+    "failure": "Preserve failed capture artifacts. Missing rank/iteration attribution is incomplete diagnostic evidence, not proof of a bottleneck. A retry needs a new attempt destination and a recorded amendment.",
+    "allocation": "Do not start Shapley allocation if the unchanged product-speed gate fails. This diagnostic does not waive that rule."
+  },
+  "identity": {
+    "image_id": "sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8",
+    "runtime_commit": "efd250b002e8da5a0e603253e0cd07ba6249c7b4",
+    "runtime_tree_sha256": "09f7ef1f26bc582633bc86f0509c65825af606d791766468e870db62fae47118",
+    "sidecar_manifest_sha256": "9521dae70165d5ba930ca447a37fef97801a6aa8638aef2417a4b206bdc8f191",
+    "source_container_receipt": "speed-v2a3/round-01-p8/receipt.json",
+    "source_container_sha256": "bound by the validated source receipt at preparation; no environment contents published",
+    "nsight_systems_in_image": "2026.3.1.117-263137992252v0",
+    "nsight_compute_in_image": "2026.2.1.0 build 38283040",
+    "profiler_wrapper_sha256": "96bf700a1507bf05796f310e64f569c9fd645d0089ca44b76bdb9e12ceddd998",
+    "profiler_config_sha256": "9757f4b9680038b804fb5a3564a9a45a8e47a6b8492a7bb5376b5530dcc0a70d"
+  },
+  "runtime": {
+    "reuse": "Exact P8 speed environment, mounts and serving arguments, except declared profiler instrumentation, output mount, dedicated model name and port.",
+    "tp": 4,
+    "ep": false,
+    "dcp": 1,
+    "graphs": true,
+    "kv": "nvfp4_ds_mla",
+    "attention": "B12X_MLA_SPARSE",
+    "max_num_batched_tokens": 2048,
+    "max_num_seqs": 1,
+    "prefix_cache": false,
+    "speculation": false,
+    "model_name": "glm53-p8-decode-profile-v1",
+    "port": 8018
+  },
+  "workload": {
+    "role": "new synthetic performance input only",
+    "construction": "Tokenize a short benign seed; repeat validated IDs and truncate to exactly 32768 tokens; preserve seed, IDs and hashes. Warmup replaces the first token to avoid sharing its prefix.",
+    "concurrency": 1,
+    "prompt_tokens": 32768,
+    "completion_tokens_per_request": 34,
+    "warm_requests": 1,
+    "profile_requests": 1,
+    "temperature": 0,
+    "ignore_eos": true,
+    "protected_roles_opened": [],
+    "teacher_logits": "not used",
+    "expected_prefill_iterations": 16,
+    "warm_decode_iterations": 16,
+    "profiled_decode_iterations": 16,
+    "profiler": {"profiler": "cuda", "delay_iterations": 33, "max_iterations": 16, "warmup_iterations": 0, "ignore_frontend": true},
+    "iteration_boundary": "Worker profiler.step precedes model work. Expected capture at iterations 33 through 48, stop before 49. Verify actual chunking and per-rank trace coverage; HTTP usage alone does not prove these counts."
+  },
+  "trace": {
+    "systems": "CUDA/NVTX/OSRT; graph node tracing; no CPU sampling/context switches; cudaProfilerApi capture; stop collection at range end",
+    "requested_observations": ["actual graph-padded M", "per-rank MoE duration", "memset/fill/cast nodes", "deterministic reduction time", "attention", "communication", "graph replay boundaries"],
+    "compute_followup": "Only after Systems evidence identifies a representative kernel, predeclare a separate single-kernel Nsight Compute capture; do not launch it concurrently with Systems or serving benchmarks.",
+    "warning": "Node tracing adds overhead. Diagnostic elapsed times must not be substituted for unprofiled product tokens/s."
+  },
+  "operations": {
+    "gpu_exclusivity": "Wait for authoritative speed-service termination and acquire model-stack lock; no concurrent P4/encoder/profile work.",
+    "thermal_start_max_c": 75,
+    "thermal_abort_c": 94,
+    "production": "Record and restore prior backend/timer states; no power or clock changes.",
+    "output_policy": "Fresh attempt directory; exclusive writes; preserve failed starts, raw trace, server logs, synthetic client receipt and source hashes. No weights, tokens from experimental roles, or environment secrets in publication.",
+    "no_ldlq": true
+  },
+  "claim_boundary": "P8 is E4M3 mxf8f6f4 m16n8k32, with twice NVFP4 MMA issue count for equal K. This is not P4, a matched EXL3 kernel comparison, measured Shapley benefit, or transferred KLD qualification."
+}

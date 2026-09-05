@@ -1,0 +1,24 @@
+{
+  "schema": "glm53.p8-tail-omission-repair-amendment.v1",
+  "status": "predeclared-before-v1b-plan-or-run",
+  "created_at": "2026-09-05T11:58:00-04:00",
+  "failed_plan_sha256": "35f1bbdbf97121e7f0ae6fd395e821b9656d6ea288e98af8497ea3f27a3d51b2",
+  "prior_amendment_sha256": "b4615fcb2565172830bdcb94baf5c93bb2d6d2077f540ca0ef1f9978f0abaed4",
+  "failure": "The corrected adapter created the intended container, then the inherited lifecycle looked up missing ready_timeout_seconds before readiness polling.",
+  "failure_boundary": {
+    "serving_container_created": true,
+    "request_started": false,
+    "windows_opened": 0,
+    "raw_capture_bytes": 0,
+    "container_removed": true,
+    "production_restored": true
+  },
+  "single_change": "Add ready_timeout_seconds=2400 and request_timeout_seconds=900 to the sealed host plan, matching the earlier forced-decode protocol.",
+  "unchanged": [
+    "tail-repair image and patched source",
+    "candidate arithmetic and output ordering",
+    "four windows, baseline, thresholds, topology, storage budget, and protected-role boundary"
+  ],
+  "preflight": "Construct and validate the complete docker create argv from the sealed plan before starting v1b.",
+  "retry_policy": "One fresh v1b output. Preserve v1 and v1a; no resume or overwrite."
+}

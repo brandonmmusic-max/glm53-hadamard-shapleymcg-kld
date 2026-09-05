@@ -77,3 +77,254 @@ The E=288 small-token failure was not caused by the resident cluster count. Froz
 Replacing unordered atomic output scatter with one BF16 row per routed expert plus the fixed-order B12X top-k reduction passed five-run bitwise determinism for both monolithic and split-materialized M3/M33. The promoted serving selector uses monolithic M16 below 36 routed rows per expert and split M64 above it. Its n=32 deterministic kernel-versus-decoded-codec KLD closure passed the relaxed engineering control narrowly: mean delta `+0.00137716`, BCa `[-0.00055423,+0.00397212]`. Against matched decoded GPTQ NVFP4 the point estimate was `3.063%` worse, with BCa `[-0.00091783,+0.00744612]`; this is a null/fail quality result, not a loss claim.
 
 Decision 12 was then applied to the strongest previously blocked codec policy. Its frozen three-state assignment (104 identity, 94 full-H128, 90 FC1-H128/identity-down) had improved held-out joint routed-output NMSE by `24.049%` versus GPTQ with 6/8 window wins, missing only the old CI gate. On the already opened, domain-balanced n=32 KLD role it improved mean KLD by only `0.8104%` (`0.0528992` versus `0.0533314`), 16/32 wins, BCa `[-0.00245954,+0.00126947]`. It therefore fails the preregistered 5% development-promotion threshold and the strict claim gate. Relaxing the local window gate was justified as a diagnostic, but the result proves routed-output NMSE cannot be assumed to be recovered by later Shapley allocation; the next allocator must be KLD-aware.
+
+## 16. 2026-09-05: replace local-error allocation with direct-KLD Shapley
+
+The relaxed three-state policy transferred only `0.8104%` of its `24.049%` routed-output NMSE improvement to end-to-end KLD. Therefore routed-output and weight NMSE are removed as Shapley value functions. The new allocator values a whole routed layer only by its contextual reduction in equal-window teacher KLD. Its native no-FP6 6-bpw ladder uses K4 procedural-MCG P8 at `4.25` bpw and scalar MXFP8 E4M3/UE8M0 at `8.25` bpw; 18 MXFP8 and 24 P8 layers realize `5.9642857` bpw before boundary metadata, leaving `0.0357143` bpw of headroom. Both tiers use `mxf8f6f4`, which has twice NVFP4's MMA issue count. Exact physical bytes including boundaries remain a final gate.
+
+Before building all 84 full-model coalition endpoints, run the frozen four-layer, eight-coalition matched-BF16 interaction pilot over layers 3/19/20/22. Every coalition uses the identical already-opened balanced conditional-fit n=32 role. Confidence intervals are nonblocking controls, but window/domain identity and window-level Shapley efficiency are hard integrity checks. This pilot cannot qualify the codec or substitute for the native P8-to-MXFP8 game. Selection, confirmation, final, and the 28 reserved confirmation logits remain unopened. LDLQ and BlockLDLQ remain excluded.
+
+## 17. 2026-09-05: coalition overlays must merge the quantization metadata ABI
+
+The first three pilot launch attempts opened zero KLD windows and are preserved as preflight failures. The final failure localized a metadata error in the zero-copy coalition builder: it installed full-width BF16 weights for layers 3/19/20/22 but left those layers declared as NVFP4 in `config.json` and `hf_quant_config.json`. ModelOpt consequently allocated a packed width-1024 destination and rejected the width-2048 BF16 `w2`. Generate both coalition config files from the pinned carrier with every BF16 pilot layer removed from `config_groups[*].targets` and `quantized_layers`. This is invariant across coalitions because both the GPTQ base and P8 candidate are decoded BF16 overlays. The layer assignments, weight bytes, run order, role, runtime, estimator, stopping rule, and protected-data boundary remain unchanged.
+
+## 18. 2026-09-05: restore the frozen pilot payload, not the later runtime-rounding variant
+
+Preflight validation found 32 broken candidate links before a fourth endpoint launch. Restore layer 3 by reference-decoding its four surviving historically hashed codec chunks; restore layer 19 from detached encoder revision `2da233d655b237a664a8474111a05471c03ecf78`, before the later native-E4M3 tie-rounding change. The layer-19 reproduction matches the historical codebook hash and all 864 stored per-expert/projection NMSE values exactly. Safetensors container hashes are not claimed to match because regenerated serialization differed. Delete the non-frozen current-rounding data payload to recover 18 GB, but preserve its receipts and logs as a diagnostic. Do not launch the pilot unless every indexed source resolves and quantization metadata excludes all four BF16 layers.
+
+## 19. 2026-09-05: direct-KLD interaction pilot supports allocation, not a quality claim
+
+All eight frozen coalitions completed on the same 32 domain-balanced conditional-fit windows. Both antithetic paths have zero maximum window-level efficiency residual. The decoded-GPTQ empty coalition measured `0.0388388907`; upgrading all four pilot layers to decoded P8 measured `0.0397203962`, a `2.26965%` regression. The lowest observed nonempty coalition was layers 3/20/22 at `0.0376358981`, a `3.09739%` arithmetic-mean improvement over empty with 20/32 window wins and post-hoc paired BCa delta interval `[-0.00352257,+0.00049846]`. This interval crosses zero and the subset was identified after observing the coalition matrix, so it is adaptive developmental evidence only.
+
+The interaction is material: removing layer 19 from the all-four context improves KLD by `5.24794%` relative to all-four, even though layer 19 alone improves the empty baseline by `0.79108%`. Its two contextual marginal reductions are `+0.00030725` and `-0.00208450`; layer 3 likewise ranges from `+0.00003830` to `+0.00081934`. Continue with direct-KLD allocation, but do not treat a two-permutation pilot ranking or local NMSE as a final selector. This pilot used matched BF16 overlays and says nothing about native speed. The physical P8 layer-3 path remains the only end-to-end fused trellis-to-`mxf8f6f4` kernel measurement; full-checkpoint P8, the native P8-to-MXFP8 6-bpw game, P4, and speed remain open. No LDLQ or BlockLDLQ was used.
+
+## 20. 2026-09-05: compact shared middle rotation advances on direct KLD
+
+V6 forced block-local H16 and V7 identity-selective block H16 both improved their fitted local objectives but worsened conditional-fit KLD. Replace those high-cardinality descriptors with one 1,024-byte FP32 SO(16) butterfly shared across every layer-3 expert and every down-projection K16 block. Gate/up remain the stock NVFP4 carrier. Re-encode down with full-Hessian GPTQ at exact ModelOpt NVFP4 rate, apply the shared rotation after SwiGLU in the existing Humming BF16 hook, and rank the fixed angle grid by direct all-causal teacher KLD. Do not fuse the hook into the native prologue until the KLD linkage survives independent tuning.
+
+On the sealed domain-balanced fit/train32 split, stock measured `0.0364503459`. The matched zero-angle full-GPTQ down control measured `0.0375109066`, a `2.9096%` regression. The best nonzero arm, `+pi/16`, measured `0.0356555443`: `2.1805%` better than stock, `4.9462%` better than the matched zero control, and better than stock on 20/32 windows. The paired BCa interval versus stock was `[-0.00306204,+0.00105526]`; it is a nonblocking post-selection development control, not a quality claim. Fixed Hadamard endpoints failed to lead: `-pi/4` was `1.3875%` worse than stock and `+pi/4` was `0.3395%` worse. The fitted reconstruction objective preferred approximately `abs(angle)=pi/8`, confirming that local Hessian error can construct candidates but cannot rank causal KLD reliably.
+
+Advance only `+pi/16`, the matched learned-identity control, and stock to the already declared disjoint tune32 split. The tune gate remains: candidate mean below both controls, delta versus stock at most `-0.0004`, and no domain mean delta above `+0.0005`; paired BCa is reported but nonblocking. This is adaptive fit evidence for a 4.5-bpw native-NVFP4 rotation, not the separate 4.25-bpw P8 product. It does not establish a fused prologue, speed, all-layer allocation, or qualification. Protected roles and reserved confirmation logits remain unopened; no LDLQ or BlockLDLQ was used.
+
+## 21. 2026-09-05: freeze one rotation-by-codec interaction before tune closes
+
+Regardless of the still-running tune32 outcome, give the already selected
+`+pi/16` shared middle butterfly exactly one developmental layer-3 interaction
+test in the physical 4.25-bpw TrellisMX-P8 codec.  Do not substitute a new
+angle or rerun this interaction based on tune.  Gate/up use the ordinary K4
+procedural-MCG/E4M3/UE8M0-K32 encoder; W2 is encoded as `W2 @ R` with the same
+full-Hessian GPTQ-style inter-group feedback and no LDLQ.  The pseudoquant
+runtime must round post-SwiGLU to BF16, execute the four scalar-angle Givens
+stages in FP32 registers, round the final rotated vector to BF16, quantize it
+to E4M3/UE8M0-K32, and consume the decoded rotated-basis W2.
+
+The standalone tune result controls only claims about the 4.5-bpw ModelOpt
+rotation.  The combined test asks a different causal question and will report
+its result even if tune fails.  Compare it once against fresh stock and the
+unrotated physical-P8 pseudoquant control on the same already opened tune32
+windows.  Advancement into the fused device prologue requires the combined
+candidate mean to be below unrotated P8 and not worse than stock; the paired
+BCa interval is a nonblocking development control.  The kernel must then close
+to this exact staged pseudoquant arithmetic before any speed claim.  This does
+not open selection, confirmation, final, or the 28 reserved confirmation
+logits, and it does not yet qualify an all-42-layer product.
+
+## 22. 2026-09-05: standalone p00625 tune fails; preserve the precommitted interaction
+
+On the disjoint domain-balanced tune32 split, fresh stock measured
+`0.0363378694`, matched zero-angle GPTQ down measured `0.0364762391`, and
+`+pi/16` measured `0.0371841305`.  Candidate minus stock is
+`+0.0008462611` (`2.3289%` worse), with paired BCa 95% interval
+`[-0.00110295,+0.00468556]`; candidate minus zero is `+0.0007078914`.
+General and legal domain deltas versus stock are `+0.00308741` and
+`+0.00292800`, respectively.  All four tune checks fail.  Therefore no claim
+that the standalone 4.5-bpw ModelOpt rotation beats stock survives tune.
+
+The candidate KLD manifest completed before the wrapper failed.  The failure
+was caused by editing the active `run_kld_v3.sh` file while its long-lived
+shell was executing; the shifted lazy-read source resumed at `--config-id` and
+exited 127 after scoring.  Do not rerun or replace those windows.  The final
+server log was copied bit-for-bit to the expected rotation-log filename, the
+existing four-rank runtime verifier passed, and the frozen analyzer was run
+once over the three complete manifests.  The recovery receipt preserves those
+hashes and labels the event.
+
+Decision 21 predates this result and remains binding: run exactly one
+`+pi/16` by TrellisMX-P8 interaction at layer 3.  A combined pass may advance
+the codec-specific fused prologue, but it cannot rehabilitate the failed
+standalone rotation claim.  No alternative angle, protected role, or LDLQ path
+is introduced.
+
+## Decision 24: matched controls exonerate the codec for the 0.11 endpoint (2026-09-05)
+
+The corrected matched control completed four forced-decode windows per arm
+with MTP off, all captures exact-sized, no protected role opened, terminal
+container cleanup, and application-backend restoration. The frozen P8
+selected-four reference was `0.1174740835`. Stock NVFP4 measured
+`0.1250570905` and production EXL3 measured `0.1128497893`; their true-decode
+means were `0.1230733632` and `0.1109031831`, respectively. Both all-row means
+fall inside the predeclared `[0.09,0.15]` interval and neither improves at least
+20% over P8. The codec is therefore exonerated as the cause of this high
+endpoint, and a production serving-path defect shared across these products is
+supported. This four-window diagnostic does not locate the component and does
+not replace full32 quality inference.
+
+Proceed with one fixed-order incomplete-KPool-tail repair. The single semantic
+change will retain the current ordered expansion but place the request's 1-3
+causal tail tokens inside the 2,048 columns consumed by B12X, replacing the
+same number of lowest-ranked history entries. Do not alter the index scorer,
+pool selection, codec, MoE backend, KV format, topology, capture hook, window
+set, or KLD implementation. Predeclare the exact emitted order and decision
+rule before building or running it.
+
+Receipt: `results/DECODE_PATH_MATCHED_CONTROL_V2.md` and
+`evidence/opened/codec-v2/decode-path-matched-control-v2/`.
+
+Tail-repair preregistration:
+`experiments/p8-tail-omission-repair-v1-prereg.json`.
+## Decision 23: matched forced-decode controls and storage gate (2026-09-05)
+
+Before building either control image or starting a new GPU capture, freeze a four-window, one-per-domain diagnostic comparing stock NVFP4 and the production EXL3 parent image through the identical forced-token, pre-mask FP32 logit-capture hook. The four windows are selected only from already-opened P8 results to reproduce the frozen full32 P8 mean (`0.1174756262`) as closely as possible; this makes the test diagnostic rather than protected inference. The codec is exonerated as the cause of the approximately `0.11` endpoint only if both controls fall in the predeclared `[0.09,0.15]` interval. A shared production-serving bug is supported only if neither control improves at least 20% against the paired P8 four-window mean. Raw output is fixed at `10,145,259,520` bytes total and must land on `/media/brandonmusic/nvme1n1p3` with an additional 20 GiB free-space margin; no raw capture may be written to 96%-full `klcstore`. The control is MTP-off and does not qualify speed.
+
+Receipt: `experiments/decode-path-matched-control-v1-prereg.json`.
+
+The sealed v1 stock start failed before writing raw logits because the shared EXL3 recipe requested `b12x`, which correctly rejected stock NVFP4's `swiglu_limit=10.0` contract. V2 changes only stock's MoE backend to its clamp-correct Humming path; EXL3 remains B12X. It also corrects the runner's container-name adapter so create, cleanup, and restoration authenticate the same exact target. All measurement inputs and gates remain fixed, v1 is preserved, and no v1 raw capture bytes were written. Receipt: `experiments/decode-path-matched-control-v2-amendment.json`.
+
+## Decision 25: first incomplete-KPool-tail repair is inconclusive (corrected 2026-09-05)
+
+The fixed-order tail-consumed candidate completed on the four predeclared P8
+windows at the unchanged physical `4.25` bpw. Its equal-window mean KLD was
+`0.1238438916` versus frozen baseline `0.1174740835`: delta
+`+0.0063698081`, or `5.4223%` worse. Legal, code, and reasoning changed by at
+most `0.000002631`; general regressed by `+0.0254819192`. Per-row comparison
+then showed that three windows changed only one row, so the patched path did
+not execute on the intended tail-row population; `conditional-fit-0032` also
+changed rows whose lengths were divisible by four. The measured candidate
+therefore fails the intervention-integrity gate and cannot support either a
+positive or negative conclusion about tail omission. Preserve it as an
+inconclusive implementation diagnostic. The next tail run must predeclare a
+single corrected selector, prove before KLD that changes occur only for rows
+with `L mod 4` in `1..3`, and report the complete per-row diff inventory.
+
+Proxy rotation is closed by Decision 22. The next rotation test is only inside
+the P8 encoder on exactly layers 3, 20, and 22—the strongest three-layer subset
+observed in the already-opened direct-KLD interaction pilot. K5 remains a
+separate exact `5.25`-bpw quality lever. No LDLQ or protected role is added.
+
+Receipt: `results/P8_TAIL_OMISSION_REPAIR_V1.md` and
+`evidence/opened/codec-v2/p8-tail-omission-repair-v1/`.
+
+## Decision 27: isolate FP8-DS-MLA before repairing the tail selector (2026-09-05)
+
+Before the corrected tail intervention, change only the MLA KV-cache dtype
+from `nvfp4_ds_mla` to `fp8_ds_mla` in two matched four-window controls. P8
+retains its qualified TP4/DCP1/no-EP native-N64 fused-scratch topology; EXL3
+retains its production TP4/DCP4/EP4/B12X topology. Both use the same V2
+forced-token pre-mask FP32 capture, domain-balanced opened windows, teacher
+logits, CUDA graphs, and MTP-off setting as their own frozen NVFP4-MLA
+baselines. Do not harmonize the two products' MoE topology because the causal
+comparison is within product.
+
+Call NVFP4 MLA implicated only if both products improve at least 20% and both
+FP8 means fall below `0.09`. Call KV format exonerated only if neither product
+improves 20% and both FP8 means remain at least `0.09`; otherwise report an
+arm-specific or inconclusive interaction. This is a serving-path diagnostic,
+not a full32 quality or speed qualification. Raw captures use only the fast
+NVMe and require their exact 10,145,259,520-byte budget plus 20 GiB headroom.
+
+Receipt: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v1-prereg.json`.
+
+The sealed v1 P8 arm failed during startup, before any raw capture, because
+`B12X_MLA_SPARSE` explicitly rejects GLM's NoPE head size 512 with
+`fp8_ds_mla`. V2 changes the attention backend to the already-used
+`FLASHINFER_MLA_SPARSE_SM120` FP8 path for both products and changes nothing
+else. This compatibility change is unavoidable and narrows the causal claim:
+the comparison is now the FP8-compatible attention-plus-KV path versus the
+B12X/NVFP4 production path, not KV dtype alone. The original gates still
+answer whether the approximately `0.11` endpoint persists. V1 and its clean
+restoration receipt remain preserved.
+
+Amendment: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v2-amendment.json`.
+
+V2 completed both arms and all four windows. P8 fell from `0.1174741` to
+`0.0483920` KLD (58.81% lower, 4/4 wins, paired delta interval
+`[-0.13010,-0.03021]`); EXL3 fell from `0.1128498` to `0.0411688` (63.52%
+lower, 4/4 wins, interval `[-0.11892,-0.04414]`). Both predeclared thresholds
+pass. The B12X/NVFP4 production MLA stack is implicated and the codec is
+exonerated as the shared cause of the approximately `0.11` endpoint. Because
+the attention compatibility change was mandatory, do not attribute the whole
+effect to KV dtype alone.
+
+Result: `results/P8_EXL3_FP8_DS_MLA_CONTROL_V2.md` and
+`evidence/opened/codec-v2/p8-exl3-fp8-ds-mla-control-v2/`.
+
+## Decision 26: freeze the only remaining proxy-selected rotation inside physical P8 (2026-09-05)
+
+Before encoding layers 20 or 22 or opening their target KLD, freeze exactly
+layers 3/20/22 and the already-selected `p00625` shared 16-lane middle
+butterfly.  Gate/up remain ordinary K4 procedural-MCG P8; each down projection
+is physically encoded as `W2 @ R` using the same full-Hessian GPTQ-style
+inter-group feedback, static in-group order, two scale refits, E4M3/UE8M0-K32,
+and exact `4.25` payload bpw.  No LDLQ, new angle, per-layer angle search, or
+proxy rotation work is permitted.
+
+Run fresh stock, matched unrotated three-layer P8, and matched rotated
+three-layer P8 once on all 32 already-opened domain-balanced conditional-fit
+windows.  The causal rotation comparison is rotated versus unrotated P8; the
+combined product comparison is rotated P8 versus stock.  Advance into the
+fused prologue only if both arithmetic means improve.  Paired BCa intervals
+and wins are required diagnostics but are nonblocking, as directed.  Keep all
+new build, transient capture, records, and sessions on the fast NVMe; klcstore
+is read-only for source, calibration, roles, and teacher inputs.  Keep K5
+separate at exactly `5.25` bpw.
+
+Receipt: `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1.json`.
+
+Amendment 1 preserves the first layer-20 preflight failure and moves the
+missing, previously published fit-only sparse ranges to the fast NVMe.  The
+same 64 role windows, capture manifest, Hub revision, and per-file hashes are
+required, and the build runner now validates the receipt before stopping the
+application or launching GPUs.  No encoder, angle, layer, KLD arm, threshold,
+or protected boundary changes.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-1.json`.
+
+Amendment 2 preserves the failed first overlay assembly and permits only a
+bit-exact reconstruction of the removed output-aware layer-3 BF16 reference
+from the retained physical codec.  The four historical dense byte counts and
+SHA-256 hashes are hard pre-KLD gates, output goes to the fast NVMe, and the
+additional storage ceiling is 14.5 GB.  It changes no encoder, arm, role,
+threshold, or protected boundary.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-2.json`.
+
+Amendment 3 preserves the hard-gate failure from the first reconstruction:
+the current closure decoder added one metadata role, making every container
+exactly 40 bytes larger without changing decoder arithmetic.  A new explicit
+source-metadata-exact mode reproduces the historical builder's serialization;
+the same four historical hashes remain mandatory before KLD.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-3.json`.
+
+Amendment 4 preserves the second reconstruction failure: exact historical
+metadata restored the byte counts, while tensor insertion order still changed
+the file hashes.  The historical builder used numeric expert order and
+gate/up/down projection order; a surviving layer-20 shard proves the current
+decoder arithmetic remains tensor-exact.  A separate historical-order mode is
+now required together with source-exact metadata, with the original four
+hashes still mandatory.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-4.json`.
+
+Amendment 5 records that independent safetensors writers do not preserve
+metadata-map byte ordering, so historical whole-file SHA is not a reproducible
+content invariant even when byte counts and tensor values agree.  It replaces
+only that gate with exhaustive closure of all 864 tensor NMSE values against
+the pinned BF16 source and immutable original encoder receipts at `1e-15`
+absolute tolerance.  Codec hashes, tensor identities, source index, and byte
+counts remain pinned.  Superseded 14.5 GB failed reconstructions may be removed
+after their small receipts and logs are retained.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-5.json`.
+
+Amendment 6 seals the execution immediately after semantic closure and overlay
+assembly but before target KLD: fixed run IDs and order, image digest, runtime
+patch tree, loader per arm, TP4/DCP4/no-EP/Humming/eager/no-MTP regime, overlay
+receipts, role file, and unrotated boundary inputs.  It changes no estimand or
+decision.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-6.json`.

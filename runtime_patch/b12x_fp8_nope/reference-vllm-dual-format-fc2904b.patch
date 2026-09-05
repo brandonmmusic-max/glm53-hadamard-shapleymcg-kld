@@ -1,0 +1,581 @@
+From fc2904b50748d056f1d33cb3cda0d1bcfa862e72 Mon Sep 17 00:00:00 2001
+From: derek <derek.yates@live.com>
+Date: Mon, 31 Aug 2026 13:54:22 -0400
+Subject: [PATCH] feat(glm5next): support B12X NVFP4 KV cache
+
+Register the model-specific nvfp4_ds_mla dtype, retain its uint8 storage, and allow only that packed dtype through the generic MLA NVFP4 guard. Select the 304-byte GLM_NEXT record in the B12X cache spec and pass the explicit no-RoPE, inline-per-token-scale recipe to decode and prefill.
+
+Size hybrid attention/Mamba pages from the backend-published 337-byte token row so the smaller packed record receives a compatible manager block. Align the semantic record region to the embedded C4 index-page boundary, and derive the pooled-index tail from the bound runtime record width instead of hard-coding FP8 geometry.
+
+Treat nvfp4_ds_mla as an opaque packed-byte MLA cache throughout forward and DCP workspace setup. This preserves its uint8 record instead of reinterpreting it as native FP8, while leaving ordinary FP8 and fp8_ds_mla behavior unchanged.
+
+Non-GLM_NEXT sparse MLA configurations still reject the new dtype.
+
+Depends on the matching B12X GLM_NEXT NVFP4 record implementation.
+
+Co-authored-by: David Young <davidseanyoung@gmail.com>
+
+diff --git a/tests/models/test_glm5next_pooled_indexer.py b/tests/models/test_glm5next_pooled_indexer.py
+index c15e19c94e..e1c7cba51a 100644
+--- a/tests/models/test_glm5next_pooled_indexer.py
++++ b/tests/models/test_glm5next_pooled_indexer.py
+@@ -571,19 +571,46 @@ def test_glm53_physical_pool_expansion_graph_replays_live_inputs() -> None:
+ 
+ 
+ def _packed_main_cache(
+-    *, device: torch.device, blocks: int, layers: int, block_size: int, layer: int
++    *,
++    device: torch.device,
++    blocks: int,
++    layers: int,
++    block_size: int,
++    layer: int,
++    record_bytes: int = 528,
+ ) -> tuple[torch.Tensor, torch.Tensor]:
+-    page_bytes = block_size * (528 + 33)
++    semantic_page_bytes = block_size * record_bytes
++    content_page_bytes = ((semantic_page_bytes + 8447) // 8448) * 8448
++    page_bytes = content_page_bytes + block_size * 33
+     raw = torch.zeros(blocks * layers * page_bytes, dtype=torch.uint8, device=device)
+     main = torch.as_strided(
+         raw,
+-        size=(blocks, block_size, 528),
+-        stride=(layers * page_bytes, 528, 1),
++        size=(blocks, block_size, record_bytes),
++        stride=(layers * page_bytes, record_bytes, 1),
+         storage_offset=layer * page_bytes,
+     )
+     return raw, main
+ 
+ 
++def test_glm53_packed_tail_accepts_nvfp4_main_record() -> None:
++    _, main = _packed_main_cache(
++        device=torch.device("cpu"),
++        blocks=2,
++        layers=3,
++        block_size=3328,
++        layer=1,
++        record_bytes=304,
++    )
++
++    index_cache, subpages, parent_stride_pages = (
++        Glm5NextPooledIndexer._index_cache_view(main)
++    )
++
++    assert subpages == 13
++    assert parent_stride_pages == 399
++    assert index_cache.stride() == (8448, 132, 1)
++
++
+ def test_glm53_decode_table_capacity_uses_batched_token_limit() -> None:
+     device = _require_glm_gpu()
+     _, main = _packed_main_cache(
+diff --git a/tests/v1/attention/test_b12x_sparse_mla_api.py b/tests/v1/attention/test_b12x_sparse_mla_api.py
+index a1b044b9a7..7cdcbf831b 100644
+--- a/tests/v1/attention/test_b12x_sparse_mla_api.py
++++ b/tests/v1/attention/test_b12x_sparse_mla_api.py
+@@ -8,10 +8,11 @@ from typing import Any
+ import pytest
+ import torch
+ 
+-from vllm.config import AttentionConfig, set_current_vllm_config
++from vllm.config import AttentionConfig, VllmConfig, set_current_vllm_config
+ from vllm.model_executor.layers.attention.mla_attention import (
+     MLAAttention,
+     _canonicalize_sparse_mla_kv_cache_dtype,
++    _maybe_view_mla_cache_as_fp8,
+ )
+ from vllm.model_executor.layers.attention.sparse_mla_attention import (
+     SparseMLACommonMetadataBuilder,
+@@ -23,7 +24,7 @@ from vllm.models.deepseek_v32.attention import (
+     _select_sparse_components,
+ )
+ from vllm.models.deepseek_v32.b12x import B12xDeepseekV32Indexer
+-from vllm.platforms.interface import DeviceCapability
++from vllm.platforms.interface import DeviceCapability, Platform
+ from vllm.v1.attention.backends.b12x import B12xPagedAttentionBackend
+ from vllm.v1.attention.backends.mla import b12x_indexer as generic_b12x_indexer
+ from vllm.v1.attention.backends.mla import b12x_mla_sparse
+@@ -148,7 +149,6 @@ def test_b12x_glm5_next_cache_spec_and_layout(monkeypatch) -> None:
+         cache_dtype_str="fp8_ds_mla",
+         state_content_bytes=656,
+     )
+-
+     unidentified = B12xMLASparseBackend.customize_spec(probe)
+     packed_by_glm_backend = B12xGLM5NextMLASparseBackend.customize_spec(probe)
+     with set_current_vllm_config(config):
+@@ -172,13 +172,84 @@ def test_b12x_glm5_next_cache_spec_and_layout(monkeypatch) -> None:
+     assert invalid_reasons == []
+     assert unidentified == probe
+     assert packed_by_glm_backend.state_content_bytes == 528
+-    assert packed_by_glm_backend.page_size_padded == 64 * 528 + 16 * 128 * 2
++    assert packed_by_glm_backend.page_size_bytes == 64 * (528 + 33)
+     assert packed_by_glm_backend.model_version == "glm5_next"
+     assert packed.state_content_bytes == 528
+-    assert packed.page_size_padded == 64 * 528 + 16 * 128 * 2
++    assert packed.page_size_bytes == 64 * (528 + 33)
+     assert packed.model_version == "glm5_next"
+     assert packed_without_config_context == packed
+     assert layouts == (KVCacheLayout.BLHNC,)
++    assert "nvfp4_ds_mla" in B12xMLASparseBackend.supported_kv_cache_dtypes
++
++
++def test_b12x_glm5_next_nvfp4_cache_spec() -> None:
++    probe = MLAAttentionSpec(
++        block_size=64,
++        num_kv_heads=1,
++        head_size=512,
++        dtype=torch.uint8,
++        cache_dtype_str="nvfp4_ds_mla",
++        state_content_bytes=656,
++    )
++
++    with set_current_vllm_config(_glm5_next_config()):
++        packed = B12xMLASparseBackend.customize_spec(probe)
++
++    assert packed.state_content_bytes == 304
++    assert packed.page_tail_bytes_per_token == 33
++    assert packed.page_size_padded == 3 * 64 * 132
++    assert packed.page_size_bytes == 3 * 64 * 132 + 64 * 33
++    assert packed.model_version == "glm5_next"
++
++
++def test_b12x_glm5_next_binds_nvfp4_record_width(monkeypatch) -> None:
++    impl = object.__new__(B12xMLASparseImpl)
++    impl._is_glm_next = True
++    impl._cache_record_bytes = 304
++    planned: list[int] = []
++    monkeypatch.setattr(impl, "_set_kernel_page_size", planned.append)
++
++    impl.bind_kv_cache(torch.empty((2, 64, 304), dtype=torch.uint8))
++
++    assert planned == [64]
++    with pytest.raises(ValueError, match="page_size, 304"):
++        impl.bind_kv_cache(torch.empty((2, 64, 528), dtype=torch.uint8))
++
++
++def test_packed_nvfp4_mla_dtype_bypasses_generic_layout_guard() -> None:
++    config = SimpleNamespace(
++        model_config=SimpleNamespace(use_mla=True),
++        cache_config=SimpleNamespace(cache_dtype="nvfp4_ds_mla"),
++    )
++
++    assert VllmConfig.validate_nvfp4_kv_cache_with_mla(config) is config
++
++    config.cache_config.cache_dtype = "nvfp4"
++    with pytest.raises(ValueError, match="not supported with MLA"):
++        VllmConfig.validate_nvfp4_kv_cache_with_mla(config)
++
++
++@pytest.mark.parametrize("cache_dtype", ["fp8_ds_mla", "nvfp4_ds_mla"])
++def test_packed_mla_cache_keeps_uint8_forward_view(cache_dtype: str) -> None:
++    cache = torch.empty((2, 64, 304), dtype=torch.uint8)
++
++    forwarded = _maybe_view_mla_cache_as_fp8(cache, cache_dtype)
++
++    assert forwarded is cache
++    assert forwarded.dtype == torch.uint8
++
++
++def test_plain_fp8_mla_cache_uses_native_fp8_forward_view(monkeypatch) -> None:
++    cache = torch.empty((2, 64, 512), dtype=torch.uint8)
++    monkeypatch.setattr(
++        "vllm.model_executor.layers.attention.mla_attention.current_platform.fp8_dtype",
++        lambda: torch.float8_e4m3fn,
++    )
++
++    forwarded = _maybe_view_mla_cache_as_fp8(cache, "fp8")
++
++    assert forwarded.data_ptr() == cache.data_ptr()
++    assert forwarded.dtype == torch.float8_e4m3fn
+ 
+ 
+ def test_b12x_glm5_next_keeps_hybrid_manager_page_unsplit() -> None:
+@@ -192,6 +263,40 @@ def test_b12x_glm5_next_keeps_hybrid_manager_page_unsplit() -> None:
+     )
+ 
+ 
++def test_b12x_glm5_next_nvfp4_aligns_hybrid_page_to_packed_record(
++    monkeypatch,
++) -> None:
++    mamba_page_size = 1_085_440
++    config = _glm5_next_config(dcp_size=4, cp_interleave=4)
++    config.model_config.is_hybrid = True
++    config.model_config.use_mla = True
++    config.model_config.architecture = "Glm5NextForConditionalGeneration"
++    config.model_config.dtype = torch.bfloat16
++    config.model_config.get_num_kv_heads = lambda parallel_config: 1
++    config.model_config.get_head_size = lambda: 512
++    config.cache_config.cache_dtype = "nvfp4_ds_mla"
++    config.cache_config.block_size = 256
++    config.cache_config.mamba_block_size = None
++    config.cache_config.user_specified_mamba_block_size = False
++    config.cache_config.mamba_cache_mode = "align"
++    config.cache_config.mamba_page_size_padded = None
++
++    model_cls = SimpleNamespace(
++        get_mamba_state_shape_from_config=lambda vllm_config: ((mamba_page_size,),),
++        get_mamba_state_dtype_from_config=lambda vllm_config: (torch.uint8,),
++    )
++    monkeypatch.setattr(
++        "vllm.model_executor.models.ModelRegistry.resolve_model_cls",
++        lambda *args, **kwargs: (model_cls, None),
++    )
++
++    Platform._align_hybrid_block_size(config, B12xGLM5NextMLASparseBackend)
++
++    assert config.cache_config.block_size == 3328
++    assert config.cache_config.mamba_block_size == 3328
++    assert config.cache_config.mamba_page_size_padded == 3328 * (304 + 33)
++
++
+ def test_b12x_glm5_next_rejects_unaligned_dcp(monkeypatch) -> None:
+     monkeypatch.setattr(b12x_mla_sparse, "get_b12x_sparse_mla", lambda: object())
+     with set_current_vllm_config(_glm5_next_config(dcp_size=2)):
+@@ -392,6 +497,7 @@ def test_b12x_glm5_next_cache_bind_replans_aligned_manager_page(monkeypatch) ->
+ 
+     impl = object.__new__(B12xMLASparseImpl)
+     impl._is_glm_next = True
++    impl._cache_record_bytes = 528
+     impl._module = FakeModule
+     impl._kernel_page_size = 64
+     impl._input_num_heads = 64
+@@ -631,7 +737,7 @@ def test_glm_selector_metadata_builder_stages_padded_rows_and_capture(
+     monkeypatch.setattr(
+         SparseMLACommonMetadataBuilder,
+         "build",
+-        lambda *args, **kwargs: SimpleNamespace(),
++        lambda *args, **kwargs: SimpleNamespace(num_prefills=0),
+     )
+     builder = _bare_glm_selector_metadata_builder()
+     common = SimpleNamespace(
+@@ -707,7 +813,7 @@ def test_glm_selector_metadata_builder_requires_complete_runtime_state(
+     monkeypatch.setattr(
+         SparseMLACommonMetadataBuilder,
+         "build",
+-        lambda *args, **kwargs: SimpleNamespace(),
++        lambda *args, **kwargs: SimpleNamespace(num_prefills=0),
+     )
+     builder = _bare_glm_selector_metadata_builder()
+     common = SimpleNamespace(
+diff --git a/vllm/config/cache.py b/vllm/config/cache.py
+index dc4e6faf3c..e1263cd982 100644
+--- a/vllm/config/cache.py
++++ b/vllm/config/cache.py
+@@ -45,6 +45,7 @@ CacheDType = Literal[
+     "fp8_e5m2",
+     "fp8_inc",
+     "fp8_ds_mla",
++    "nvfp4_ds_mla",
+     "turboquant_k8v4",
+     "turboquant_4bit_nc",
+     "turboquant_k3v4_nc",
+@@ -125,6 +126,7 @@ class CacheConfig:
+     to fp8.
+     "nvfp4_4over6" uses the NVFP4 layout and selects between max/6 and max/4
+     scales per 16 values by minimizing squared reconstruction error.
++    "nvfp4_ds_mla" uses the model-specific packed sparse-MLA record.
+     """
+     is_attention_free: bool = False
+     """Whether the model is attention-free. This is primarily set in
+diff --git a/vllm/config/vllm.py b/vllm/config/vllm.py
+index 15784874a5..4df062ce0a 100644
+--- a/vllm/config/vllm.py
++++ b/vllm/config/vllm.py
+@@ -2678,6 +2678,7 @@ class VllmConfig:
+             return self
+         if (
+             self.cache_config.cache_dtype.startswith("nvfp4")
++            and self.cache_config.cache_dtype != "nvfp4_ds_mla"
+             and self.model_config.use_mla
+         ):
+             raise ValueError(
+diff --git a/vllm/model_executor/layers/attention/mla_attention.py b/vllm/model_executor/layers/attention/mla_attention.py
+index 0a9a332bec..a9b4d98a19 100644
+--- a/vllm/model_executor/layers/attention/mla_attention.py
++++ b/vllm/model_executor/layers/attention/mla_attention.py
+@@ -368,6 +368,26 @@ def _canonicalize_sparse_mla_kv_cache_dtype(
+     return kv_cache_dtype
+ 
+ 
++_PACKED_SPARSE_MLA_CACHE_DTYPES = frozenset({"fp8_ds_mla", "nvfp4_ds_mla"})
++
++
++def _is_packed_sparse_mla_cache_dtype(kv_cache_dtype: CacheDType) -> bool:
++    """Return whether an MLA cache uses an opaque packed-byte record."""
++    return kv_cache_dtype in _PACKED_SPARSE_MLA_CACHE_DTYPES
++
++
++def _maybe_view_mla_cache_as_fp8(
++    kv_cache: torch.Tensor,
++    kv_cache_dtype: CacheDType,
++) -> torch.Tensor:
++    """View ordinary FP8 caches as FP8 while preserving packed byte records."""
++    if is_quantized_kv_cache(kv_cache_dtype) and not (
++        _is_packed_sparse_mla_cache_dtype(kv_cache_dtype)
++    ):
++        return kv_cache.view(current_platform.fp8_dtype())
++    return kv_cache
++
++
+ def _get_kv_b_proj_input_dtype(
+     kv_b_proj: ColumnParallelLinear, use_fp8_prefill: bool
+ ) -> torch.dtype | None:
+@@ -615,7 +635,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
+             query_dtype = (
+                 current_platform.fp8_dtype()
+                 if is_quantized_kv_cache(self.kv_cache_dtype)
+-                and self.kv_cache_dtype != "fp8_ds_mla"
++                and not _is_packed_sparse_mla_cache_dtype(self.kv_cache_dtype)
+                 and self.impl.supports_quant_query_input
+                 else dtype
+             )
+@@ -832,8 +852,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
+         k_c_normed = k_c_normed[:num_actual_toks, ...]
+         k_pe = k_pe[:num_actual_toks, ...]
+ 
+-        if fp8_attention and self.kv_cache_dtype != "fp8_ds_mla":
+-            kv_cache = kv_cache.view(current_platform.fp8_dtype())
++        kv_cache = _maybe_view_mla_cache_as_fp8(kv_cache, self.kv_cache_dtype)
+ 
+         assert (
+             attn_metadata.num_decodes is not None
+@@ -2211,7 +2230,9 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[M]):
+             self.determine_chunked_prefill_workspace_size(vllm_config)
+         )
+ 
+-        use_packed_fp8_cache = vllm_config.cache_config.cache_dtype == "fp8_ds_mla"
++        use_packed_sparse_mla_cache = _is_packed_sparse_mla_cache_dtype(
++            vllm_config.cache_config.cache_dtype
++        )
+         self.dcp_manager: MLADCPManager | None = None
+         if self.dcp_world_size > 1:
+             # Note(hc): The local kvcache is incomplete when DCP is triggered,
+@@ -2225,9 +2246,11 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[M]):
+                     + self.chunked_prefill_workspace_size // self.dcp_world_size,
+                     self.mla_dims.kv_lora_rank + self.mla_dims.qk_rope_head_dim,
+                 ),
+-                dtype=torch.bfloat16
+-                if use_packed_fp8_cache
+-                else self.model_config.dtype,
++                dtype=(
++                    torch.bfloat16
++                    if use_packed_sparse_mla_cache
++                    else self.model_config.dtype
++                ),
+                 device=device,
+             )
+             self.dcp_manager = getattr(attention_layer, "dcp_manager", None)
+@@ -2242,7 +2265,9 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[M]):
+                     self.chunked_prefill_workspace_size,
+                     self.mla_dims.kv_lora_rank + self.mla_dims.qk_rope_head_dim,
+                 ),
+-                dtype=torch.bfloat16 if use_packed_fp8_cache else self.q_data_type,
++                dtype=(
++                    torch.bfloat16 if use_packed_sparse_mla_cache else self.q_data_type
++                ),
+                 device=device,
+             )
+ 
+diff --git a/vllm/models/glm5next/nvidia/pooled_indexer.py b/vllm/models/glm5next/nvidia/pooled_indexer.py
+index 79aa604a1c..acc31411ab 100644
+--- a/vllm/models/glm5next/nvidia/pooled_indexer.py
++++ b/vllm/models/glm5next/nvidia/pooled_indexer.py
+@@ -48,7 +48,6 @@ _SELECTION_WIDTH = 2051
+ _INDEX_CACHE_WIDTH = 132
+ _INDEX_PAGE_SIZE = 64
+ _INDEX_PAGE_BYTES = _INDEX_PAGE_SIZE * _INDEX_CACHE_WIDTH
+-_MLA_RECORD_BYTES = 528
+ 
+ 
+ class Glm5NextPooledIndexer(nn.Module):
+@@ -274,22 +273,25 @@ class Glm5NextPooledIndexer(nn.Module):
+         if (
+             main_cache.ndim != 3
+             or main_cache.dtype != torch.uint8
+-            or int(main_cache.shape[-1]) != _MLA_RECORD_BYTES
++            or int(main_cache.shape[-1]) <= 0
+         ):
+-            raise ValueError("GLM MLA cache must be uint8 [pages, block, 528]")
+-        pages, block_size, _ = map(int, main_cache.shape)
++            raise ValueError("GLM MLA cache must be uint8 [pages, block, record_bytes]")
++        pages, block_size, record_bytes = map(int, main_cache.shape)
+         if pages <= 0 or block_size % (_POOL_SIZE * _INDEX_PAGE_SIZE):
+             raise ValueError(
+                 "GLM MLA pages must contain a whole number of 64-pool C4 pages"
+             )
+-        if tuple(map(int, main_cache.stride()[1:])) != (_MLA_RECORD_BYTES, 1):
++        if tuple(map(int, main_cache.stride()[1:])) != (record_bytes, 1):
+             raise ValueError("GLM MLA cache records must be contiguous within a page")
+ 
+         subpages_per_parent = block_size // (_POOL_SIZE * _INDEX_PAGE_SIZE)
+         parent_stride_bytes = int(main_cache.stride(0))
+-        semantic_page_bytes = block_size * _MLA_RECORD_BYTES
++        semantic_page_bytes = block_size * record_bytes
++        index_tail_offset_bytes = (
++            (semantic_page_bytes + _INDEX_PAGE_BYTES - 1) // _INDEX_PAGE_BYTES
++        ) * _INDEX_PAGE_BYTES
+         index_tail_bytes = subpages_per_parent * _INDEX_PAGE_BYTES
+-        if parent_stride_bytes < semantic_page_bytes + index_tail_bytes:
++        if parent_stride_bytes < index_tail_offset_bytes + index_tail_bytes:
+             raise ValueError("GLM MLA cache page does not contain its FP8 index tail")
+         if parent_stride_bytes % _INDEX_PAGE_BYTES:
+             raise ValueError(
+@@ -302,7 +304,7 @@ class Glm5NextPooledIndexer(nn.Module):
+                 "GLM virtual C4 page IDs exceed the int32 page-table range"
+             )
+ 
+-        tail_offset = int(main_cache.storage_offset()) + semantic_page_bytes
++        tail_offset = int(main_cache.storage_offset()) + index_tail_offset_bytes
+         tail_end = (
+             tail_offset + max_virtual_page * _INDEX_PAGE_BYTES + _INDEX_PAGE_BYTES
+         )
+diff --git a/vllm/platforms/interface.py b/vllm/platforms/interface.py
+index 5c041f1632..2fa63313f7 100644
+--- a/vllm/platforms/interface.py
++++ b/vllm/platforms/interface.py
+@@ -800,13 +800,29 @@ class Platform:
+ 
+         # Compute attention page size for 1 token
+         if model_config.use_mla:
+-            attn_page_size_1_token = MLAAttentionSpec(
++            mla_spec = MLAAttentionSpec(
+                 block_size=1,
+                 num_kv_heads=model_config.get_num_kv_heads(parallel_config),
+                 head_size=model_config.get_head_size(),
+                 dtype=kv_cache_dtype,
++                cache_dtype_str=cache_config.cache_dtype,
+                 kv_quant_mode=kv_quant_mode,
+-            ).page_size_bytes
++            )
++            # Most MLA cache formats are at least as large as the dense
++            # latent proxy above, so the materialized specs can safely pad
++            # Mamba up later. GLM5Next's packed NVFP4 record is smaller. Use
++            # the backend-published record width here so the manager chooses
++            # a large enough attention block before it fixes the Mamba page.
++            if cache_config.cache_dtype == "nvfp4_ds_mla":
++                with set_current_vllm_config(vllm_config):
++                    customized_mla_spec = backend_cls.customize_spec(mla_spec)
++                assert isinstance(customized_mla_spec, MLAAttentionSpec)
++                mla_spec = customized_mla_spec
++            # Hybrid sizing needs the unaligned per-token row. Page alignment
++            # is applied after the manager block size is known.
++            attn_page_size_1_token = (
++                mla_spec.state_content_size_bytes + mla_spec.page_tail_bytes_per_token
++            )
+         elif cache_config.cache_dtype.startswith("turboquant_"):
+             # TQ has a packed K|V layout; the standard FullAttentionSpec
+             # formula over-sizes it and trips unify_kv_cache_spec_page_size
+diff --git a/vllm/utils/torch_utils.py b/vllm/utils/torch_utils.py
+index faee4305c6..2d428e46c8 100644
+--- a/vllm/utils/torch_utils.py
++++ b/vllm/utils/torch_utils.py
+@@ -45,6 +45,7 @@ STR_DTYPE_TO_TORCH_DTYPE = {
+     "fp8_per_token_head": torch.uint8,
+     "fp8_inc": torch.float8_e4m3fn,
+     "fp8_ds_mla": torch.uint8,
++    "nvfp4_ds_mla": torch.uint8,
+     "turboquant_k8v4": torch.uint8,
+     "turboquant_4bit_nc": torch.uint8,
+     "turboquant_k3v4_nc": torch.uint8,
+diff --git a/vllm/v1/attention/backends/mla/b12x_mla_sparse.py b/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
+index a241403bf6..3b30521fd9 100644
+--- a/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
++++ b/vllm/v1/attention/backends/mla/b12x_mla_sparse.py
+@@ -52,7 +52,9 @@ if TYPE_CHECKING:
+ 
+ _GLM_NEXT_MODEL_TYPES = frozenset(("glm5_next", "glm5_next_text"))
+ _GLM_NEXT_CACHE_RECORD_BYTES = 528
++_GLM_NEXT_NVFP4_CACHE_RECORD_BYTES = 304
+ _GLM_NEXT_INDEX_TAIL_BYTES_PER_TOKEN = 132 // 4
++_GLM_NEXT_INDEX_PAGE_BYTES = 64 * 132
+ 
+ logger = init_logger(__name__)
+ 
+@@ -400,6 +402,7 @@ class B12xMLASparseBackend(AttentionBackend):
+         "fp8",
+         "fp8_e4m3",
+         "fp8_ds_mla",
++        "nvfp4_ds_mla",
+     ]
+ 
+     @staticmethod
+@@ -432,9 +435,15 @@ class B12xMLASparseBackend(AttentionBackend):
+                 "B12X GLM5Next sparse MLA requires head_size=512, got "
+                 f"{spec.head_size}."
+             )
++        record_bytes = (
++            _GLM_NEXT_NVFP4_CACHE_RECORD_BYTES
++            if spec.cache_dtype_str == "nvfp4_ds_mla"
++            else _GLM_NEXT_CACHE_RECORD_BYTES
++        )
+         return replace(
+             spec,
+-            state_content_bytes=_GLM_NEXT_CACHE_RECORD_BYTES,
++            state_content_bytes=record_bytes,
++            alignment=_GLM_NEXT_INDEX_PAGE_BYTES,
+             page_tail_bytes_per_token=_GLM_NEXT_INDEX_TAIL_BYTES_PER_TOKEN,
+             model_version="glm5_next",
+         )
+@@ -498,6 +507,8 @@ class B12xMLASparseBackend(AttentionBackend):
+                 if dcp_error := _glm_next_dcp_error(vllm_config):
+                     return dcp_error
+                 return None
++            if kv_cache_dtype == "nvfp4_ds_mla":
++                return "B12X nvfp4_ds_mla is supported only for GLM5Next"
+             if head_size != 576:
+                 return "B12X sparse MLA requires head_size=576"
+             if int(getattr(hf_config, "kv_lora_rank", 0)) != 512:
+@@ -1032,11 +1043,21 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+                 raise ValueError("B12X sparse MLA requires head_size=576.")
+         if self.topk_indices_buffer is None:
+             raise ValueError("B12X sparse MLA requires a top-k index buffer.")
+-        if kv_cache_dtype != "fp8_ds_mla":
++        uses_nvfp4_cache = kv_cache_dtype == "nvfp4_ds_mla"
++        if kv_cache_dtype != "fp8_ds_mla" and not (
++            self._is_glm_next and uses_nvfp4_cache
++        ):
+             raise ValueError(
+-                "B12X sparse MLA requires the packed fp8_ds_mla KV cache; "
++                "B12X sparse MLA requires a packed fp8_ds_mla or "
++                "nvfp4_ds_mla KV cache; "
+                 f"got kv_cache_dtype={kv_cache_dtype!r}."
+             )
++        self._uses_nvfp4_cache = uses_nvfp4_cache
++        self._cache_record_bytes = (
++            _GLM_NEXT_NVFP4_CACHE_RECORD_BYTES
++            if self._uses_nvfp4_cache
++            else _GLM_NEXT_CACHE_RECORD_BYTES
++        )
+ 
+         module = get_b12x_sparse_mla()
+         if module is None:
+@@ -1263,10 +1284,13 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+ 
+     def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
+         if self._is_glm_next:
+-            if kv_cache.ndim != 3 or int(kv_cache.shape[-1]) != 528:
++            if (
++                kv_cache.ndim != 3
++                or int(kv_cache.shape[-1]) != self._cache_record_bytes
++            ):
+                 raise ValueError(
+                     "B12X GLM5Next cache must have shape "
+-                    "[pages, page_size, 528], got "
++                    f"[pages, page_size, {self._cache_record_bytes}], got "
+                     f"shape={tuple(kv_cache.shape)}, stride={kv_cache.stride()}, "
+                     f"dtype={kv_cache.dtype}"
+                 )
+@@ -1561,6 +1585,12 @@ class B12xMLASparseImpl(SparseMLACommonImpl[B12xMLASparseMetadata]):
+         )
+         if self._model_type is not None:
+             run_kwargs["model_type"] = self._model_type
++        if self._uses_nvfp4_cache:
++            run_kwargs.update(
++                scale_format=2,
++                fp8_rope=False,
++                latent_scale_per_token=True,
++            )
+         result = run(**run_kwargs)
+         if self.need_to_return_lse_for_decode:
+             output, lse = result

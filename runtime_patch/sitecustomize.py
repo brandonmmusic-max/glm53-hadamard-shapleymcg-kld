@@ -14,6 +14,45 @@ import hashlib
 from pathlib import Path
 
 
+if os.environ.get("VLLM_NVFP4_MLA_SCALE_COUNTER", ""):
+    try:
+        from nvfp4_mla_scale_counter import install_from_environment as _install_mla_counter
+
+        _install_mla_counter()
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        os._exit(78)
+
+
+if os.environ.get("GLM53_P8_INDEX_ORDER", ""):
+    try:
+        from p8_index_order import install as _install_index_order
+        _install_index_order()
+        if os.environ.get("GLM53_P8_INDEX_ORDER_RECEIPT", ""):
+            from p8_index_order_receipt import install as _install_index_order_receipt
+            _install_index_order_receipt()
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        os._exit(78)
+
+
+if os.environ.get("GLM53_P8_INDEX_ORDER_RECEIPT", "") and not os.environ.get("GLM53_P8_INDEX_ORDER", ""):
+    os._exit(78)
+
+
+if os.environ.get("GLM53_P8_INDEX_TRACE", ""):
+    try:
+        from p8_index_trace import install as _install_index_trace
+        _install_index_trace()
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        os._exit(78)
+
+
 MODE = os.environ.get("GLM53_ROUTED_ROTATION", "").strip().lower()
 MIXED_MXFP6 = os.environ.get("GLM53_MIXED_MXFP6", "").strip().lower()
 HUMMING_FP4_BUFFER_PATCH = os.environ.get(
@@ -24,6 +63,25 @@ ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
 ).strip().lower()
 P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
 P8_NATIVE = os.environ.get("GLM53_P8_NATIVE", "").strip().lower()
+P8_SMALL_M = os.environ.get("GLM53_P8_SMALL_M", "").strip().lower()
+P8_FC1_TILE_N = os.environ.get("GLM53_P8_FC1_TILE_N", "128").strip()
+P8_FUSED_SCRATCH = os.environ.get("GLM53_P8_FUSED_SCRATCH", "").strip().lower()
+P4_NATIVE = os.environ.get("GLM53_P4_NATIVE", "").strip().lower()
+
+
+if P4_NATIVE:
+    try:
+        from p4_glm_serving import install as _install_p4_glm_serving
+        _install_p4_glm_serving()
+    except BaseException:
+        # Python normally reports and SWALLOWS sitecustomize exceptions. That
+        # would quietly serve the carrier after a bad P4 identity or import.
+        # P4 activation is explicit, so installation failure terminates startup.
+        try:
+            import traceback
+            traceback.print_exc()
+        finally:
+            os._exit(78)
 
 
 if P8_NATIVE and P8_PSEUDOQUANT:
@@ -33,48 +91,161 @@ if P8_NATIVE and P8_PSEUDOQUANT:
 if P8_NATIVE:
     if P8_NATIVE not in {"1", "true", "yes", "on"}:
         raise RuntimeError(f"invalid GLM53_P8_NATIVE={P8_NATIVE!r}")
+    if P8_SMALL_M and P8_SMALL_M not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(f"invalid GLM53_P8_SMALL_M={P8_SMALL_M!r}")
+    _P8N_SMALL_M = bool(P8_SMALL_M)
+    if P8_FC1_TILE_N not in {"128", "64", "32"}:
+        raise RuntimeError("GLM53_P8_FC1_TILE_N must be 128, 64 or 32")
+    if P8_FUSED_SCRATCH and P8_FUSED_SCRATCH not in {"1", "true", "yes", "on"}:
+        raise RuntimeError("invalid GLM53_P8_FUSED_SCRATCH")
+    _P8N_FC1_TILE_N = int(P8_FC1_TILE_N)
+    _P8N_FUSED_SCRATCH = bool(P8_FUSED_SCRATCH)
+    if (_P8N_FC1_TILE_N != 128 or _P8N_FUSED_SCRATCH) and not _P8N_SMALL_M:
+        raise RuntimeError("narrow FC1 and fused scratch require GLM53_P8_SMALL_M")
     import torch as _p8n_torch
     import vllm.models.glm5next.nvidia.model as _p8n_glm_model
     from p8_native_kernel import P8NativeTPMoE as _P8NativeTPMoE
     from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
         UnquantizedFusedMoEMethod as _P8NativeUnquantizedFusedMoEMethod,
     )
+    from vllm.model_executor.layers.fused_moe.fused_moe_method_base import (
+        FusedMoEMethodBase as _P8NativeFusedMoEMethodBase,
+    )
+    from vllm.model_executor.layers.quantization.modelopt import (
+        ModelOptNvFp4FusedMoE as _P8NativeModelOptNvFp4FusedMoE,
+    )
 
     _P8N_SIDECAR_TEXT = os.environ.get("GLM53_P8_NATIVE_SIDECAR_DIR", "").strip()
     if not _P8N_SIDECAR_TEXT:
         raise RuntimeError("GLM53_P8_NATIVE requires GLM53_P8_NATIVE_SIDECAR_DIR")
     _P8N_SIDECAR_DIR = Path(_P8N_SIDECAR_TEXT)
+    _P8N_LAYER_SPEC = os.environ.get("GLM53_P8_NATIVE_LAYERS", "3").strip()
+    _P8N_LAYERS = frozenset(
+        int(value) for value in _P8N_LAYER_SPEC.split(",") if value
+    )
+    if not _P8N_LAYERS or not _P8N_LAYERS.issubset(set(range(3, 45))):
+        raise RuntimeError(f"invalid GLM53_P8_NATIVE_LAYERS={_P8N_LAYER_SPEC!r}")
+    _P8N_DESIGN_TEXT = os.environ.get("GLM53_P8_NATIVE_DESIGN", "").strip()
+    if not _P8N_DESIGN_TEXT:
+        raise RuntimeError("GLM53_P8_NATIVE requires GLM53_P8_NATIVE_DESIGN")
+    _P8N_DESIGN = Path(_P8N_DESIGN_TEXT)
+    if not _P8N_DESIGN.is_file():
+        raise RuntimeError(f"missing P8 native design: {_P8N_DESIGN}")
+    _P8N_DESIGN_SHA256 = hashlib.sha256(_P8N_DESIGN.read_bytes()).hexdigest()
     _P8N_LAYER_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
-    _P8N_ORIGINAL_PROCESS = _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
-    _P8N_ORIGINAL_FORWARD = _P8NativeUnquantizedFusedMoEMethod.forward_native
+    _P8N_ORIGINAL_UNQUANTIZED_PROCESS = (
+        _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
+    )
+    _P8N_ORIGINAL_UNQUANTIZED_FORWARD = (
+        _P8NativeUnquantizedFusedMoEMethod.forward_native
+    )
+    _P8N_ORIGINAL_MODELOPT_PROCESS = (
+        _P8NativeModelOptNvFp4FusedMoE.process_weights_after_loading
+    )
+    _P8N_ORIGINAL_MODELOPT_APPLY = _P8NativeModelOptNvFp4FusedMoE.apply
+    _P8N_ORIGINAL_IS_MONOLITHIC = _P8NativeFusedMoEMethodBase.is_monolithic.fget
 
-    def _p8n_process_weights_after_loading(self, layer):
-        if not getattr(layer, "_glm53_p8_native", False):
-            return _P8N_ORIGINAL_PROCESS(self, layer)
-        self.moe_kernel = None
+    def _p8n_release_carrier_parameters(layer):
+        released = 0
+        for name in (
+            "w13_weight",
+            "w2_weight",
+            "w13_weight_scale",
+            "w2_weight_scale",
+            "w13_weight_scale_2",
+            "w2_weight_scale_2",
+            "w13_input_scale",
+            "w2_input_scale",
+        ):
+            value = getattr(layer, name, None)
+            if not isinstance(value, _p8n_torch.Tensor):
+                continue
+            released += value.numel() * value.element_size()
+            empty = _p8n_torch.nn.Parameter(
+                _p8n_torch.empty(0, dtype=value.dtype, device=value.device),
+                requires_grad=False,
+            )
+            setattr(layer, name, empty)
+        return released
+
+    def _p8n_attach(layer, method):
+        method.moe_kernel = None
         rank = int(layer._glm53_p8_tp_rank)
-        sidecar = _P8N_SIDECAR_DIR / f"p8-layer-003-tp4-rank-{rank}.safetensors"
+        layer_id = int(layer._glm53_p8_layer)
+        sidecar = _P8N_SIDECAR_DIR / f"p8-layer-{layer_id:03d}-tp4-rank-{rank}.safetensors"
+        if not sidecar.is_file():
+            raise RuntimeError(f"missing P8 native sidecar: {sidecar}")
         layer._glm53_p8_native_runtime = _P8NativeTPMoE(
             sidecar,
             device=layer.w13_weight.device,
             tp_rank=rank,
+            layer=layer_id,
+            expected_design_sha256=_P8N_DESIGN_SHA256,
             topk=8,
             hidden=4096,
             intermediate=512,
             swiglu_limit=10.0,
+            small_m_scheduler=_P8N_SMALL_M,
+            fc1_tile_n=_P8N_FC1_TILE_N,
+            fuse_scratch_zero=_P8N_FUSED_SCRATCH,
         )
+        released = _p8n_release_carrier_parameters(layer)
         print(
             "GLM53_P8_NATIVE_WEIGHTS_READY "
-            f"layer=3 rank={rank} sidecar={sidecar} stream=K4 law=mcg "
-            "alphabet=E4M3 scale=UE8M0_K32 boundary=identity ldlq=false",
+            f"layer={layer_id} rank={rank} sidecar={sidecar} "
+            f"design_sha256={_P8N_DESIGN_SHA256} released_carrier_bytes={released} "
+            "stream=K4 law=mcg alphabet=E4M3 scale=UE8M0_K32 "
+            "boundary=identity ldlq=false",
+            f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
             flush=True,
         )
+
+    def _p8n_process_weights_after_loading(self, layer):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_UNQUANTIZED_PROCESS(self, layer)
+        _p8n_attach(layer, self)
+
+    def _p8n_modelopt_process_weights_after_loading(self, layer):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_MODELOPT_PROCESS(self, layer)
+        _p8n_attach(layer, self)
+
+    def _p8n_modelopt_is_monolithic(self):
+        if getattr(self, "_glm53_p8_native", False):
+            return False
+        assert _P8N_ORIGINAL_IS_MONOLITHIC is not None
+        return _P8N_ORIGINAL_IS_MONOLITHIC(self)
+
+    def _p8n_run(layer, x, topk_weights, topk_ids):
+        output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
+        if (_P8N_SMALL_M and x.shape[0] == 1
+                and not getattr(layer, "_glm53_p8_m1_dispatch_logged", False)):
+            print(
+                "GLM53_P8_M1_DISPATCH "
+                f"layer={layer._glm53_p8_layer} rank={layer._glm53_p8_tp_rank} "
+                f"fc1_tile_n={_P8N_FC1_TILE_N} "
+                f"fused_scratch_zero={str(_P8N_FUSED_SCRATCH).lower()}",
+                flush=True,
+            )
+            layer._glm53_p8_m1_dispatch_logged = True
+        if not getattr(layer, "_glm53_p8_native_forward_logged", False):
+            print(
+                "GLM53_P8_NATIVE_FORWARD "
+                f"layer={layer._glm53_p8_layer} rank={layer._glm53_p8_tp_rank} "
+                "stream=K4 mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
+                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
+                "physical_bpw=4.25 ldlq=false",
+                f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
+                flush=True,
+            )
+            layer._glm53_p8_native_forward_logged = True
+        return output
 
     def _p8n_forward_native(
         self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
     ):
         if not getattr(layer, "_glm53_p8_native", False):
-            return _P8N_ORIGINAL_FORWARD(
+            return _P8N_ORIGINAL_UNQUANTIZED_FORWARD(
                 self,
                 layer,
                 x,
@@ -83,48 +254,70 @@ if P8_NATIVE:
                 shared_experts,
                 shared_experts_input,
             )
-        output = layer._glm53_p8_native_runtime(x, topk_weights, topk_ids)
-        if not getattr(layer, "_glm53_p8_native_forward_logged", False):
-            print(
-                "GLM53_P8_NATIVE_FORWARD "
-                f"layer=3 rank={layer._glm53_p8_tp_rank} stream=K4 "
-                "mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
-                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
-                "physical_bpw=4.25 ldlq=false",
-                flush=True,
+        return _p8n_run(layer, x, topk_weights, topk_ids)
+
+    def _p8n_modelopt_apply(
+        self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input
+    ):
+        if not getattr(layer, "_glm53_p8_native", False):
+            return _P8N_ORIGINAL_MODELOPT_APPLY(
+                self,
+                layer,
+                x,
+                topk_weights,
+                topk_ids,
+                shared_experts,
+                shared_experts_input,
             )
-            layer._glm53_p8_native_forward_logged = True
-        return output
+        return _p8n_run(layer, x, topk_weights, topk_ids)
 
     _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading = (
         _p8n_process_weights_after_loading
     )
     _P8NativeUnquantizedFusedMoEMethod.forward_native = _p8n_forward_native
+    _P8NativeModelOptNvFp4FusedMoE.process_weights_after_loading = (
+        _p8n_modelopt_process_weights_after_loading
+    )
+    _P8NativeModelOptNvFp4FusedMoE.apply = _p8n_modelopt_apply
+    _P8NativeModelOptNvFp4FusedMoE.is_monolithic = property(
+        _p8n_modelopt_is_monolithic
+    )
     _P8N_ORIGINAL_FACTORY = _p8n_glm_model.FusedMoEFactory
 
     def _p8n_factory(*args, **kwargs):
         prefix = kwargs.get("prefix", "")
         match = _P8N_LAYER_RE.search(prefix)
         runner = _P8N_ORIGINAL_FACTORY(*args, **kwargs)
-        if match is None or int(match.group(1)) != 3:
+        if match is None or int(match.group(1)) not in _P8N_LAYERS:
             return runner
+        layer_id = int(match.group(1))
         routed = runner.routed_experts
-        if not isinstance(routed.quant_method, _P8NativeUnquantizedFusedMoEMethod):
-            raise RuntimeError("P8 native layer 3 requires the BF16 carrier method")
+        if not isinstance(
+            routed.quant_method,
+            (_P8NativeUnquantizedFusedMoEMethod, _P8NativeModelOptNvFp4FusedMoE),
+        ):
+            raise RuntimeError(
+                f"P8 native layer {layer_id} requires BF16 or ModelOpt NVFP4 carrier"
+            )
         tp_size = int(routed.moe_config.moe_parallel_config.tp_size)
         tp_rank = int(routed.moe_config.tp_rank)
         if tp_size != 4 or not 0 <= tp_rank < 4:
             raise RuntimeError(f"P8 native requires TP4, got size={tp_size} rank={tp_rank}")
         routed._glm53_p8_native = True
+        routed.quant_method._glm53_p8_native = True
+        routed._glm53_p8_layer = layer_id
         routed._glm53_p8_tp_rank = tp_rank
         routed._glm53_p8_native_forward_logged = False
+        routed._glm53_p8_m1_dispatch_logged = False
         return runner
 
     _p8n_glm_model.FusedMoEFactory = _p8n_factory
     print(
-        "GLM53_P8_NATIVE_PATCH_ACTIVE layers=3 tp=4 K4 procedural_mcg "
+        f"GLM53_P8_NATIVE_PATCH_ACTIVE layers={_P8N_LAYER_SPEC} tp=4 "
+        f"design_sha256={_P8N_DESIGN_SHA256} K4 procedural_mcg "
         "E4M3 UE8M0_K32 identity deterministic_route_topk_sum "
         "physical_bpw=4.25 ldlq=false",
+        f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
         flush=True,
     )
 
@@ -142,8 +335,28 @@ if P8_PSEUDOQUANT:
 
     _P8_LAYER_SPEC = os.environ.get("GLM53_P8_LAYERS", "3").strip()
     _P8_ARM = os.environ.get("GLM53_P8_PSEUDOQUANT_ARM", "candidate").strip().lower()
-    if _P8_ARM not in {"candidate", "control", "hybrid"}:
+    if _P8_ARM not in {"candidate", "control", "hybrid", "mid-butterfly"}:
         raise RuntimeError(f"invalid GLM53_P8_PSEUDOQUANT_ARM={_P8_ARM!r}")
+    _P8_MID_BUTTERFLY_ANGLE_PI = 0.0
+    if _P8_ARM == "mid-butterfly":
+        import math as _p8_math
+
+        _p8_angle_text = os.environ.get(
+            "GLM53_P8_MID_BUTTERFLY_ANGLE_PI", ""
+        ).strip()
+        try:
+            _P8_MID_BUTTERFLY_ANGLE_PI = float(_p8_angle_text)
+        except ValueError as error:
+            raise RuntimeError(
+                "mid-butterfly P8 requires a finite scalar angle_pi"
+            ) from error
+        if (
+            not _p8_math.isfinite(_P8_MID_BUTTERFLY_ANGLE_PI)
+            or _P8_MID_BUTTERFLY_ANGLE_PI != 0.0625
+        ):
+            raise RuntimeError(
+                "the frozen P8 interaction requires GLM53_P8_MID_BUTTERFLY_ANGLE_PI=0.0625"
+            )
     _P8_LAYERS = frozenset(int(value) for value in _P8_LAYER_SPEC.split(",") if value)
     if not _P8_LAYERS or not _P8_LAYERS.issubset(set(range(3, 45))):
         raise RuntimeError(f"invalid GLM53_P8_LAYERS={_P8_LAYER_SPEC!r}")
@@ -151,7 +364,7 @@ if P8_PSEUDOQUANT:
     _P8_BOUNDARY_PATHS = [
         value for value in os.environ.get("GLM53_P8_BOUNDARY_FILES", "").split(":") if value
     ]
-    if not _P8_BOUNDARY_PATHS:
+    if not _P8_BOUNDARY_PATHS and _P8_ARM != "mid-butterfly":
         raise RuntimeError("GLM53_P8_PSEUDOQUANT requires GLM53_P8_BOUNDARY_FILES")
     _P8_POLICY_STATES = tuple(1 for _ in range(288)) if _P8_ARM == "candidate" else tuple(0 for _ in range(288))
     _P8_H128_EXPERTS = frozenset(range(288)) if _P8_ARM == "candidate" else frozenset()
@@ -210,7 +423,11 @@ if P8_PSEUDOQUANT:
             _p8_part = _p8_handle.get_tensor("down_diagonal").float()
             _p8_parts.append(_p8_part)
             _p8_next += int(_p8_part.shape[0])
-    _P8_DOWN_DIAGONAL = _p8_torch.cat(_p8_parts, dim=0).contiguous()
+    _P8_DOWN_DIAGONAL = (
+        _p8_torch.cat(_p8_parts, dim=0).contiguous()
+        if _p8_parts
+        else _p8_torch.ones((288, 2048), dtype=_p8_torch.float32)
+    )
     if _P8_DOWN_DIAGONAL.ndim != 2 or not _p8_torch.isfinite(_P8_DOWN_DIAGONAL).all():
         raise RuntimeError("P8 boundary diagonal is invalid")
     if not (_P8_DOWN_DIAGONAL > 0).all():
@@ -245,6 +462,32 @@ if P8_PSEUDOQUANT:
         quantized = (blocks * inverse[..., None]).clamp(-448.0, 448.0)
         quantized = quantized.to(_p8_torch.float8_e4m3fn).float()
         return (quantized * scale[..., None]).reshape_as(values).to(_p8_torch.bfloat16)
+
+    def _p8_shared_butterfly16_staged(
+        values: _p8_torch.Tensor,
+    ) -> _p8_torch.Tensor:
+        """Exact staged reference for the fused +pi/16 middle transform."""
+        if values.shape[-1] % 16:
+            raise RuntimeError("P8 middle-butterfly width is not divisible by 16")
+        angle = _p8_torch.tensor(
+            _p8_math.pi * _P8_MID_BUTTERFLY_ANGLE_PI,
+            dtype=_p8_torch.float32,
+            device=values.device,
+        )
+        cosine = _p8_torch.cos(angle)
+        sine = _p8_torch.sin(angle)
+        work = values.to(_p8_torch.bfloat16).float().reshape(-1, 16).clone()
+        for stride in (1, 2, 4, 8):
+            previous = work.clone()
+            for base in range(0, 16, 2 * stride):
+                for offset in range(stride):
+                    left = base + offset
+                    right = left + stride
+                    a = previous[:, left]
+                    b = previous[:, right]
+                    work[:, left] = cosine * a - sine * b
+                    work[:, right] = sine * a + cosine * b
+        return work.reshape_as(values).to(_p8_torch.bfloat16)
 
     def _p8_forward(
         layer,
@@ -284,6 +527,8 @@ if P8_PSEUDOQUANT:
                 gate = gate.clamp(max=10.0)
                 up = up.clamp(-10.0, 10.0)
                 middle = _p8_F.silu(gate) * up
+            if _P8_ARM == "mid-butterfly":
+                middle = _p8_shared_butterfly16_staged(middle)
             middle = _p8_qdq_e4m3_k32(middle)
             partial = _p8_F.linear(middle, layer.w2_weight[expert])
             partial = partial * topk_weights[token_index, slot_index, None]
@@ -298,7 +543,8 @@ if P8_PSEUDOQUANT:
                 "GLM53_P8_PSEUDOQUANT_FORWARD "
                 f"layer={layer._glm53_p8_layer} rank={rank} "
                 f"active_experts={len(active)} carrier=E4M3_K32 arm={_P8_ARM} "
-                f"boundary={'hybrid_policy' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity')} "
+                f"boundary={'shared_butterfly_p00625' if _P8_ARM == 'mid-butterfly' else ('hybrid_policy' if _P8_ARM == 'hybrid' else ('H128_balance_0.5' if _P8_ARM == 'candidate' else 'identity'))} "
+                f"angle_pi={_P8_MID_BUTTERFLY_ANGLE_PI} "
                 f"policy_sha256={_P8_POLICY_SHA256} ldlq=false",
                 flush=True,
             )
@@ -366,6 +612,7 @@ if P8_PSEUDOQUANT:
         "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE "
         f"layers={_P8_LAYER_SPEC} experts={_P8_DOWN_DIAGONAL.shape[0]} "
         f"intermediate={_P8_DOWN_DIAGONAL.shape[1]} arm={_P8_ARM} "
+        f"angle_pi={_P8_MID_BUTTERFLY_ANGLE_PI} "
         f"h128_experts={len(_P8_H128_EXPERTS)} policy_sha256={_P8_POLICY_SHA256} ldlq=false",
         flush=True,
     )

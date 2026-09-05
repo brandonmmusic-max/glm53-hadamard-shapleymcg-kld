@@ -1,0 +1,14 @@
+{
+  "schema": "glm53-p8.capture-v2-cpu-preflight.v1",
+  "image_id": "sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9",
+  "checked_at_utc": "2026-09-05T08:12:17Z",
+  "actual_warmup_sampling_signature": "pass",
+  "patched_warmup_import": "pass",
+  "gpu_used": false,
+  "capture_proven": false,
+  "container_controls": ["--rm", "--network=none", "--runtime=runc", "NVIDIA_VISIBLE_DEVICES=void"],
+  "entrypoint": "/opt/venv/bin/python",
+  "check_code": "from vllm.sampling_params import SamplingParams; from p8_decode_capture.v2_hook import V2ForcedDecodeCapture; import vllm.v1.worker.gpu.warmup as w; assert V2ForcedDecodeCapture._is_pinned_warmup_sampling_params(SamplingParams.for_sampler_warmup()); assert hasattr(w, '_warmup_kernels_impl')",
+  "exit_code": 0,
+  "limits": ["CPU-only import/signature evidence, not live RequestState, GPU startup, graph, capture or KLD proof.", "Triton reported zero active drivers and disabled GPU functions; vllm._C import warnings were present in this intentionally GPU-free check."]
+}

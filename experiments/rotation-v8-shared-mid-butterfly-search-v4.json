@@ -1,0 +1,121 @@
+{
+  "algorithm_exclusion": "LDLQ and BlockLDLQ are excluded",
+  "calibration": {
+    "role": "fit",
+    "route_weight_power": 2,
+    "samples_per_expert": 256,
+    "sampling_strategy": "domain-balanced"
+  },
+  "candidate": {
+    "hadamard_family_endpoint": "abs(angle_pi)=0.25 gives a dense signed-Hadamard member",
+    "identity": "angle_pi=0",
+    "parameterization": "four H16-wired Givens stages with one shared scalar angle",
+    "per_block_or_expert_descriptors": 0,
+    "rotation": "one layer-shared 16x16 FP32 SO butterfly repeated over 128 middle K16 blocks and 288 experts",
+    "runtime_precision": "FP32 table validated, then cast to served BF16 by current Humming hook",
+    "scope": "down-only; gate/up remain bitwise carrier NVFP4",
+    "stored_table_bytes": 1024
+  },
+  "claim_boundary": "train/tune are fit-role adaptive evidence; conditional-fit32 is already-open development evidence; selection, confirmation, final, and reserved confirmation logits remain unopened",
+  "controls": {
+    "product_relevance": "stock ModelOpt NVFP4",
+    "rotation_attribution": "angle_pi=0 encoded by the identical full-GPTQ down-only path"
+  },
+  "created_at": "2026-09-05T12:58:46.009979+00:00",
+  "decision_before_result": true,
+  "encoder": {
+    "format": "ModelOpt NVFP4 E2M1 plus E4M3-per-16 and FP32 tensor scale",
+    "global_scale_refits": 2,
+    "ldlq": false,
+    "method": "full-Hessian GPTQ with static native-group order",
+    "objective": "actual packed down operator under routed fit activations",
+    "search_grid": 12
+  },
+  "experts": 288,
+  "falsification": "no nonzero angle beats both the matched zero-angle full-GPTQ control and stock ModelOpt NVFP4 on tune32 mean causal KLD",
+  "hypothesis": "a compact layer-shared partial butterfly on the down input can retain the down-family signal without incompatible block-specific bases",
+  "inputs": {
+    "build_finalizer": null,
+    "build_runner": null,
+    "calibration_roles": null,
+    "candidate_builder": null,
+    "capture_manifest": null,
+    "conditional_fit_roles": null,
+    "layer_validator": null,
+    "materializer": null,
+    "paired_analysis": null,
+    "plan_builder": null,
+    "role_eval": null,
+    "rotation_builder": null,
+    "run_kld": null,
+    "runtime_manifest": null,
+    "source_index": null,
+    "train_roles": null,
+    "tune_roles": null
+  },
+  "layer": 3,
+  "observation": "V6 forced block-local H16 and V7 identity-selective block H16 both improved their local surrogate but worsened end-to-end KLD",
+  "prior": {
+    "v6": null,
+    "v7": null
+  },
+  "protected_roles_opened": [],
+  "role": "adaptive fit-only KLD search followed by already-open conditional-fit32",
+  "runtime": {
+    "activation_dtype": "BF16",
+    "cuda_graphs": "disabled/enforce-eager for KLD",
+    "fusion_status": "not fused; native prologue work is gated on KLD win",
+    "kv_cache": "FP8 MLA",
+    "moe_backend": "humming",
+    "mtp": "disabled",
+    "placement": "existing post-SwiGLU Humming mid hook",
+    "topology": "TP4/EP4/DCP4"
+  },
+  "schema": "glm53-rotation-v8.shared-mid-butterfly-search-plan.v1",
+  "search": {
+    "coarse_grid": [
+      {
+        "angle_pi": -0.25,
+        "id": "m0250"
+      },
+      {
+        "angle_pi": -0.125,
+        "id": "m0125"
+      },
+      {
+        "angle_pi": -0.0625,
+        "id": "m00625"
+      },
+      {
+        "angle_pi": -0.03125,
+        "id": "m003125"
+      },
+      {
+        "angle_pi": 0.0,
+        "id": "zero"
+      },
+      {
+        "angle_pi": 0.03125,
+        "id": "p003125"
+      },
+      {
+        "angle_pi": 0.0625,
+        "id": "p00625"
+      },
+      {
+        "angle_pi": 0.125,
+        "id": "p0125"
+      },
+      {
+        "angle_pi": 0.25,
+        "id": "p0250"
+      }
+    ],
+    "conditional_fit_rule": "after tune pass, freeze one candidate and run conditional-fit32 once; advance only if means are lower than both controls; report paired BCa",
+    "selection_rule": "lowest finite equal-window mean KLD on train32; no NMSE substitution",
+    "stopping": "one train32 run per nine fixed grid arms; one tune32 run per declared tune arm; no rerolls or replacements",
+    "training_measurement": "all-vocabulary all-causal-row teacher KLD on train32",
+    "tune_advance_rule": "selected nonzero angle must have lower tune32 mean KLD than both controls, stock delta <= -0.0004, and no domain mean delta versus stock > +0.0005; paired BCa is reported as a control but need not exclude zero",
+    "tune_arms": "selected nonzero angle, zero-angle matched control, and stock ModelOpt control"
+  }
+}
