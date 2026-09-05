@@ -13,7 +13,21 @@ pre-frozen runner-up (layers 19 and 20) improved its untouched wave by only
 0.407%, with a confidence interval crossing zero. Therefore **no selective or
 uniform H16 candidate has a qualified protected-selection win on GLM**.
 
-### Codec redesign status (2026-09-04)
+### Full-model native P8 result (2026-09-05)
+
+The uniform all-42-routed-layer P8 checkpoint completed its first native
+end-to-end measurement: **KLD 0.0400214** on all 32 conditional-fit windows,
+BCa 95% CI `[0.0337782, 0.0482526]`. The audit verified all 168 layer/rank
+forward paths and 65,504 causal positions. Payload is 4.25 bpw; no LDLQ was used.
+It is **24.96% lower than the historical contextual comparator** (28/32 wins),
+but that comparator differs in bitrate, quantization coverage and EP/DCP
+topology, so this is **not a matched NVFP4 or protected-quality win**.
+P8 uses twice NVFP4's MMA issue count. The speed comparison failed before
+measurement because the EXL3 loader rejected checkpoint TP2 versus runtime TP4;
+there is no speed pass, and allocation remains stopped pending a repaired gate.
+See [the full report and receipts](results/P8_FULLMODEL_CF32.md).
+
+### Earlier codec redesign results (2026-09-04)
 
 The no-LDLQ P8 redesign now has a matched-path numerical gate. Its encoder
 keeps the native 16x16 trellis layout, uses full-Hessian GPTQ-style error
@@ -149,8 +163,8 @@ full GLM dimensions (cosine `0.998940`–`0.998948`, relative L2
 `0.045903`–`0.046079`). The former split failure was a missing mandatory K32
 MMA lane permutation, now fixed and preserved as an implementation diagnostic.
 This initial receipt cleared device arithmetic only. Subsequent layer-3 KLD
-and deterministic device tests are described below; all-layer KLD and speed
-remain pending. The earlier W6A8 activation
+and deterministic device tests are described below; the later all-layer KLD
+result is reported above, while speed remains unmeasured. The earlier W6A8 activation
 failure remains a negative control, and neither the uniform nor expert-masked
 encoder has passed the strict matched-path end-to-end KLD claim gate.
 
