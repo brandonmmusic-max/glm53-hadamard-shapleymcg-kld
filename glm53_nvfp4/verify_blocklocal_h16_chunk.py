@@ -41,7 +41,13 @@ def verify(
         for expert in range(first, last)
         for projection in ("gate_proj", "up_proj", "down_proj")
     }
-    bank = torch.stack(descriptor_bank(256, torch.device("cpu")))
+    bank = torch.stack(
+        descriptor_bank(
+            256,
+            torch.device("cpu"),
+            include_identity=bool(receipt.get("include_identity", False)),
+        )
+    )
     seen: set[tuple[int, str]] = set()
     maximum_abs_bf16_error = 0.0
     with safe_open(str(dense_path), framework="pt", device="cpu") as dense, safe_open(

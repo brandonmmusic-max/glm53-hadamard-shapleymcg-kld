@@ -7,7 +7,7 @@ SOURCE=$CAMPAIGN/downloads/GLM-5.3-Flash-BF16
 SOURCE_INDEX=$SOURCE/model.safetensors.index.json
 CAPTURE=$CAMPAIGN/teacher/calibration/main-ep4-full
 ROLES=$CAMPAIGN/roles/roles-v3.json
-PLAN=$REPO/experiments/rotation-v6-blocklocal-h16-layer3-cf32.json
+PLAN=${GLM53_BLOCKLOCAL_PLAN:-$REPO/experiments/rotation-v6-blocklocal-h16-layer3-cf32.json}
 ROOT=${GLM53_BLOCKLOCAL_ROOT:-/media/brandonmusic/nvme1n1p3/glm53-rotation-v6/blocklocal-h16-layer3/full-all288}
 CHUNKS=$ROOT/chunks
 PHYSICAL=$ROOT/physical
@@ -16,7 +16,7 @@ LOGS=$ROOT/logs
 CANDIDATE=$ROOT/candidate
 LOCK=/run/lock/klc/model-stack.lock
 PRODUCTION=glm53-flash-exl3-k4-tp4-vision-mtp3
-PLAN_SHA=00d2841389cca9f87aee67b7c20ead677e7c9e64d69dba0e68eae4507d634359
+PLAN_SHA=${GLM53_BLOCKLOCAL_PLAN_SHA:-00d2841389cca9f87aee67b7c20ead677e7c9e64d69dba0e68eae4507d634359}
 
 [ "$(sha256sum "$PLAN" | cut -d' ' -f1)" = "$PLAN_SHA" ] || {
   echo "sealed plan hash mismatch" >&2

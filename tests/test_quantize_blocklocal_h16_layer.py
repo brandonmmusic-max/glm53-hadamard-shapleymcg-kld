@@ -20,6 +20,13 @@ def test_descriptor_bank_is_deterministic_and_orthogonal():
     assert all(torch.allclose(item.T @ item, eye, atol=1e-6) for item in first)
 
 
+def test_identity_inclusive_bank_preserves_one_byte_capacity():
+    bank = descriptor_bank(256, torch.device("cpu"), include_identity=True)
+    assert len(bank) == 256
+    assert torch.equal(bank[0], torch.eye(16))
+    assert not torch.equal(bank[1], bank[0])
+
+
 def test_block_diagonal_hessian_matches_full_diagonal_blocks():
     torch.manual_seed(1)
     samples = torch.randn(19, 32)
