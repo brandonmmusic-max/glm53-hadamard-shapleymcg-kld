@@ -116,7 +116,8 @@ git diff --check
 PYTHONPATH=. pytest -q tests/test_p8*.py
 ```
 
-Result: `693 passed` after adding four frozen-sign cases (the last full rerun
+Result: `694 passed` after adding four frozen-sign cases and a full-branch
+FP32 cast regression (the last full rerun
 must accompany the commit receipt). CPU tests cover schema rejection,
 externally pinned transform identity, exact generated sign bytes, H512
 algebra, full reference ordering, mode separation and static owner/reducer
@@ -133,6 +134,14 @@ uses draw 0/capped SiLU while retaining the audited coupled topology and FP32
 activation-quantization cast points. The schema and transform hash make any
 future activation/draw change a fail-closed format change.
 
+A subsequent compatibility review initially flagged
+`_scale_down_before_h128` as a premature full-coupled FP16 cast, then retracted
+the finding after tracing the compile-time branches: the helper is reachable
+only from `elif self.scale_sandwich`, while the preceding `full_coupled` arm
+uses direct FP32 multiplication, H128, and `st_shared_f32`. A regression test
+now isolates both full-coupled source arms and forbids the scale-only FP16
+helpers from appearing in them.
+
 ## Changed source identities before commit
 
 | file | SHA-256 |
@@ -144,6 +153,6 @@ future activation/draw change a fail-closed format change.
 | `runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_h128_fc1.py` | `78a0a896328d5ba0c53287e6fa99cc974091de391fdb0e50e5670a5a226d5cd6` |
 | `runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_small_m.py` | `34fe6bcb6822a516ee67da60d46e4f1314b699877a11774b02bbbb8cbbfcf621` |
 | `runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_topk.py` | `632a3bc4174440c04fb28e6dfcefc8876a16938738811c3487f47e6585c4706d` |
-| `tests/test_p8_full_coupled_runtime.py` | `c7b2d1b9eebf4ec77ac4fb1a18dd23fa67ac3e7b1b8921c9e5817ea6cd1ba4f2` |
+| `tests/test_p8_full_coupled_runtime.py` | `0037402f5fe31f3a4e0529d0df61c361a79e081dfbfcbf1d753bc2f32924dc4c` |
 
 The commit hash remains the authoritative aggregate source identity.

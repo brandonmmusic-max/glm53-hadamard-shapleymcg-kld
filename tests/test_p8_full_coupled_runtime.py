@@ -195,6 +195,25 @@ def test_complete_coupled_reference_has_exact_boundary_order() -> None:
     assert torch.equal(actual, expected)
 
 
+def test_full_fp32_down_boundary_changes_e4m3_bytes_vs_premature_fp16() -> None:
+    generator = torch.Generator().manual_seed(5312804)
+    activated = torch.randn(3, 128, generator=generator)
+    down_suh = torch.randn(128, generator=generator, dtype=torch.float16)
+    first_h128 = coupled.hadamard_blocks(activated, 128)
+    full_boundary = coupled.hadamard_blocks(
+        first_h128 * down_suh.float(), 128
+    )
+    premature = coupled.hadamard_blocks(
+        (first_h128 * down_suh.float()).half().float(), 128
+    )
+    full_payload, full_scale, _ = coupled.quantize_e4m3_ue8m0_per32(full_boundary)
+    wrong_payload, wrong_scale, _ = coupled.quantize_e4m3_ue8m0_per32(premature)
+    assert not (
+        torch.equal(full_payload, wrong_payload)
+        and torch.equal(full_scale, wrong_scale)
+    )
+
+
 def test_runtime_source_has_n128_owner_and_replacement_reducer() -> None:
     paths = {
         "wrapper": PATCH / "p8_native_kernel.py",
@@ -216,3 +235,28 @@ def test_runtime_source_has_n128_owner_and_replacement_reducer() -> None:
     assert "This replaces the ordinary B12X top-k reducer" in source["sum"]
     assert "self._compile_full_coupled_reducer()" in source["wrapper"]
     assert "full-coupled P8 requires an externally pinned encoder transform" in source["wrapper"]
+
+    # The inherited FP16 helpers are intentional scale-only semantics. Freeze
+    # the compile-time full branches so neither helper nor a premature FP16
+    # conversion can leak into activation quantization.
+    fc1_marker = source["fc1"].index("Full joint FC1 owner")
+    fc1_start = source["fc1"].rfind(
+        "if cutlass.const_expr(self.full_coupled):", 0, fc1_marker
+    )
+    fc1_end = source["fc1"].index(
+        "elif cutlass.const_expr(self.scale_sandwich):", fc1_start
+    )
+    full_fc1 = source["fc1"][fc1_start:fc1_end]
+    assert "_scale_down_before_h128" not in full_fc1
+    assert "cutlass.Float16" not in full_fc1
+    assert "st_shared_f32" in full_fc1
+
+    input_marker = source["dynamic"].index("Full Luke/QSRT input boundary")
+    input_start = source["dynamic"].rfind(
+        "if cutlass.const_expr(self.p8_full_coupled):", 0, input_marker
+    )
+    input_end = source["dynamic"].index(
+        "elif cutlass.const_expr(self.p8_scale_sandwich):", input_start
+    )
+    full_input = source["dynamic"][input_start:input_end]
+    assert "_p8_scale_input_before_h128" not in full_input
