@@ -8,6 +8,7 @@ unchanged.  Device closure is deliberately still required before enablement.
 """
 from __future__ import annotations
 
+import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 
@@ -29,6 +30,54 @@ class P8CoupledPrefillFC1Kernel(P8H128FC1Kernel):
         super().__init__(full_coupled=True)
         if (self.tile_m, self.owned_n, self.source_tile_m) != (64, 128, 64):
             raise ValueError("coupled P8 prefill FC1 requires exact M64/N128")
+
+    @cute.jit
+    def __call__(
+        self,
+        packed_a_storage: cute.Tensor,
+        scale_storage: cute.Tensor,
+        w13_rp: cute.Tensor,
+        w13_sfb_rp: cute.Tensor,
+        intermediate_u32: cute.Tensor,
+        token_map: cute.Tensor,
+        task_expert: cute.Tensor,
+        task_valid_rows: cute.Tensor,
+        expert_tile_base: cute.Tensor,
+        alpha: cute.Tensor,
+        input_global_scale: cute.Tensor,
+        trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
+        input_k128_tiles: cutlass.Int32,
+        intermediate_tiles: cutlass.Int32,
+        packed_w13_tiles: cutlass.Int32,
+        max_active_clusters: cutlass.Int32,
+        stream: cuda.CUstream,
+    ):
+        """Launch the 64 KiB owner at one CTA per SM, not the parent's two."""
+
+        self.kernel(
+            cute.recast_tensor(packed_a_storage, cutlass.Uint32),
+            scale_storage,
+            w13_rp,
+            w13_sfb_rp,
+            intermediate_u32,
+            token_map,
+            task_expert,
+            task_valid_rows,
+            expert_tile_base,
+            alpha,
+            input_global_scale,
+            trellis_lut,
+            scale_component,
+            input_k128_tiles,
+            intermediate_tiles,
+            packed_w13_tiles,
+        ).launch(
+            grid=(1, 1, max_active_clusters),
+            block=[self.threads_per_cta, 1, 1],
+            min_blocks_per_mp=1,
+            stream=stream,
+        )
 
     @cute.kernel
     def kernel(

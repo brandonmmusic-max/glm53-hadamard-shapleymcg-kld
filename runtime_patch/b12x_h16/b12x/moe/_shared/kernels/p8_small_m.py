@@ -7,6 +7,7 @@ This source has not passed device closure; it is opt-in through p8_small_m.
 """
 from __future__ import annotations
 
+import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 
@@ -107,6 +108,52 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         if self.full_coupled and not self.scale_sandwich:
             raise ValueError("full-coupled P8 FC2 requires scale sandwich")
         self.trellis_lut_offset = self.shared_bytes
+
+    @cute.jit
+    def __call__(
+        self,
+        intermediate_u32: cute.Tensor,
+        down_rp: cute.Tensor,
+        down_sfb_rp: cute.Tensor,
+        scatter_output: cute.Tensor,
+        token_map: cute.Tensor,
+        token_weights: cute.Tensor,
+        task_expert: cute.Tensor,
+        task_valid_rows: cute.Tensor,
+        expert_tile_base: cute.Tensor,
+        down_alpha: cute.Tensor,
+        global_scale: cute.Tensor,
+        trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
+        intermediate_tiles: cutlass.Int32,
+        packed_output_tiles: cutlass.Int32,
+        max_active_clusters: cutlass.Int32,
+        stream: cuda.CUstream,
+    ):
+        """Extend the 16-argument parent launch ABI with scale_component."""
+
+        self.kernel(
+            intermediate_u32,
+            down_rp,
+            down_sfb_rp,
+            scatter_output,
+            token_map,
+            token_weights,
+            task_expert,
+            task_valid_rows,
+            expert_tile_base,
+            down_alpha,
+            global_scale,
+            trellis_lut,
+            scale_component,
+            intermediate_tiles,
+            packed_output_tiles,
+        ).launch(
+            grid=(1, 1, max_active_clusters * Int32(2)),
+            block=[self.threads_per_cta, 1, 1],
+            min_blocks_per_mp=2,
+            stream=stream,
+        )
 
     @cute.jit
     def _scale_down_after_h128(
