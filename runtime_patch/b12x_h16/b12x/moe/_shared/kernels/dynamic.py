@@ -1028,9 +1028,19 @@ class MoEDynamicKernelBackend:
         if self.p8_fc1_tile_n != 128 and not self.p8_small_m:
             raise ValueError("Narrow FC1 requires P8 small-M")
         if self.p8_scale_sandwich and not (
-            self.p8_small_m and self.p8_fc1_tile_n == 128
+            (self.p8_small_m and self.p8_fc1_tile_n == 128)
+            or (
+                self.p8_full_coupled
+                and materialize_intermediate
+                and mma_tiler_mn == (64, 128)
+                and share_input_across_experts
+                and deterministic_output
+                and not direct_routing
+            )
         ):
-            raise ValueError("P8 scale sandwich requires M1 N128 CTA ownership")
+            raise ValueError(
+                "P8 scale sandwich requires exact M1 or full-coupled M64/N128 ownership"
+            )
         if self.p8_small_m and not (
             quant_recipe == "w4a8_trellis" and trellis_codebook == "mcg"
             and trellis_bits == 4 and trellis_scaled
@@ -1132,7 +1142,16 @@ class MoEDynamicKernelBackend:
                     scale_sandwich=True,
                     full_coupled=self.p8_full_coupled,
                 )
-        if self.p8_scale_sandwich:
+        if self.p8_full_coupled and self.w4a8_m64_materialized:
+            from b12x.moe._shared.kernels.p8_coupled_prefill_fc1 import (
+                P8CoupledPrefillFC1Kernel,
+            )
+            from b12x.moe._shared.kernels.p8_coupled_prefill_fc2 import (
+                P8CoupledPrefillFC2Kernel,
+            )
+            self.materialized_phase1_kernel = P8CoupledPrefillFC1Kernel()
+            self.materialized_phase2_kernel = P8CoupledPrefillFC2Kernel()
+        elif self.p8_scale_sandwich:
             from b12x.moe._shared.kernels.p8_h128_fc1 import P8H128FC1Kernel
             self.materialized_phase1_kernel = P8H128FC1Kernel(
                 full_coupled=self.p8_full_coupled
@@ -2348,6 +2367,137 @@ class MoEDynamicKernelBackend:
             )
 
     @cute.jit
+    def _store_p8_full_coupled_input_row(
+        self,
+        a_input: cute.Tensor,
+        packed_a_storage: cute.Tensor,
+        scale_storage: cute.Tensor,
+        scale_component: cute.Tensor,
+        token_idx: Int32,
+        warp_partition: Int32,
+        lane: Int32,
+        mx_blocks_per_row: Int32,
+    ):
+        """Materialize one token's exact H512*suh->H128 P8 input.
+
+        Each of the two producer warps owns alternating H512 units.  A unit is
+        complete in one warp, so neither normalized H128 nor the outer H4
+        crosses a CTA/warp boundary.  FP32 is retained from H512 through signed
+        suh and H128 until the E4M3/UE8M0/32 quantizer.
+        """
+
+        row_base = token_idx * Int32(a_input.shape[1])
+        h512 = warp_partition
+        while h512 < mx_blocks_per_row // Int32(16):
+            quarters = tuple(
+                cute.make_rmem_tensor((4,), cutlass.Float32)
+                for _quarter in range(4)
+            )
+            for quarter in cutlass.range_constexpr(4):
+                col = (
+                    h512 * Int32(512)
+                    + Int32(quarter * 128)
+                    + lane * Int32(4)
+                )
+                quarters[quarter][0] = cutlass.Float16(
+                    a_input[row_base + col].to(cutlass.Float32)
+                ).to(cutlass.Float32)
+                quarters[quarter][1] = cutlass.Float16(
+                    a_input[row_base + col + Int32(1)].to(cutlass.Float32)
+                ).to(cutlass.Float32)
+                quarters[quarter][2] = cutlass.Float16(
+                    a_input[row_base + col + Int32(2)].to(cutlass.Float32)
+                ).to(cutlass.Float32)
+                quarters[quarter][3] = cutlass.Float16(
+                    a_input[row_base + col + Int32(3)].to(cutlass.Float32)
+                ).to(cutlass.Float32)
+                q0, q1, q2, q3 = _w4a8_had128_quad(
+                    quarters[quarter][0],
+                    quarters[quarter][1],
+                    quarters[quarter][2],
+                    quarters[quarter][3],
+                    lane,
+                )
+                quarters[quarter][0] = q0
+                quarters[quarter][1] = q1
+                quarters[quarter][2] = q2
+                quarters[quarter][3] = q3
+            for component in cutlass.range_constexpr(4):
+                x0 = quarters[0][component]
+                x1 = quarters[1][component]
+                x2 = quarters[2][component]
+                x3 = quarters[3][component]
+                quarters[0][component] = cutlass.Float32(0.5) * (
+                    x0 + x1 + x2 + x3
+                )
+                quarters[1][component] = cutlass.Float32(0.5) * (
+                    x0 - x1 + x2 - x3
+                )
+                quarters[2][component] = cutlass.Float32(0.5) * (
+                    x0 + x1 - x2 - x3
+                )
+                quarters[3][component] = cutlass.Float32(0.5) * (
+                    x0 - x1 - x2 + x3
+                )
+            for quarter in cutlass.range_constexpr(4):
+                output_col = (
+                    h512 * Int32(512)
+                    + Int32(quarter * 128)
+                    + lane * Int32(4)
+                )
+                h0 = quarters[quarter][0] * scale_component[output_col].to(
+                    cutlass.Float32
+                )
+                h1 = quarters[quarter][1] * scale_component[
+                    output_col + Int32(1)
+                ].to(cutlass.Float32)
+                h2 = quarters[quarter][2] * scale_component[
+                    output_col + Int32(2)
+                ].to(cutlass.Float32)
+                h3 = quarters[quarter][3] * scale_component[
+                    output_col + Int32(3)
+                ].to(cutlass.Float32)
+                h0, h1, h2, h3 = _w4a8_had128_quad(h0, h1, h2, h3, lane)
+                group = lane >> Int32(3)
+                values = cute.make_rmem_tensor((32,), cutlass.Float32)
+                block_max = cutlass.Float32(0.0)
+                for elem in cutlass.range_constexpr(32):
+                    component = elem & Int32(3)
+                    owned = h0
+                    if component == Int32(1):
+                        owned = h1
+                    elif component == Int32(2):
+                        owned = h2
+                    elif component == Int32(3):
+                        owned = h3
+                    source_lane = group * Int32(8) + elem // Int32(4)
+                    value = cute.arch.shuffle_sync(owned, source_lane)
+                    values[elem] = value
+                    block_max = fmax_f32(block_max, fabs_f32(value))
+                payload, scale_byte = quantize_block_fp8_mx(
+                    _w4a8_trellis_permute_k32(values), block_max
+                )
+                if (lane & Int32(7)) == Int32(0):
+                    block = h512 * Int32(16) + Int32(quarter * 4) + group
+                    block_start = block * Int32(32)
+                    payload_row = token_idx * Int32(a_input.shape[1])
+                    for pair in cutlass.range_constexpr(4):
+                        packed64 = (
+                            Uint64(payload[pair * 2 + 1]) << Uint64(32)
+                        ) | Uint64(payload[pair * 2])
+                        st_global_u64(
+                            get_ptr_as_int64(
+                                packed_a_storage,
+                                payload_row + block_start + Int32(pair * 8),
+                            ),
+                            packed64,
+                        )
+                    scale_storage[token_idx * mx_blocks_per_row + block] = Uint8(
+                        scale_byte & Uint32(0xFF)
+                    )
+            h512 += Int32(self.input_warps_per_token)
+
+    @cute.jit
     def __call__(
         self,
         a_input: cute.Tensor,  # [num_tokens, K] bf16
@@ -2726,7 +2876,7 @@ class MoEDynamicKernelBackend:
             phase2_experts = task_expert
             if cutlass.const_expr(self.p8_small_m):
                 phase2_experts = topk_ids
-            if cutlass.const_expr(self.p8_small_m):
+            if cutlass.const_expr(self.p8_small_m or self.p8_full_coupled):
                 self.materialized_phase2_kernel(
                     intermediate_u32,
                     down_rp,
@@ -3648,7 +3798,18 @@ class MoEDynamicKernelBackend:
                                 # route-expanded path fans it out to each route.
                                 # That path keeps only physical rows in rmem here to
                                 # stay below the two-CTA register-residency limit.
-                                if num_topk == Int32(8):
+                                if cutlass.const_expr(self.p8_full_coupled):
+                                    self._store_p8_full_coupled_input_row(
+                                        a_input,
+                                        packed_a_storage,
+                                        scale_storage,
+                                        trellis_rotations,
+                                        token_idx,
+                                        token_partition,
+                                        lane_id,
+                                        mx_blocks_per_row,
+                                    )
+                                elif num_topk == Int32(8):
                                     for cache_slot in cutlass.range_constexpr(8):
                                         slot = route_slot_base + Int32(cache_slot)
                                         shared_route_phys_rows[cache_slot] = _ld_shared_i32(

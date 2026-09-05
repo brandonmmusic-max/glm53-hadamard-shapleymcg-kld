@@ -448,7 +448,7 @@ class P8NativeTPMoE:
         m = int(x.shape[0])
         if tuple(topk_ids.shape) != (m, self.topk) or tuple(topk_weights.shape) != (m, self.topk):
             raise RuntimeError("P8 native routing shape mismatch")
-        if self.scale_component is not None and m != 1:
+        if self.scale_component is not None and not self.full_coupled and m != 1:
             raise RuntimeError("P8 scale sandwich currently supports M=1 only")
         # Match the W4A8 planner's measured M16-to-M64 transition: sparse
         # decode and ordinary prefill stay monolithic; only dense routed
@@ -459,6 +459,12 @@ class P8NativeTPMoE:
             else self.force_materialized
         )
         small_m = use_small_m(self.small_m_scheduler, m)
+        if self.full_coupled:
+            # Decode keeps the exact direct-route M1 owner. Every M>1 call is
+            # forced through the one exact grouped M64/N128 implementation;
+            # there is no second monolithic coupled arithmetic path.
+            small_m = m == 1
+            materialized = True
         materialized = materialized or small_m
         arm = self._compile(materialized, small_m=small_m)
         tile_m = arm.tile_m
@@ -509,10 +515,15 @@ class P8NativeTPMoE:
             output = buffers["output"]
         else:
             packed_a = torch.zeros(rows_padded * self.hidden, dtype=torch.uint8, device=self.device)
+            scale_elements = (
+                m * (self.hidden // 32)
+                if self.full_coupled and materialized and not small_m
+                else (self.experts + m * self.topk + 1)
+                * tile_m
+                * (self.hidden // 8)
+            )
             scale_flat = torch.zeros(
-                (self.experts + m * self.topk + 1) * tile_m * (self.hidden // 8),
-                dtype=torch.uint8,
-                device=self.device,
+                scale_elements, dtype=torch.uint8, device=self.device
             )
             intermediate_u32 = torch.zeros(
                 rows_padded * (self.intermediate + self.intermediate // 32) // 4,

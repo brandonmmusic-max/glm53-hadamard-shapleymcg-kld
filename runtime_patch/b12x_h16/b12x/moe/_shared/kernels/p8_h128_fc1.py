@@ -100,6 +100,8 @@ def _p8_ld_shared_f16_to_f32(addr, *, loc=None, ip=None):
 class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
     tile_m = 16
     source_tile_m = 16
+    mma_m_blocks = 1
+    owned_row_groups = 4
     scale_sandwich = False
 
     def __init__(self, tile_n: int):
@@ -465,13 +467,13 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
         # values even though every MMA consumes exactly four adjacent values.
         gate_acc = tuple(
             tuple(cute.make_rmem_tensor((4,), cutlass.Float32) for _nt in range(4))
-            for _blk in range(1)
+            for _blk in range(self.mma_m_blocks)
         )
         up_acc = tuple(
             tuple(cute.make_rmem_tensor((4,), cutlass.Float32) for _nt in range(4))
-            for _blk in range(1)
+            for _blk in range(self.mma_m_blocks)
         )
-        for blk in cutlass.range_constexpr(1):
+        for blk in cutlass.range_constexpr(self.mma_m_blocks):
             for nt in cutlass.range_constexpr(4):
                 gate_acc[blk][nt].fill(0.0)
                 up_acc[blk][nt].fill(0.0)
@@ -515,15 +517,15 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             cute.arch.sync_threads()
 
             scale_shift = Uint32(k64_slice & Int32(1)) * Uint32(16)
-            asc = cute.make_rmem_tensor((1,), Uint32)
-            for blk in cutlass.range_constexpr(1):
+            asc = cute.make_rmem_tensor((self.mma_m_blocks,), Uint32)
+            for blk in cutlass.range_constexpr(self.mma_m_blocks):
                 sf_row = Int32(blk * 16) + q + ((lane & Int32(1)) << Int32(3))
                 asc[blk] = ld_shared_u32(sfa_base + (sf_row << Int32(2))) >> scale_shift
 
             for kb in cutlass.range_constexpr(2):
                 u_phys = (Int32(kb * 2) + (c >> Int32(1))) ^ q
-                a_frag = cute.make_rmem_tensor((1, 4), Uint32)
-                for blk in cutlass.range_constexpr(1):
+                a_frag = cute.make_rmem_tensor((self.mma_m_blocks, 4), Uint32)
+                for blk in cutlass.range_constexpr(self.mma_m_blocks):
                     a_lo = (
                         a_base
                         + Int32(blk * 16 * 128)
@@ -640,7 +642,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                             )
                             >> scale_shift
                         )
-                    for blk in cutlass.range_constexpr(1):
+                    for blk in cutlass.range_constexpr(self.mma_m_blocks):
                         gate_fragment = gate_acc[blk][nt]
                         if cutlass.const_expr(self.w4a8_trellis):
                             g0, g1, g2, g3 = mxfp8_mma_m16n8k32_f32_e4m3(
@@ -736,13 +738,16 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
         ].to(cutlass.Float32)
         epilogue_base = smem_base
         up_epilogue_base = epilogue_base + Int32(self.tile_m * self.tile_n * 2)
+        full_output_base = (
+            up_epilogue_base + Int32(self.tile_m * self.tile_n * 2)
+        )
         col_base = warp_idx * Int32(32) + (c << Int32(1))
         # Identity keeps gate/up FP32 through clipped SwiGLU.  The scale
         # sandwich instead persists both physical projections as FP16, then a
         # single N128 CTA owns the complete post-MMA H128 boundary.
         for nt in cutlass.range_constexpr(4):
             col = col_base + Int32(nt * 8)
-            for blk in cutlass.range_constexpr(1):
+            for blk in cutlass.range_constexpr(self.mma_m_blocks):
                 gate_fragment = gate_acc[blk][nt]
                 up_fragment = up_acc[blk][nt]
                 row_lo = Int32(blk * 16) + q
@@ -811,7 +816,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             # gate32,up32,gate32,up32. Each warp owns one routed row; each
             # segment below is one complete H128. The same CTA then owns the
             # resulting 128 down-input values, so neither H128 crosses a CTA.
-            for row_group in cutlass.range_constexpr(4):
+            for row_group in cutlass.range_constexpr(self.owned_row_groups):
                 hrow = warp_idx + Int32(row_group * 4)
                 if hrow < valid_rows:
                     activated = cute.make_rmem_tensor((4,), cutlass.Float32)
@@ -888,7 +893,9 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                     a2 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col + Int32(2)].to(cutlass.Float32)
                     a3 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col + Int32(3)].to(cutlass.Float32)
                     a0, a1, a2, a3 = _w4a8_had128_quad(a0, a1, a2, a3, lane)
-                    addr = epilogue_base + (hrow * Int32(128) + hcol) * Int32(4)
+                    addr = full_output_base + (
+                        hrow * Int32(128) + hcol
+                    ) * Int32(4)
                     st_shared_f32(addr, a0)
                     st_shared_f32(addr + Int32(4), a1)
                     st_shared_f32(addr + Int32(8), a2)
@@ -898,7 +905,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             # Four warps own four rows at a time.  Each lane owns four adjacent
             # elements, exactly the `_w4a8_had128_quad` contract.  This is the
             # smallest legal owner: no H128 value crosses a CTA boundary.
-            for row_group in cutlass.range_constexpr(4):
+            for row_group in cutlass.range_constexpr(self.owned_row_groups):
                 hrow = warp_idx + Int32(row_group * 4)
                 if hrow < valid_rows:
                     hcol = lane * Int32(4)
@@ -1006,7 +1013,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                     )
                     value_addr = epilogue_base + element_index * Int32(2)
                     if cutlass.const_expr(self.full_coupled):
-                        value_addr = epilogue_base + element_index * Int32(4)
+                        value_addr = full_output_base + element_index * Int32(4)
                     value = ld_shared_bf16_to_f32(value_addr)
                     if cutlass.const_expr(self.full_coupled):
                         value = ld_shared_f32(value_addr)
@@ -1113,7 +1120,10 @@ class P8H128FC1Kernel(P8NarrowFC1Kernel):
         self.stage_bytes = self.up_sfb_offset + self.sfb_bytes
         self.shared_bytes = max(
             2 * self.stage_bytes,
-            2 * self.tile_m * 128 * 2,
+            # Full coupling keeps gate FP16, up FP16 and transformed FP32
+            # disjoint. An in-place FP32 row spans two physical FP16 rows and
+            # races neighboring warps that have not consumed them yet.
+            self.tile_m * 128 * (8 if self.full_coupled else 4),
         )
         self.shared_words = (self.shared_bytes + 3) // 4
         self.fast_math = False
