@@ -14,6 +14,16 @@ import hashlib
 from pathlib import Path
 
 
+if os.environ.get("GLM53_P8_INDEX_TRACE", ""):
+    try:
+        from p8_index_trace import install as _install_index_trace
+        _install_index_trace()
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        os._exit(78)
+
+
 MODE = os.environ.get("GLM53_ROUTED_ROTATION", "").strip().lower()
 MIXED_MXFP6 = os.environ.get("GLM53_MIXED_MXFP6", "").strip().lower()
 HUMMING_FP4_BUFFER_PATCH = os.environ.get(

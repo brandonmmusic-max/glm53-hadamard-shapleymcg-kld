@@ -1325,6 +1325,35 @@ confirmation, and final roles remained unopened for this redesign branch.
   across same-N128 repeats near rows255–263, not change the failed gate or
   blame the trellis law from aggregate logit differences.
 
+## 2026-09-05: Decision 59 — observe identical N128 runs before any ordering fix
+
+- Preserve v3's failed exact gate and repeated-control divergence. Authorize
+  only the bounded two-process index-order diagnostic described in
+  `results/P8_INDEX_ORDER_TRACE_V1.md`, under the existing local-work mandate.
+- Same N128/TP4/DCP1/V2/FULL image and P8 weights, same already-opened CF0056
+  full2047 forced rows; observe only positions255–263,11sparse layers,4ranks.
+  No teacher reads, protected roles, new quantization, KLD or speed scoring.
+- Decision: same recorded scorer inputs but different selected order/set
+  localizes selection divergence; same attention content/set with changed
+  order/output supports linkage, not an intervention-proven fix. Upstream
+  changes redirect diagnosis. Two runs without divergence are inconclusive.
+- The observer may perturb CTA scheduling:143copykernels/token. No automatic
+  reruns, no relaxation of the original closure gate, no allocation restart.
+- Source review corrected split-payload/scales addressing and distinguished
+  the expanded2051 logical columns from2048 physically consumed columns.
+  No runtime algorithm was changed.120focusedCPUtests passed; exact-image
+  interpreter/source receipts retained before seal. Full KLD stays pending.
+- Pre-launch amendment: original plan3e3534d9044d1e0d61fb9748beddb6d25cba4bc2569ee3b23aa35295e466d7f1
+  remains unlaunched. Review found numeric equality could conflate signed
+  zero and omit paired representation checks. The analyzer now compares raw
+  bytes;121focused tests pass. Only reviewed plan
+  7e21d7ad3d1edbb8c74df4cb85d8e82154c57b48d1d45e7754de1aa882ba0dbd
+  was superseded before launch by final diagnostic plan
+  a900b61096bd377a9430dea87127d2ebf6da6d4209f8b6cbe1b4f3ee7973b265:
+  same-input index divergence and downstream linkage must occur in the same
+  row.122tests pass. Only that last plan is authorized; both prior manifests
+  remain unlaunched. No GPU target result preceded these amendments.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
