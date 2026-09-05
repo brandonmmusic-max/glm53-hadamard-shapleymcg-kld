@@ -2523,7 +2523,8 @@ class MoEDynamicKernelBackend:
         suh and H128 until the E4M3/UE8M0/32 quantizer.
         """
 
-        row_base = token_idx * Int32(a_input.shape[1])
+        # A scalar CuTe coordinate on rank-2 input is colexicographic, not
+        # a row-major storage offset. Use explicit token/channel coordinates.
         h512 = warp_partition
         while h512 < mx_blocks_per_row // Int32(16):
             quarters = tuple(
@@ -2537,16 +2538,16 @@ class MoEDynamicKernelBackend:
                     + lane * Int32(4)
                 )
                 quarters[quarter][0] = cutlass.Float16(
-                    a_input[row_base + col].to(cutlass.Float32)
+                    a_input[token_idx, col].to(cutlass.Float32)
                 ).to(cutlass.Float32)
                 quarters[quarter][1] = cutlass.Float16(
-                    a_input[row_base + col + Int32(1)].to(cutlass.Float32)
+                    a_input[token_idx, col + Int32(1)].to(cutlass.Float32)
                 ).to(cutlass.Float32)
                 quarters[quarter][2] = cutlass.Float16(
-                    a_input[row_base + col + Int32(2)].to(cutlass.Float32)
+                    a_input[token_idx, col + Int32(2)].to(cutlass.Float32)
                 ).to(cutlass.Float32)
                 quarters[quarter][3] = cutlass.Float16(
-                    a_input[row_base + col + Int32(3)].to(cutlass.Float32)
+                    a_input[token_idx, col + Int32(3)].to(cutlass.Float32)
                 ).to(cutlass.Float32)
                 q0, q1, q2, q3 = _p8_had128_quad_unnormalized(
                     quarters[quarter][0],
