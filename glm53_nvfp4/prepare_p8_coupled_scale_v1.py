@@ -8,7 +8,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .p8_coupled_scale import (
+    COUPLED_ACTIVATION,
     COUPLED_BOUNDARY,
+    COUPLED_CAST_ORDER,
+    COUPLED_FC1_INTERLEAVE,
+    COUPLED_QUANTIZED_DOWN_ORDER,
+    COUPLED_QUANTIZED_INPUT_ORDER,
+    COUPLED_SIGN_DRAW,
+    COUPLED_SIGN_GENERATOR,
+    COUPLED_TP_SLICE,
+    COUPLED_TRANSFORM_CONTRACT,
+    COUPLED_TRANSFORM_ID,
+    COUPLED_TRANSFORM_SHA256,
     SUPPORTED_LAYERS,
     _tensor_sha256,
     load_exact_exl3_scales,
@@ -19,7 +30,7 @@ from .shard_index import sha256_file
 TARGET_EXPERTS = 288
 TARGET_HIDDEN = 4096
 TARGET_INTERMEDIATE = 2048
-FROZEN_INTERMEDIATE_DRAW = 0
+FROZEN_INTERMEDIATE_DRAW = COUPLED_SIGN_DRAW
 
 
 def _canonical_json(value: object) -> bytes:
@@ -103,10 +114,17 @@ def main() -> None:
     encoder = Path(__file__).with_name("quantize_p8_coupled_scale_layer.py")
     reference = Path(__file__).with_name("p8_coupled_scale.py")
     trellis = Path(__file__).with_name("trellis_mxf.py")
+    transform_receipt = (
+        Path(__file__).resolve().parents[1]
+        / "experiments/p8-coupled-transform-draw0-silu10-v1.json"
+    )
+    if sha256_file(transform_receipt) != COUPLED_TRANSFORM_SHA256:
+        raise RuntimeError("coupled transform receipt differs from the code contract")
     inputs = {
         "encoder": _file(encoder),
         "coupled_reference": _file(reference),
         "trellis_codec": _file(trellis),
+        "encoder_transform": _file(transform_receipt),
         "source_index": _file(args.source_index),
         "fit_roles": _file(args.roles),
         "capture_manifest": _file(capture_manifest),
@@ -139,7 +157,7 @@ def main() -> None:
         }
 
     payload = {
-        "schema": "glm53-p8.coupled-scale-preparation.v1",
+        "schema": "glm53-p8.coupled-scale-preparation.v2",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decision_before_result": True,
         "layers": list(SUPPORTED_LAYERS),
@@ -151,9 +169,26 @@ def main() -> None:
         },
         "bits": 4,
         "weight_payload_bpw": 4.25,
+        "stored_scale_bytes_per_rank_layer": 901120,
+        "stored_draw_bytes_per_rank_layer": 288,
         "metadata_bpw": 0.003979859528718171,
+        "runtime_regenerated_sign_bytes_per_rank_layer": 3072,
+        "full_coupled_accounted_metadata_bpw": 0.003993422896773727,
+        "full_coupled_accounted_bpw": 4.253993422896774,
         "boundary": COUPLED_BOUNDARY,
-        "cast_order": "bf16-fp16-h512-fp16-suh-h128-e4m3",
+        "activation": COUPLED_ACTIVATION,
+        "cast_order": COUPLED_CAST_ORDER,
+        "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+        "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+        "transform_id": COUPLED_TRANSFORM_ID,
+        "transform_contract": COUPLED_TRANSFORM_CONTRACT,
+        "encoder_transform_sha256": COUPLED_TRANSFORM_SHA256,
+        "sign_generator": COUPLED_SIGN_GENERATOR,
+        "sign_draw": COUPLED_SIGN_DRAW,
+        "sign_pre_axis": 1,
+        "sign_post_axis": 2,
+        "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+        "tp_slice": COUPLED_TP_SLICE,
         "encoder": "GPTQ-style inter-group Hessian feedback; static in-group activation order",
         "ldlq": False,
         "draw_policy": "QSRT default draw zero for every expert; no draw tuning",
@@ -172,6 +207,21 @@ def main() -> None:
             "coupled_transform": "Luke B12X W4A8 trellis and local QSRT coupled H512/H128 reference",
             "scale_roles": "local GLM-5.3 EXL3 gate/up suh/svh and down suh/svh metadata",
             "trellis": "existing repository P8 K4 procedural MCG E4M3 codec",
+        },
+        "storage_budget": {
+            "max_new_bytes": 30000000000,
+            "weights_per_layer": 7247757312,
+            "k4_4_25bpw_bytes_per_layer": 3850371072,
+            "three_layer_weight_payload_bytes": 11551113216,
+            "forecast_chunk_plus_tp4_bytes": 23123890176,
+            "other_new_bytes_allowance": 6876109824,
+            "dense_bf16_three_layer_bytes": 43486543872,
+            "dense_output": "prohibited",
+            "peak_gate": (
+                "before every write require projected campaign bytes including "
+                "safetensors headers, receipts, temporary files, and caches <=30000000000; "
+                "also require filesystem free bytes >= projected remaining writes"
+            ),
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

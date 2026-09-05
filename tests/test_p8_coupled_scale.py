@@ -7,11 +7,14 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 
+import glm53_nvfp4.p8_coupled_scale as coupled_mod
 from glm53_nvfp4.p8_coupled_scale import (
     CoupledScaleSet,
+    COUPLED_TRANSFORM_SHA256,
     block_hadamard,
     coupled_expert_reference,
     coupled_input_carrier,
+    coupled_middle_carrier,
     encode_coupled_scale_weights,
     load_exact_exl3_scales,
     source_expert_reference,
@@ -90,6 +93,58 @@ def test_input_carrier_preserves_the_archived_cast_order(tmp_path: Path):
 
     observed = coupled_input_carrier(hidden, scale, quantize=False)
     assert torch.equal(observed, manual)
+
+
+def test_quantized_carriers_keep_scale_to_h128_in_fp32(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(coupled_mod, "_qdq_e4m3_k32", lambda value, *_: value)
+    torch.manual_seed(905)
+    scales = _scales(tmp_path, experts=1)
+    hidden = torch.randn(3, 512) * 7.0
+
+    observed_input = coupled_input_carrier(
+        hidden, scales.gate_up_suh, quantize=True
+    )
+    manual_input = hidden.to(torch.bfloat16).to(torch.float16).float()
+    manual_input = coupled_mod.block_hadamard(manual_input, block_size=512)
+    scaled_input = manual_input * scales.gate_up_suh.float()
+    manual_input = coupled_mod.block_hadamard(scaled_input, block_size=128)
+    wrong_input = coupled_mod.block_hadamard(
+        scaled_input.to(torch.float16).float(), block_size=128
+    )
+    assert torch.equal(observed_input, manual_input)
+    assert not torch.equal(observed_input, wrong_input)
+
+    gate_core = torch.randn(128, 512) / 8
+    up_core = torch.randn(128, 512) / 8
+    observed_down = coupled_middle_carrier(
+        observed_input,
+        gate_core,
+        up_core,
+        scales,
+        expert=0,
+        intermediate_draw=0,
+        quantize=True,
+    )
+    stored_down = coupled_middle_carrier(
+        observed_input,
+        gate_core,
+        up_core,
+        scales,
+        expert=0,
+        intermediate_draw=0,
+        quantize=False,
+    )
+    assert not torch.equal(observed_down, stored_down)
+
+
+def test_transform_receipt_bytes_are_the_declared_transform_identity():
+    receipt = (
+        Path(__file__).resolve().parents[1]
+        / "experiments/p8-coupled-transform-draw0-silu10-v1.json"
+    )
+    assert sha256_file(receipt) == COUPLED_TRANSFORM_SHA256
 
 
 def _write_exl3_scales(

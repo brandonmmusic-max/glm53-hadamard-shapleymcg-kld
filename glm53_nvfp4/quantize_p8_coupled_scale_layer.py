@@ -20,8 +20,18 @@ from safetensors.torch import save_file
 from .capture import LayerCapture
 from .output_aware import route_weighted_hessian
 from .p8_coupled_scale import (
+    COUPLED_ACTIVATION,
     COUPLED_BOUNDARY,
+    COUPLED_CAST_ORDER,
     COUPLED_CHUNK_SCHEMA,
+    COUPLED_FC1_INTERLEAVE,
+    COUPLED_QUANTIZED_DOWN_ORDER,
+    COUPLED_QUANTIZED_INPUT_ORDER,
+    COUPLED_SIGN_DRAW,
+    COUPLED_SIGN_GENERATOR,
+    COUPLED_TP_SLICE,
+    COUPLED_TRANSFORM_ID,
+    COUPLED_TRANSFORM_SHA256,
     SUPPORTED_LAYERS,
     CoupledScaleSet,
     coupled_input_carrier,
@@ -52,13 +62,23 @@ def _validate_design(
 ) -> tuple[dict, list[int], CoupledScaleSet]:
     design = json.loads(args.design.read_text())
     if (
-        design.get("schema") != "glm53-p8.coupled-scale-preparation.v1"
+        design.get("schema") != "glm53-p8.coupled-scale-preparation.v2"
         or design.get("decision_before_result") is not True
         or design.get("boundary") != COUPLED_BOUNDARY
         or design.get("layers") != list(SUPPORTED_LAYERS)
         or design.get("bits") != 4
         or design.get("weight_payload_bpw") != 4.25
         or design.get("ldlq") is not False
+        or design.get("activation") != COUPLED_ACTIVATION
+        or design.get("cast_order") != COUPLED_CAST_ORDER
+        or design.get("quantized_input_order") != COUPLED_QUANTIZED_INPUT_ORDER
+        or design.get("quantized_down_order") != COUPLED_QUANTIZED_DOWN_ORDER
+        or design.get("transform_id") != COUPLED_TRANSFORM_ID
+        or design.get("encoder_transform_sha256") != COUPLED_TRANSFORM_SHA256
+        or design.get("sign_generator") != COUPLED_SIGN_GENERATOR
+        or design.get("sign_draw") != COUPLED_SIGN_DRAW
+        or design.get("fc1_interleave") != COUPLED_FC1_INTERLEAVE
+        or design.get("tp_slice") != COUPLED_TP_SLICE
         or design.get("data_policy", {}).get("protected_roles_opened") != []
         or args.layer not in SUPPORTED_LAYERS
     ):
@@ -67,6 +87,10 @@ def _validate_design(
         "encoder": Path(__file__),
         "coupled_reference": Path(__file__).with_name("p8_coupled_scale.py"),
         "trellis_codec": Path(__file__).with_name("trellis_mxf.py"),
+        "encoder_transform": (
+            Path(__file__).resolve().parents[1]
+            / "experiments/p8-coupled-transform-draw0-silu10-v1.json"
+        ),
         "source_index": args.source_index,
         "fit_roles": args.roles,
         "capture_manifest": args.capture_root / "capture-manifest.json",
@@ -91,8 +115,8 @@ def _validate_design(
     if not isinstance(draws, list) or len(draws) != 288:
         raise RuntimeError("design must freeze one intermediate draw for every expert")
     normalized = [int(value) for value in draws]
-    if any(not 0 <= value < 8 for value in normalized):
-        raise RuntimeError("intermediate draws must lie in 0..7")
+    if any(value != COUPLED_SIGN_DRAW for value in normalized):
+        raise RuntimeError("V2 candidate requires preregistered draw zero for every expert")
     return design, normalized, scales
 
 
@@ -113,6 +137,11 @@ def main() -> None:
     parser.add_argument("--samples", type=int, default=256)
     parser.add_argument("--device", default="cuda:0")
     args = parser.parse_args()
+    if args.dense_output is not None:
+        raise ValueError(
+            "--dense-output is prohibited for the three-layer pilot: its "
+            "43,486,543,872-byte BF16 payload exceeds the 30 GB campaign cap"
+        )
     outputs = [args.codec_output, args.receipt]
     if args.dense_output is not None:
         outputs.append(args.dense_output)
@@ -281,8 +310,18 @@ def main() -> None:
         "scale": "ue8m0-k32",
         "law": "procedural-mcg-alpha2",
         "boundary": COUPLED_BOUNDARY,
-        "activation": "clipped-silu10",
-        "cast_order": "bf16-fp16-h512-fp16-suh-h128-e4m3",
+        "activation": COUPLED_ACTIVATION,
+        "cast_order": COUPLED_CAST_ORDER,
+        "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+        "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+        "transform_id": COUPLED_TRANSFORM_ID,
+        "encoder_transform_sha256": COUPLED_TRANSFORM_SHA256,
+        "sign_generator": COUPLED_SIGN_GENERATOR,
+        "sign_draw": str(COUPLED_SIGN_DRAW),
+        "sign_pre_axis": "1",
+        "sign_post_axis": "2",
+        "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+        "tp_slice": COUPLED_TP_SLICE,
         "ldlq": "false",
         "encoder": "gptq-feedback-static-in-group-act-order",
         "fc1_trellis_slot_order": "gate-up",
@@ -324,8 +363,8 @@ def main() -> None:
             "role": "fit",
             "sampling": "domain-balanced routes per expert",
             "samples": args.samples,
-            "fc1_carrier": "BF16->FP16->H512->FP16(suh)->H128->E4M3/UE8M0-K32",
-            "down_carrier": "coupled FC1 epilogue->FP16(down_suh)->H128->E4M3/UE8M0-K32",
+            "fc1_carrier": COUPLED_QUANTIZED_INPUT_ORDER,
+            "down_carrier": COUPLED_QUANTIZED_DOWN_ORDER,
             "causal_down_hessian": True,
         },
         "algorithm": {

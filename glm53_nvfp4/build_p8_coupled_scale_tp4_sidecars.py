@@ -11,12 +11,24 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 
 from .p8_coupled_scale import (
+    COUPLED_ACTIVATION,
     COUPLED_BOUNDARY,
+    COUPLED_CAST_ORDER,
     COUPLED_CHUNK_SCHEMA,
+    COUPLED_COMPONENT,
+    COUPLED_FC1_INTERLEAVE,
+    COUPLED_QUANTIZED_DOWN_ORDER,
+    COUPLED_QUANTIZED_INPUT_ORDER,
     COUPLED_RANK_SCHEMA,
+    COUPLED_SIGN_DRAW,
+    COUPLED_SIGN_GENERATOR,
     COUPLED_SIDECAR_SCHEMA,
+    COUPLED_TP_SLICE,
+    COUPLED_TRANSFORM_ID,
+    COUPLED_TRANSFORM_SHA256,
     SUPPORTED_LAYERS,
     _tensor_sha256,
+    rank_local_coupled_signs,
 )
 from .shard_index import sha256_file
 
@@ -67,8 +79,18 @@ def _load_rank_coupled(
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",
                 "boundary": COUPLED_BOUNDARY,
-                "activation": "clipped-silu10",
-                "cast_order": "bf16-fp16-h512-fp16-suh-h128-e4m3",
+                "activation": COUPLED_ACTIVATION,
+                "cast_order": COUPLED_CAST_ORDER,
+                "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+                "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+                "transform_id": COUPLED_TRANSFORM_ID,
+                "encoder_transform_sha256": COUPLED_TRANSFORM_SHA256,
+                "sign_generator": COUPLED_SIGN_GENERATOR,
+                "sign_draw": str(COUPLED_SIGN_DRAW),
+                "sign_pre_axis": "1",
+                "sign_post_axis": "2",
+                "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+                "tp_slice": COUPLED_TP_SLICE,
                 "ldlq": "false",
                 "encoder": "gptq-feedback-static-in-group-act-order",
                 "fc1_trellis_slot_order": "gate-up",
@@ -118,7 +140,7 @@ def _load_rank_coupled(
                 or tuple(chunk_down_suh.shape) != (stop - start, intermediate)
                 or chunk_draws.dtype != torch.uint8
                 or tuple(chunk_draws.shape) != (stop - start,)
-                or bool((chunk_draws > 7).any())
+                or bool((chunk_draws != COUPLED_SIGN_DRAW).any())
             ):
                 raise RuntimeError("coupled scale tensor geometry/dtype mismatch")
             for value in (chunk_gate, chunk_down, chunk_gate_svh, chunk_up_svh, chunk_down_suh):
@@ -231,6 +253,91 @@ def expected_metadata_bpw(
     return 8.0 * metadata_bytes / logical_elements
 
 
+def _rank_metadata(
+    tensors: dict[str, torch.Tensor],
+    *,
+    layer: int,
+    rank: int,
+    design_sha256: str,
+    scale_source_sha256: str,
+    metadata_bpw: float,
+) -> dict[str, str]:
+    """Build the exact runtime-readable, hash-complete coupled sidecar header."""
+    local_intermediate = tensors["intermediate_scales_fp16"].shape[1] // 3
+    coupled_signs = rank_local_coupled_signs(
+        intermediate=local_intermediate, rank=rank
+    )
+    _, stored_metadata_bytes, _, derived_metadata_bpw = _payload_rates(tensors)
+    if not math.isclose(
+        metadata_bpw, derived_metadata_bpw, rel_tol=0.0, abs_tol=1e-18
+    ):
+        raise RuntimeError("rank metadata rate does not match tensor payload")
+    logical_elements = 32 * (
+        tensors["w13_scale_ue8m0"].numel()
+        + tensors["w2_scale_ue8m0"].numel()
+    )
+    runtime_sign_bytes = coupled_signs.numel() * coupled_signs.element_size()
+    accounted_metadata_bpw = (
+        8.0 * (stored_metadata_bytes + runtime_sign_bytes) / logical_elements
+    )
+    tensor_hashes = {name: _tensor_sha256(value) for name, value in tensors.items()}
+    metadata = {
+        "schema": COUPLED_RANK_SCHEMA,
+        "layer": str(layer),
+        "rank": str(rank),
+        "world_size": "4",
+        "bits": "4",
+        "alphabet": "e4m3",
+        "scale": "ue8m0-k32",
+        "law": "procedural-mcg-alpha2",
+        "boundary": COUPLED_BOUNDARY,
+        "component": COUPLED_COMPONENT,
+        "composition_target": COUPLED_BOUNDARY,
+        "full_coupled": "true",
+        "activation": COUPLED_ACTIVATION,
+        "cast_order": COUPLED_CAST_ORDER,
+        "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+        "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+        "h512": "normalized-sylvester-512-v1",
+        "h128": "normalized-sylvester-128-v1",
+        "transform_id": COUPLED_TRANSFORM_ID,
+        "encoder_transform_sha256": COUPLED_TRANSFORM_SHA256,
+        "sign_generator": COUPLED_SIGN_GENERATOR,
+        "sign_draw": str(COUPLED_SIGN_DRAW),
+        "sign_pre_axis": "1",
+        "sign_post_axis": "2",
+        "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+        "tp_slice": COUPLED_TP_SLICE,
+        "global_intermediate": str(local_intermediate * 4),
+        "local_atom_begin": str(rank * (local_intermediate // 32)),
+        "gate_up_suh_shared": "true",
+        "down_svh_shared": "true",
+        "coupled_signs_shared": "true",
+        "signed_scales": "true",
+        "ldlq": "false",
+        "fc1_trellis_slot_order": "gate-up",
+        "fc1_scale_plane_order": "up-gate",
+        "coupled_scale_order": "gate_svh-up_svh-down_suh",
+        "source_design_sha256": design_sha256,
+        "exl3_scale_source_sha256": scale_source_sha256,
+        "weight_payload_bpw": "4.25",
+        "metadata_bpw": format(metadata_bpw, ".17g"),
+        "stored_metadata_bytes": str(stored_metadata_bytes),
+        "runtime_regenerated_sign_bytes": str(runtime_sign_bytes),
+        "full_coupled_accounted_metadata_bpw": format(
+            accounted_metadata_bpw, ".17g"
+        ),
+        "full_coupled_accounted_bpw": format(
+            4.25 + accounted_metadata_bpw, ".17g"
+        ),
+        "sha256_coupled_signs_fp16": _tensor_sha256(coupled_signs),
+    }
+    metadata.update(
+        {f"sha256_{name}": digest for name, digest in tensor_hashes.items()}
+    )
+    return metadata
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunk", type=Path, action="append", required=True)
@@ -253,6 +360,9 @@ def main() -> None:
         "weight_payload_bpw": 4.25,
         "metadata_bpw": None,
         "stored_bpw": None,
+        "runtime_regenerated_sign_bytes": None,
+        "full_coupled_accounted_metadata_bpw": None,
+        "full_coupled_accounted_bpw": None,
         "ldlq": False,
         "ranks": [],
     }
@@ -277,36 +387,41 @@ def main() -> None:
                 )
             receipt["metadata_bpw"] = metadata_bpw
             receipt["stored_bpw"] = weight_bpw + metadata_bpw
+            runtime_sign_bytes = (
+                rank_local_coupled_signs(
+                    intermediate=2048 // 4, rank=rank
+                ).numel()
+                * 2
+            )
+            accounted_metadata_bpw = (
+                8.0 * (metadata_bytes + runtime_sign_bytes)
+                / (3 * 288 * 4096 * 2048 // 4)
+            )
+            receipt["runtime_regenerated_sign_bytes"] = runtime_sign_bytes
+            receipt["full_coupled_accounted_metadata_bpw"] = (
+                accounted_metadata_bpw
+            )
+            receipt["full_coupled_accounted_bpw"] = (
+                weight_bpw + accounted_metadata_bpw
+            )
         elif receipt["metadata_bpw"] != metadata_bpw:
             raise RuntimeError("TP ranks disagree on coupled metadata rate")
         output = args.output_dir / f"p8-layer-{args.layer:03d}-tp4-rank-{rank}.safetensors"
         if output.exists():
             raise FileExistsError(f"refusing to overwrite {output}")
         tensor_hashes = {name: _tensor_sha256(value) for name, value in tensors.items()}
+        rank_metadata = _rank_metadata(
+            tensors,
+            layer=args.layer,
+            rank=rank,
+            design_sha256=design_sha256,
+            scale_source_sha256=scale_source_sha256,
+            metadata_bpw=metadata_bpw,
+        )
         save_file(
             tensors,
             output,
-            metadata={
-                "schema": COUPLED_RANK_SCHEMA,
-                "layer": str(args.layer),
-                "rank": str(rank),
-                "world_size": "4",
-                "bits": "4",
-                "alphabet": "e4m3",
-                "scale": "ue8m0-k32",
-                "law": "procedural-mcg-alpha2",
-                "boundary": COUPLED_BOUNDARY,
-                "activation": "clipped-silu10",
-                "cast_order": "bf16-fp16-h512-fp16-suh-h128-e4m3",
-                "ldlq": "false",
-                "fc1_trellis_slot_order": "gate-up",
-                "fc1_scale_plane_order": "up-gate",
-                "coupled_scale_order": "gate_svh-up_svh-down_suh",
-                "source_design_sha256": design_sha256,
-                "exl3_scale_source_sha256": scale_source_sha256,
-                "weight_payload_bpw": "4.25",
-                "metadata_bpw": format(metadata_bpw, ".17g"),
-            },
+            metadata=rank_metadata,
         )
         receipt["ranks"].append(
             {

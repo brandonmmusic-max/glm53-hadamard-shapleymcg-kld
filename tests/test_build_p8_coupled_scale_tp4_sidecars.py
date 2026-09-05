@@ -8,9 +8,25 @@ from safetensors.torch import save_file
 from glm53_nvfp4.build_p8_coupled_scale_tp4_sidecars import (
     _load_rank_coupled,
     _payload_rates,
+    _rank_metadata,
     expected_metadata_bpw,
 )
-from glm53_nvfp4.p8_coupled_scale import COUPLED_BOUNDARY, COUPLED_CHUNK_SCHEMA
+from glm53_nvfp4.p8_coupled_scale import (
+    COUPLED_ACTIVATION,
+    COUPLED_BOUNDARY,
+    COUPLED_CAST_ORDER,
+    COUPLED_CHUNK_SCHEMA,
+    COUPLED_FC1_INTERLEAVE,
+    COUPLED_QUANTIZED_DOWN_ORDER,
+    COUPLED_QUANTIZED_INPUT_ORDER,
+    COUPLED_SIGN_DRAW,
+    COUPLED_SIGN_GENERATOR,
+    COUPLED_TP_SLICE,
+    COUPLED_TRANSFORM_ID,
+    COUPLED_TRANSFORM_SHA256,
+    _tensor_sha256,
+    rank_local_coupled_signs,
+)
 
 
 def _write_chunk(path: Path, start: int, stop: int, *, shared_marker: float = 1.0):
@@ -28,7 +44,7 @@ def _write_chunk(path: Path, start: int, stop: int, *, shared_marker: float = 1.
             (stop - start, intermediate), -0.5, dtype=torch.float16
         ),
         "coupled.intermediate_draw_u8": torch.tensor(
-            [expert % 8 for expert in range(start, stop)], dtype=torch.uint8
+            [COUPLED_SIGN_DRAW for _ in range(start, stop)], dtype=torch.uint8
         ),
     }
     for expert in range(start, stop):
@@ -61,8 +77,18 @@ def _write_chunk(path: Path, start: int, stop: int, *, shared_marker: float = 1.
             "scale": "ue8m0-k32",
             "law": "procedural-mcg-alpha2",
             "boundary": COUPLED_BOUNDARY,
-            "activation": "clipped-silu10",
-            "cast_order": "bf16-fp16-h512-fp16-suh-h128-e4m3",
+            "activation": COUPLED_ACTIVATION,
+            "cast_order": COUPLED_CAST_ORDER,
+            "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+            "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+            "transform_id": COUPLED_TRANSFORM_ID,
+            "encoder_transform_sha256": COUPLED_TRANSFORM_SHA256,
+            "sign_generator": COUPLED_SIGN_GENERATOR,
+            "sign_draw": str(COUPLED_SIGN_DRAW),
+            "sign_pre_axis": "1",
+            "sign_post_axis": "2",
+            "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+            "tp_slice": COUPLED_TP_SLICE,
             "ldlq": "false",
             "encoder": "gptq-feedback-static-in-group-act-order",
             "fc1_trellis_slot_order": "gate-up",
@@ -107,6 +133,43 @@ def test_production_metadata_contract_is_about_point_zero_zero_four_bpw():
     rate = expected_metadata_bpw(hidden=4096, intermediate=2048)
     assert rate == pytest.approx(0.003979859528718171, abs=1e-18)
     assert 4.25 + rate == pytest.approx(4.253979859528719, abs=1e-15)
+
+
+def test_rank_header_matches_runtime_full_coupled_contract_and_hashes(tmp_path: Path):
+    tensors, _, design_hash, scale_hash = _load_rank_coupled(
+        _chunks(tmp_path), layer=3, rank=2, world_size=4
+    )
+    _, _, _, metadata_bpw = _payload_rates(tensors)
+    metadata = _rank_metadata(
+        tensors,
+        layer=3,
+        rank=2,
+        design_sha256=design_hash,
+        scale_source_sha256=scale_hash,
+        metadata_bpw=metadata_bpw,
+    )
+    assert metadata["schema"] == "glm53-p8-coupled-h512-h128-tp4-rank.v1"
+    assert metadata["activation"] == "silu-cap10"
+    assert metadata["sign_draw"] == "0"
+    assert metadata["global_intermediate"] == "128"
+    assert metadata["local_atom_begin"] == "2"
+    assert metadata["encoder_transform_sha256"] == COUPLED_TRANSFORM_SHA256
+    signs = rank_local_coupled_signs(intermediate=32, rank=2)
+    assert metadata["sha256_coupled_signs_fp16"] == _tensor_sha256(signs)
+    for name, tensor in tensors.items():
+        assert metadata[f"sha256_{name}"] == _tensor_sha256(tensor)
+
+
+def test_coupled_builder_rejects_any_nonzero_unregistered_draw(tmp_path: Path):
+    chunks = _chunks(tmp_path)
+    changed = chunks[0]
+    with safe_open(changed, framework="pt", device="cpu") as src:
+        tensors = {name: src.get_tensor(name) for name in src.keys()}
+        metadata = src.metadata()
+    tensors["coupled.intermediate_draw_u8"][0] = 1
+    save_file(tensors, changed, metadata=metadata)
+    with pytest.raises(RuntimeError, match="geometry/dtype"):
+        _load_rank_coupled(chunks, layer=3, rank=0, world_size=4)
 
 
 def test_coupled_builder_fails_closed_on_shared_scale_change(tmp_path: Path):

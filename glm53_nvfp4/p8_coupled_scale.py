@@ -21,9 +21,23 @@ from .shard_index import sha256_file
 
 
 COUPLED_BOUNDARY = "coupled-h512-h128-suh-svh-v1"
-COUPLED_CHUNK_SCHEMA = "glm53-hessian-trellis-p8-coupled-scale-layer-chunk.v1"
-COUPLED_RANK_SCHEMA = "glm53-p8-mcg-coupled-scale-tp4-rank.v1"
-COUPLED_SIDECAR_SCHEMA = "glm53-p8-mcg-coupled-scale-tp4-sidecars.v1"
+COUPLED_CHUNK_SCHEMA = "glm53-hessian-trellis-p8-coupled-scale-layer-chunk.v2"
+COUPLED_RANK_SCHEMA = "glm53-p8-coupled-h512-h128-tp4-rank.v1"
+COUPLED_SIDECAR_SCHEMA = "glm53-p8-mcg-coupled-scale-tp4-sidecars.v2"
+COUPLED_COMPONENT = "p8-coupled-h512-h128-sign-v1"
+COUPLED_CAST_ORDER = "luke-qsrt-coupled-reference-v1"
+COUPLED_TRANSFORM_ID = "normalized-h512-outer-h128-inner-sign-draw0-v1"
+COUPLED_SIGN_GENERATOR = "qsrt-coupled-signs-v1"
+COUPLED_SIGN_DRAW = 0
+COUPLED_ACTIVATION = "silu-cap10"
+COUPLED_FC1_INTERLEAVE = "slot0-atom32-slot1-atom32-v1"
+COUPLED_TP_SLICE = "contiguous-atom32-v1"
+COUPLED_QUANTIZED_INPUT_ORDER = (
+    "bf16-cvt-rn-fp16-h512-fp32-suh-fp32-h128-fp32-e4m3-ue8m0-k32"
+)
+COUPLED_QUANTIZED_DOWN_ORDER = (
+    "silu-cap10-fp32-sign-h128-fp32-down-suh-fp32-h128-fp32-e4m3-ue8m0-k32"
+)
 SUPPORTED_LAYERS = (3, 20, 22)
 HADAMARD_INPUT = 128
 HADAMARD_RESIDUAL = 512
@@ -80,6 +94,30 @@ def rotation_signs(length: int, *, draw: int, axis: int) -> torch.Tensor:
         & ((1 << 63) - 1)
     )
     return torch.randint(0, 2, (length,), generator=generator).mul_(2).sub_(1).float()
+
+
+def rank_local_coupled_signs(
+    *, intermediate: int, rank: int, world_size: int = 4
+) -> torch.Tensor:
+    """Return runtime's packed rank-local ``pre[2I] | post[I]`` FP16 signs."""
+    if intermediate % 32 or world_size != 4 or rank not in range(world_size):
+        raise ValueError("coupled signs require an atom32-aligned TP4 slice")
+    global_intermediate = intermediate * world_size
+    first_atom = rank * (intermediate // 32)
+    pre = rotation_signs(
+        2 * global_intermediate, draw=COUPLED_SIGN_DRAW, axis=1
+    )
+    post = rotation_signs(
+        global_intermediate, draw=COUPLED_SIGN_DRAW, axis=2
+    )
+    pre_begin = 2 * first_atom * 32
+    post_begin = first_atom * 32
+    return torch.cat(
+        (
+            pre[pre_begin : pre_begin + 2 * intermediate],
+            post[post_begin : post_begin + intermediate],
+        )
+    ).to(torch.float16).contiguous()
 
 
 def _validate_scale(name: str, value: torch.Tensor, shape: tuple[int, ...]) -> None:
@@ -169,6 +207,27 @@ def _canonical_json(value: object) -> bytes:
         )
         + "\n"
     ).encode()
+
+
+COUPLED_TRANSFORM_CONTRACT = {
+    "activation": COUPLED_ACTIVATION,
+    "boundary": COUPLED_BOUNDARY,
+    "cast_order": COUPLED_CAST_ORDER,
+    "fc1_interleave": COUPLED_FC1_INTERLEAVE,
+    "h128": "normalized-sylvester-128-v1",
+    "h512": "normalized-sylvester-512-v1",
+    "quantized_down_order": COUPLED_QUANTIZED_DOWN_ORDER,
+    "quantized_input_order": COUPLED_QUANTIZED_INPUT_ORDER,
+    "sign_draw": COUPLED_SIGN_DRAW,
+    "sign_generator": COUPLED_SIGN_GENERATOR,
+    "sign_post_axis": 2,
+    "sign_pre_axis": 1,
+    "tp_slice": COUPLED_TP_SLICE,
+    "transform_id": COUPLED_TRANSFORM_ID,
+}
+COUPLED_TRANSFORM_SHA256 = hashlib.sha256(
+    _canonical_json(COUPLED_TRANSFORM_CONTRACT)
+).hexdigest()
 
 
 def _verify_json_seal(value: dict[str, object], field: str) -> str:
@@ -520,12 +579,17 @@ def encode_coupled_scale_weights(
 def coupled_input_carrier(
     hidden: torch.Tensor, gate_up_suh: torch.Tensor, *, quantize: bool
 ) -> torch.Tensor:
-    """BF16 -> FP16 -> H512 -> FP16 suh -> H128 -> optional native A8."""
+    """Coupled input carrier with the archived quantized/nonquantized cast fork."""
     if hidden.ndim != 2 or hidden.shape[1] != gate_up_suh.numel():
         raise ValueError("hidden rows do not match gate_up_suh")
     work = hidden.to(torch.bfloat16).to(torch.float16).float()
     work = block_hadamard(work, block_size=HADAMARD_RESIDUAL)
-    work = (work * gate_up_suh.to(work.device).float()).to(torch.float16).float()
+    work = work * gate_up_suh.to(work.device).float()
+    # Luke's quantized-activation branch retains H512*suh through H128 in
+    # FP32 before E4M3.  Only its explicit nonquantized closure branch stores
+    # this boundary in FP16.
+    if not quantize:
+        work = work.to(torch.float16).float()
     work = block_hadamard(work, block_size=HADAMARD_INPUT)
     return _qdq_e4m3_k32(work, 1.0, "amax").float() if quantize else work
 
@@ -556,7 +620,11 @@ def coupled_middle_carrier(
     middle = F.silu(gate) * up
     post_signs = rotation_signs(middle.shape[1], draw=intermediate_draw, axis=2).to(raw.device)
     middle = block_hadamard(middle * post_signs, block_size=HADAMARD_INPUT)
-    middle = (middle * scales.down_suh[expert].to(raw.device).float()).to(torch.float16).float()
+    middle = middle * scales.down_suh[expert].to(raw.device).float()
+    # Match the same archived fork on the down carrier: the native E4M3 path
+    # keeps activated*down_suh through H128 in FP32.
+    if not quantize:
+        middle = middle.to(torch.float16).float()
     middle = block_hadamard(middle, block_size=HADAMARD_INPUT)
     return _qdq_e4m3_k32(middle, 1.0, "amax").float() if quantize else middle
 
