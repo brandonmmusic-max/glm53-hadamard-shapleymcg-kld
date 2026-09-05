@@ -731,6 +731,23 @@ confirmation, and final roles remained unopened for this redesign branch.
   source compatibility, not all-layer device closure or KLD quality. P8 uses
   twice NVFP4's MMA issue count; its speed remains unmeasured.
 
+## 2026-09-05: Decision 29 — report the completed native all-layer measurement
+
+- Outcome of pre-result Decisions 25/28, not a retroactive gate: all 42 routed
+  layers and 168 TP4 sidecars completed; native all-layer KLD is
+  `0.04002139481676188`, window BCa 95% CI `[0.03377817, 0.04825257]`.
+- Audit passed 32 windows, 65,504 causal positions, and 168/168 native
+  weight-ready and forward pairs. No protected roles or LDLQ were used.
+- Historical contextual comparison: 24.957189% lower, 28/32 wins, paired delta
+  `-0.01331002`, BCa 95% CI `[-0.02010227, -0.00757892]`. Different rate,
+  quantized-layer coverage and EP/DCP topology prevent a matched codec claim.
+- Preserve the predeclared speed gate. Its first EXL3 arm failed before
+  measurement with checkpoint TP2/runtime TP4 mismatch. No speed win exists;
+  allocation stays stopped. Preserve the failed logs before any compatibility
+  amendment or rerun. P8 remains a twice-NVFP4-MMA-issue quality path.
+- Receipts and limitations: `results/P8_FULLMODEL_CF32.md` and
+  `evidence/opened/codec-v2/uniform-p8-all42-v1/`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
