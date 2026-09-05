@@ -1,5 +1,15 @@
 # EXL3 cold-start determinism audit
 
+> Correction, 2026-09-05: the later exact-image dispatch audit in
+> `EXL3_DETERMINISTIC_OUTPUT_PATH_AUDIT.md` supersedes this report's atomic
+> **output-reduction** attribution/rival. Production EXL3 `trellis_t256`
+> full-rotation writes per-route FC2 results and uses a fixed-router-order
+> top-k reducer; it does not enter the packed-path atomic fused sum. The
+> general deterministic-output environment option is inert for W4A16. The
+> measured cold-start mismatches below remain valid, but their cause remains
+> unresolved. Original diagnostic reasoning is preserved below for chronology,
+> not as an established description of the selected output-reduction path.
+
 Date: 2026-09-05
 
 Status: post-hoc, read-only diagnostic
