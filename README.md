@@ -37,6 +37,14 @@ The next runtime candidate ports B12X's small-M route/slice scheduling geometry
 while retaining P8's MCG-to-E4M3 Tensor Core arithmetic and deterministic
 reduction. See the [decode attribution report](results/P8_DECODE_NSYS_V1.md).
 
+That first opt-in M1 port now compiles and is bit-exact to the frozen baseline.
+On a single-GPU identical-workload layer call, 20 warmups plus 100 CUDA-event
+samples measured 1.134288 ms baseline versus 0.313248 ms candidate: **72.38%
+lower device time (3.62x)**. M2/M3 fallback hashes also match exactly. This is
+developmental eager kernel evidence, not CUDA-graph serving tokens/s; captured
+four-rank integration remains open. See the
+[first device report](results/P8_SMALLM_DEVICE_V1.md).
+
 ### Earlier codec redesign results (2026-09-04)
 
 The no-LDLQ P8 redesign now has a matched-path numerical gate. Its encoder
