@@ -1,6 +1,6 @@
 # Rotation V8: shared middle-butterfly train32 search
 
-Status: **adaptive fit search passed; `p00625` advances to tune32**.
+Status: **fit/train32 selected `p00625`; the disjoint tune32 gate failed**.
 
 V8 replaces the per-block selector with one compact SO(16) butterfly shared by
 all 288 layer-3 experts and all down-projection K16 blocks. Gate/up remain the
@@ -35,16 +35,45 @@ and does not establish a qualified improvement. The same arm is 4.9462%
 better than the matched zero-angle encoder, showing that the rotation more than
 repays the down re-encoding penalty.
 
-All four domain means are within the prospective tune guard versus stock. The
-only numerically worse domain is legal by `+0.00000279`, far below the
-`+0.0005` limit. The independent tune32 run remains decisive.
+All four train32 domain means were within the prospective tune guard versus
+stock. The independent tune32 result below is the authoritative transport
+check.
+
+## Disjoint tune32 result
+
+| Arm | Mean KLD | Delta vs stock | Relative change vs stock |
+| --- | ---: | ---: | ---: |
+| Fresh stock ModelOpt NVFP4 | 0.0363378694 | baseline | baseline |
+| Matched GPTQ/identity | 0.0364762391 | +0.0001383697 | +0.3808% worse |
+| `p00625` | 0.0371841305 | +0.0008462611 | +2.3289% worse |
+
+`p00625` still wins 20/32 windows, but the paired BCa interval versus stock is
+`[-0.00110295,+0.00468556]` and both general (`+0.00308741`) and legal
+(`+0.00292800`) violate the prospective `+0.0005` domain guard. It fails all
+four registered checks. Thus the train improvement did not transport as a
+standalone 4.5-bpw NVFP4 rotation claim.
+
+All three KLD manifests completed. After the candidate manifest was written,
+the wrapper exited 127 because `run_kld_v3.sh` was edited while its long-lived
+shell was still reading it. No KLD row was rerun or modified. The preserved
+final server log was copied bit-for-bit to the expected rotation-log filename,
+the existing runtime verifier passed all four ranks, and the frozen analyzer
+was run once over the completed manifests. `tune32-execution-v1.json` records
+that recovery and every relevant hash.
 
 ## Interpretation boundary
 
 The local fitted reconstruction ratio was lowest near `abs(angle)=pi/8`, while
-causal KLD selected `+pi/16`. This is evidence that the fitted Hessian remains
-useful for constructing candidates but is not a sufficient end-to-end ranking
-objective. It is not evidence to restart the project or discard rotation.
+train32 causal KLD selected `+pi/16`, and tune32 reversed that result. This is
+evidence that neither fitted Hessian error nor one opened 32-window split is a
+sufficient end-to-end ranking objective. It does not establish a rotation
+quality gain.
+
+Decision 21 was committed before tune closed: the fixed `+pi/16` arm receives
+one combined 4.25-bpw TrellisMX-P8 interaction test regardless of this outcome.
+That test asks whether the rotation is useful inside the codec, not whether
+the standalone 4.5-bpw result transported. No replacement angle or reroll is
+allowed.
 
 This is a 4.5-bpw native-NVFP4 rotation experiment, not the separate 4.25-bpw
 P8 trellis product. It does not yet establish a fused prologue, speed, an
@@ -57,3 +86,5 @@ confirmation, final, and the reserved confirmation logits remain unopened.
 - `train32-execution-v2.json`: `02b2cee4d47a7d567c3c2c08fbd4ba06c121f97624b6f516161824fd6088b994`
 - Sealed execution plan: `ecd06ebc9959ba2c966fdfe2eb3f9954232ef9c93cf44fe13e126cff84ebba64`
 - Verified 32-file teacher subset: `5a9ae6c070007dc1d2ac9dbf92fa194ab6ef938b95b10409d0474073ad5448c2`
+- `tune32-analysis-v1.json`: `105c54116f1230225c1cdb26714497a456880c21de866be63d26526446df467c`
+- `tune32-execution-v1.json`: `86c4b9958135e409284e2061f60817ff1bd5322549c811149f00b4636dfa6d65`
