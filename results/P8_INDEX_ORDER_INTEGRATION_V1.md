@@ -1,14 +1,51 @@
 # Corrected-index full-model forced-decode canary v1
 
-Status: design before serving execution. This stage returns to full-model
-numerical closure after the five-process synthetic kernel pass; it is not
-another encoder screen or a substitute for the conditional-fit32 KLD panel.
+Status: **full-model canary passed**, 2026-09-05 09:40:26 UTC. Both corrected
+N128 runs and the corrected N64/consolidated-scratch run produced identical
+raw logits across all 2,047 rows and 154,880 vocabulary columns. There were
+zero differing values in every pair. This is not a substitute for the full
+conditional-fit32 KLD panel, which remains unmeasured on this decode path.
 
 The frozen plan is `experiments/p8-index-order-integration-v1.json`, SHA256
 `5514b3f29db3aad7e88327f1af336013b35f951aa49c96d3846bd0d0a7833e0f`.
 It binds 52 source files. Before launch, 163 focused CPU tests passed, the
 exact-image serving-import receipt verified, and independent lifecycle review
 found no blocking issue. These checks are not integrated GPU results.
+
+## Observed result and preservation
+
+Three fresh TP4 processes ran in the declared order from 09:34:35 to09:40:26
+UTC. All captured the complete forced causal sequence, passed the source,
+four-rank corrected-index/FULL/M1/V2/warmup checks, and exited with clean
+owned-container shutdown. Peak sampled temperature was66C. Prior backend
+active/timer inactive states were restored, and all52 frozen source hashes
+still matched. No teacher or protected role was opened.
+
+All three raw captures have SHA256
+`42b776bf0be519c2ce06f1fee4e342ed4c955d48c2af17d74451a9d68d8de3a1`.
+The root execution receipt is
+`4836ed7d6d94880c6bef90433adddaf55ff7fe5977a36b7dafa711ba6d1f30a6`;
+the N128-repeat comparison is
+`7b6dbef3df05831f00d9c554a7096bd05535aa6a58a81d4d7305a241674228f8`;
+the two N64 comparisons are
+`b29dd5b819aee2c7a5885162276e39931fc994695521b656b78bfa1d83085d76`.
+An independent agent checked each stage's17 artifact hashes, runtime logs,
+causal alignment, and raw-array equality. The terminal-only snapshot helper
+also replayed all three comparisons and verified ownership, chronology,
+restoration and source identities. Its44 CPU tests passed.
+
+Portable evidence is under
+`evidence/opened/codec-v2/p8-index-order-integration-v1/`. Raw captures remain
+local at the plan's output path, preserved by hash; private logs, environment,
+requests and model outputs were not uploaded. Reproduce the CPU preservation
+with `python3 scripts/snapshot_p8_index_order_integration.py --help` for the
+fresh-output interface; an existing snapshot is never overwritten.
+
+The observed repeatability defect is resolved on this one canary; the result
+does not prove universal serving determinism, correct incomplete-tail handling,
+full32 quality, or unchanged speed. Next is a separately sealed two-process
+full32 N128/N64 capture using these passed prerequisites, followed by teacher
+KLD. The canary need not be rerun merely to fit the older four-stage schema.
 
 ## Evidence and intervention
 

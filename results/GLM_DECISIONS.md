@@ -1451,6 +1451,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   defect; no final quality/allocation gate advances. See
   results/P8_INDEX_ORDER_INTEGRATION_V1.md.
 
+## 2026-09-05: Decision 65 — corrected full-model canary passed; proceed to full32
+
+- Plan5514b3... completed all three new TP4 processes. Both N128 repeats and
+  optimized N64 produced the same complete2047x154880 raw logits, hash42b776....
+  Root4836ed... records clean restoration/source identity and no teacher or
+  protected-role access. Peak66C; independent artifact and array replay passed.
+- This passes the declared canary only. Preserve the prior failed runs and
+  the separate incomplete-KPool-tail omission; no new speed or KLD claim.
+- Next use two fresh full32 processes (N128 thenN64), authenticating these
+  passed canary receipts rather than rerunning/fabricating old schema stages.
+  Retain8 windows per domain,2047 rows each, exact closure and separate CPU
+  KL(teacher||student)/paired window BCa measurement. A mismatch remains a
+  closure failure even if its KLD is favorable. Freeze the full protocol
+  separately before collection. No allocation or protected qualification yet.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
