@@ -21,6 +21,11 @@ def main() -> None:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--expert-limit", type=int)
+    parser.add_argument(
+        "--source-metadata-exact",
+        action="store_true",
+        help="preserve the codec metadata byte-for-byte instead of adding a decode role",
+    )
     args = parser.parse_args()
     for path in (args.output, args.receipt):
         if path.exists():
@@ -79,11 +84,12 @@ def main() -> None:
                 print(json.dumps({"decoded_tensors": index}), flush=True)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    save_file(
-        decoded,
-        str(args.output),
-        metadata={**metadata, "role": "decoded-device-closure-reference"},
+    output_metadata = (
+        metadata
+        if args.source_metadata_exact
+        else {**metadata, "role": "decoded-device-closure-reference"}
     )
+    save_file(decoded, str(args.output), metadata=output_metadata)
     receipt = {
         "schema": "glm53-p8.trellis-mxf-bf16-decode.v1",
         "codec": str(args.codec.resolve()),
@@ -94,6 +100,11 @@ def main() -> None:
         "weight_tensors": len(decoded),
         "expert_limit": args.expert_limit,
         "codebook_source": codebook_source,
+        "metadata_mode": (
+            "source-exact"
+            if args.source_metadata_exact
+            else "decoded-device-closure-reference"
+        ),
         "decode": "bit-exact procedural-MCG trellis plus E4M3 codebook and UE8M0/32 scales, then BF16 round",
         "elapsed_seconds": time.time() - started,
         "ldlq": False,

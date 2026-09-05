@@ -245,3 +245,10 @@ SHA-256 hashes are hard pre-KLD gates, output goes to the fast NVMe, and the
 additional storage ceiling is 14.5 GB.  It changes no encoder, arm, role,
 threshold, or protected boundary.  Receipt:
 `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-2.json`.
+
+Amendment 3 preserves the hard-gate failure from the first reconstruction:
+the current closure decoder added one metadata role, making every container
+exactly 40 bytes larger without changing decoder arithmetic.  A new explicit
+source-metadata-exact mode reproduces the historical builder's serialization;
+the same four historical hashes remain mandatory before KLD.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-3.json`.
