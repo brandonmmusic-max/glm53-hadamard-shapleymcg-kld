@@ -29,6 +29,14 @@ the allocation game is stopped. This is a different-topology system result,
 not codec-only causality. See the [KLD report](results/P8_FULLMODEL_CF32.md)
 and [speed report](results/P8_SPEED_V2A3.md).
 
+The follow-on four-rank Nsight trace confirms that C1 used FULL CUDA-graph
+replay and true M1 execution. The fused TrellisMX MoE kernels consume about
+39.3-39.5 ms of a 47.6 ms graph on the two critical ranks (82.6-83.0%); explicit
+fills consume only 0.69-0.83 ms and the separate top-k reduction about 0.03 ms.
+The next runtime candidate ports B12X's small-M route/slice scheduling geometry
+while retaining P8's MCG-to-E4M3 Tensor Core arithmetic and deterministic
+reduction. See the [decode attribution report](results/P8_DECODE_NSYS_V1.md).
+
 ### Earlier codec redesign results (2026-09-04)
 
 The no-LDLQ P8 redesign now has a matched-path numerical gate. Its encoder
