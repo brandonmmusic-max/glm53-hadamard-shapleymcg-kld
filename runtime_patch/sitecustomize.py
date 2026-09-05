@@ -132,6 +132,17 @@ if P8_NATIVE:
     if not _P8N_DESIGN.is_file():
         raise RuntimeError(f"missing P8 native design: {_P8N_DESIGN}")
     _P8N_DESIGN_SHA256 = hashlib.sha256(_P8N_DESIGN.read_bytes()).hexdigest()
+    _P8N_TRANSFORM_TEXT = os.environ.get(
+        "GLM53_P8_NATIVE_TRANSFORM", ""
+    ).strip()
+    _P8N_TRANSFORM_SHA256 = None
+    if _P8N_TRANSFORM_TEXT:
+        _P8N_TRANSFORM = Path(_P8N_TRANSFORM_TEXT)
+        if not _P8N_TRANSFORM.is_file():
+            raise RuntimeError(f"missing P8 encoder transform: {_P8N_TRANSFORM}")
+        _P8N_TRANSFORM_SHA256 = hashlib.sha256(
+            _P8N_TRANSFORM.read_bytes()
+        ).hexdigest()
     _P8N_LAYER_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
     _P8N_ORIGINAL_UNQUANTIZED_PROCESS = (
         _P8NativeUnquantizedFusedMoEMethod.process_weights_after_loading
@@ -181,6 +192,7 @@ if P8_NATIVE:
             tp_rank=rank,
             layer=layer_id,
             expected_design_sha256=_P8N_DESIGN_SHA256,
+            expected_transform_sha256=_P8N_TRANSFORM_SHA256,
             topk=8,
             hidden=4096,
             intermediate=512,
@@ -193,17 +205,20 @@ if P8_NATIVE:
         _p8n_scale_component = (
             layer._glm53_p8_native_runtime.scale_component is not None
         )
-        _p8n_boundary = (
-            "h128-suh-svh-scale-component"
-            if _p8n_scale_component
-            else "identity"
-        )
+        _p8n_full_coupled = layer._glm53_p8_native_runtime.full_coupled
+        _p8n_boundary = "identity"
+        if _p8n_scale_component:
+            _p8n_boundary = "h128-suh-svh-scale-component"
+        if _p8n_full_coupled:
+            _p8n_boundary = "coupled-h512-h128-suh-svh-v1"
         print(
             "GLM53_P8_NATIVE_WEIGHTS_READY "
             f"layer={layer_id} rank={rank} sidecar={sidecar} "
             f"design_sha256={_P8N_DESIGN_SHA256} released_carrier_bytes={released} "
+            f"transform_sha256={_P8N_TRANSFORM_SHA256 or 'none'} "
             "stream=K4 law=mcg alphabet=E4M3 scale=UE8M0_K32 "
-            f"boundary={_p8n_boundary} full_coupled=false ldlq=false",
+            f"boundary={_p8n_boundary} "
+            f"full_coupled={str(_p8n_full_coupled).lower()} ldlq=false",
             f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
             flush=True,
         )
@@ -237,11 +252,18 @@ if P8_NATIVE:
             )
             layer._glm53_p8_m1_dispatch_logged = True
         if not getattr(layer, "_glm53_p8_native_forward_logged", False):
+            runtime = layer._glm53_p8_native_runtime
+            boundary = "identity"
+            if runtime.scale_component is not None:
+                boundary = "h128-suh-svh-scale-component"
+            if runtime.full_coupled:
+                boundary = "coupled-h512-h128-suh-svh-v1"
             print(
                 "GLM53_P8_NATIVE_FORWARD "
                 f"layer={layer._glm53_p8_layer} rank={layer._glm53_p8_tp_rank} "
                 "stream=K4 mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
-                "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
+                f"law=procedural_mcg boundary={boundary} "
+                "deterministic=route_topk_sum "
                 "physical_bpw=4.25 ldlq=false",
                 f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
                 flush=True,

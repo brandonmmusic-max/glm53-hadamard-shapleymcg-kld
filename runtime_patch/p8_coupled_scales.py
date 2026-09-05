@@ -15,9 +15,15 @@ import torch
 
 
 SCHEMA = "glm53-p8-coupled-scale-component-tp4-rank.v1"
+COUPLED_SCHEMA = "glm53-p8-coupled-h512-h128-tp4-rank.v1"
 COMPONENT = "p8-suh-svh-scale-sandwich-v1"
+COUPLED_COMPONENT = "p8-coupled-h512-h128-sign-v1"
 COMPOSITION_TARGET = "coupled-h512-h128-suh-svh-v1"
 CAST_ORDER = "mul-f32-cvt-rn-f16-h128"
+COUPLED_CAST_ORDER = "luke-qsrt-coupled-reference-v1"
+SIGN_GENERATOR = "qsrt-coupled-signs-v1"
+SIGN_DRAW = 0
+TRANSFORM_ID = "normalized-h512-outer-h128-inner-sign-draw0-v1"
 
 SCALE_NAMES = (
     "gate_up_suh_fp16",
@@ -78,6 +84,9 @@ class P8ScaleSandwich:
     gate_up_suh: torch.Tensor
     intermediate_scales: torch.Tensor
     down_svh: torch.Tensor
+    coupled_signs: torch.Tensor | None = None
+    full_coupled: bool = False
+    transform_sha256: str | None = None
 
     @property
     def packed(self) -> torch.Tensor:
@@ -86,12 +95,75 @@ class P8ScaleSandwich:
                 self.gate_up_suh.reshape(-1),
                 self.intermediate_scales.reshape(-1),
                 self.down_svh.reshape(-1),
+                *(
+                    (self.coupled_signs.reshape(-1),)
+                    if self.coupled_signs is not None
+                    else ()
+                ),
             )
         ).contiguous()
 
     def split_intermediate(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         intermediate = self.intermediate_scales.shape[1] // 3
         return self.intermediate_scales.split(intermediate, dim=1)
+
+    def split_signs(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.coupled_signs is None:
+            raise RuntimeError("scale-only P8 component has no coupled signs")
+        intermediate = self.coupled_signs.numel() // 3
+        return self.coupled_signs[: 2 * intermediate], self.coupled_signs[2 * intermediate :]
+
+
+def qsrt_coupled_signs_reference(
+    length: int,
+    *,
+    draw: int,
+    axis: int,
+) -> torch.Tensor:
+    """Luke/QSRT fixed sign generator, byte-identical on CPU."""
+
+    if draw == 0:
+        return torch.ones(length, dtype=torch.float16)
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(
+        (0x6A09E667F3BCC909 * draw + 0xBB67AE8584CAA73B * axis)
+        & ((1 << 63) - 1)
+    )
+    return (
+        torch.randint(0, 2, (length,), generator=generator)
+        .mul_(2)
+        .sub_(1)
+        .to(torch.float16)
+    )
+
+
+def rank_local_coupled_signs(
+    *,
+    intermediate: int,
+    rank: int,
+    world_size: int = 4,
+    draw: int = SIGN_DRAW,
+) -> torch.Tensor:
+    """Generate the contiguous atom32 TP slice used by the encoder/runtime."""
+
+    if intermediate % 32 or rank not in range(world_size):
+        raise ValueError("coupled signs require an atom32-aligned valid TP slice")
+    global_intermediate = intermediate * world_size
+    first_atom = rank * (intermediate // 32)
+    pre_global = qsrt_coupled_signs_reference(
+        2 * global_intermediate, draw=draw, axis=1
+    )
+    post_global = qsrt_coupled_signs_reference(
+        global_intermediate, draw=draw, axis=2
+    )
+    pre_begin = 2 * first_atom * 32
+    post_begin = first_atom * 32
+    return torch.cat(
+        (
+            pre_global[pre_begin : pre_begin + 2 * intermediate],
+            post_global[post_begin : post_begin + intermediate],
+        )
+    ).contiguous()
 
 
 def validate_scale_component(
@@ -170,6 +242,166 @@ def validate_scale_component(
     )
 
 
+def validate_coupled_component(
+    metadata: Mapping[str, str],
+    tensors: Mapping[str, torch.Tensor],
+    *,
+    layer: int,
+    rank: int,
+    experts: int,
+    hidden: int,
+    intermediate: int,
+    expected_transform_sha256: str | None = None,
+) -> P8ScaleSandwich:
+    """Fail-closed validation for the complete H512/H128/sign candidate."""
+
+    transform_sha256 = metadata.get("encoder_transform_sha256")
+    if (
+        not isinstance(transform_sha256, str)
+        or len(transform_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in transform_sha256)
+    ):
+        raise RuntimeError("coupled P8 sidecar lacks encoder transform identity")
+    if (
+        expected_transform_sha256 is not None
+        and transform_sha256 != expected_transform_sha256
+    ):
+        raise RuntimeError("coupled P8 encoder/runtime transform identity mismatch")
+
+    local_atoms = intermediate // 32
+    required = {
+        "schema": COUPLED_SCHEMA,
+        "layer": str(layer),
+        "rank": str(rank),
+        "world_size": "4",
+        "component": COUPLED_COMPONENT,
+        "composition_target": COMPOSITION_TARGET,
+        "boundary": COMPOSITION_TARGET,
+        "cast_order": COUPLED_CAST_ORDER,
+        "full_coupled": "true",
+        "h512": "normalized-sylvester-512-v1",
+        "h128": "normalized-sylvester-128-v1",
+        "transform_id": TRANSFORM_ID,
+        "fc1_interleave": "slot0-atom32-slot1-atom32-v1",
+        "sign_generator": SIGN_GENERATOR,
+        "sign_draw": str(SIGN_DRAW),
+        "sign_pre_axis": "1",
+        "sign_post_axis": "2",
+        "activation": "silu-cap10",
+        "global_intermediate": str(intermediate * 4),
+        "local_atom_begin": str(rank * local_atoms),
+        "tp_slice": "contiguous-atom32-v1",
+        "gate_up_suh_shared": "true",
+        "down_svh_shared": "true",
+        "coupled_signs_shared": "true",
+        "signed_scales": "true",
+    }
+    mismatches = {
+        key: (metadata.get(key), expected)
+        for key, expected in required.items()
+        if metadata.get(key) != expected
+    }
+    if mismatches:
+        raise RuntimeError(f"invalid full-coupled P8 metadata: {mismatches}")
+
+    # Reuse the tensor checks without weakening the scale-only schema.
+    scale_metadata = dict(metadata)
+    scale_metadata.update(
+        {
+            "schema": SCHEMA,
+            "component": COMPONENT,
+            "boundary": "h128-suh-svh-scale-component",
+            "cast_order": CAST_ORDER,
+            "gate_up_suh_shared": "true",
+            "down_svh_shared": "true",
+            "full_coupled": "false",
+        }
+    )
+    scales = validate_scale_component(
+        scale_metadata,
+        tensors,
+        layer=layer,
+        rank=rank,
+        experts=experts,
+        hidden=hidden,
+        intermediate=intermediate,
+    )
+    signs = rank_local_coupled_signs(intermediate=intermediate, rank=rank)
+    if metadata.get("sha256_coupled_signs_fp16") != tensor_sha256(signs):
+        raise RuntimeError("coupled P8 fixed sign seed/hash mismatch")
+    return P8ScaleSandwich(
+        gate_up_suh=scales.gate_up_suh,
+        intermediate_scales=scales.intermediate_scales,
+        down_svh=scales.down_svh,
+        coupled_signs=signs,
+        full_coupled=True,
+        transform_sha256=transform_sha256,
+    )
+
+
+def hadamard_blocks(value: torch.Tensor, size: int) -> torch.Tensor:
+    if value.ndim != 2 or value.shape[1] % size or size & (size - 1):
+        raise ValueError("Hadamard input must be rank 2 and power-of-two aligned")
+    work = value.float().reshape(-1, size).clone()
+    stride = 1
+    while stride < size:
+        work = work.view(-1, size // (2 * stride), 2, stride)
+        left = work[:, :, 0, :].clone()
+        right = work[:, :, 1, :].clone()
+        work[:, :, 0, :] = left + right
+        work[:, :, 1, :] = left - right
+        work = work.view(-1, size)
+        stride *= 2
+    return (work / (size**0.5)).view_as(value.float())
+
+
+def coupled_reference(
+    x: torch.Tensor,
+    gate_physical: torch.Tensor,
+    up_physical: torch.Tensor,
+    down_physical: torch.Tensor,
+    scales: P8ScaleSandwich,
+) -> torch.Tensor:
+    """Exact CPU topology for the complete Luke/QSRT coupled P8 boundary."""
+
+    if not scales.full_coupled:
+        raise RuntimeError("full coupled reference rejects a scale-only component")
+    gate_svh, up_svh, down_suh = scales.split_intermediate()
+    pre_signs, post_signs = scales.split_signs()
+    source = hadamard_blocks(x.to(torch.float16).float(), 512)
+    # The quantized-activation Luke branch casts the original input to FP16,
+    # then keeps H512 -> suh -> H128 in FP32 until E4M3 quantization.
+    source = hadamard_blocks(
+        source * scales.gate_up_suh.float(), 128
+    )
+    gate = (source.float() @ gate_physical.float().T).to(torch.float16)
+    up = (source.float() @ up_physical.float().T).to(torch.float16)
+    rows, width = gate.shape
+    raw = torch.stack(
+        (gate.view(rows, width // 32, 32), up.view(rows, width // 32, 32)),
+        dim=2,
+    ).reshape(rows, 2 * width)
+    scale_raw = torch.stack(
+        (
+            gate_svh[0].view(width // 32, 32),
+            up_svh[0].view(width // 32, 32),
+        ),
+        dim=1,
+    ).reshape(2 * width)
+    pre = hadamard_blocks(raw.float(), 128)
+    pre = hadamard_blocks(pre * scale_raw.float(), 128)
+    pre = pre * pre_signs.float()
+    gate_joint, up_joint = pre[:, 0::2], pre[:, 1::2]
+    gate_work = gate_joint.clamp(max=10.0)
+    up_work = up_joint.clamp(min=-10.0, max=10.0)
+    activated = gate_work * torch.sigmoid(gate_work) * up_work
+    activated = hadamard_blocks(activated * post_signs.float(), 128)
+    down_input = hadamard_blocks(activated * down_suh[0].float(), 128)
+    down = (down_input @ down_physical.float().T).to(torch.float16)
+    route = hadamard_blocks(down.float(), 128) * scales.down_svh.float()
+    return hadamard_blocks(route, 512)
+
+
 def scale_sandwich_reference(
     x: torch.Tensor,
     gate_physical: torch.Tensor,
@@ -220,12 +452,23 @@ __all__ = [
     "CAST_ORDER",
     "COMPONENT",
     "COMPOSITION_TARGET",
+    "COUPLED_CAST_ORDER",
+    "COUPLED_COMPONENT",
+    "COUPLED_SCHEMA",
     "P8ScaleSandwich",
     "SCALE_NAMES",
     "SCHEMA",
+    "SIGN_DRAW",
+    "SIGN_GENERATOR",
+    "TRANSFORM_ID",
+    "coupled_reference",
+    "hadamard_blocks",
     "had128_luke",
     "quantize_e4m3_ue8m0_per32",
     "scale_sandwich_reference",
+    "qsrt_coupled_signs_reference",
+    "rank_local_coupled_signs",
     "tensor_sha256",
     "validate_scale_component",
+    "validate_coupled_component",
 ]

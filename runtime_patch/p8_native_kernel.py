@@ -18,8 +18,10 @@ from cutlass.base_dsl.compiler import OptLevel
 from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
 from p8_coupled_scales import (
+    COUPLED_SCHEMA as P8_COUPLED_SCHEMA,
     SCALE_NAMES,
     SCHEMA as P8_SCALE_COMPONENT_SCHEMA,
+    validate_coupled_component,
     validate_scale_component,
 )
 from p8_smallm_schedule import P8SmallMGeometry, p8_small_m_scratch_layout, use_small_m
@@ -72,6 +74,7 @@ class P8NativeTPMoE:
         tp_rank: int,
         layer: int = 3,
         expected_design_sha256: str | None = None,
+        expected_transform_sha256: str | None = None,
         topk: int = 8,
         hidden: int = 4096,
         intermediate: int = 512,
@@ -142,8 +145,9 @@ class P8NativeTPMoE:
                     "glm53-p8-mcg-tp4-rank.v2",
             }
             scale_component_schema = schema == P8_SCALE_COMPONENT_SCHEMA
+            full_coupled_schema = schema == P8_COUPLED_SCHEMA
             if (
-                not (identity_schema or scale_component_schema)
+                not (identity_schema or scale_component_schema or full_coupled_schema)
                 or any(metadata.get(key) != value for key, value in base_required.items())
                 or (identity_schema and metadata.get("boundary") != "identity")
             ):
@@ -151,6 +155,7 @@ class P8NativeTPMoE:
             if schema in {
                 "glm53-p8-mcg-tp4-rank.v2",
                 P8_SCALE_COMPONENT_SCHEMA,
+                P8_COUPLED_SCHEMA,
             }:
                 if (
                     not isinstance(source_design_sha256, str)
@@ -171,7 +176,7 @@ class P8NativeTPMoE:
             w2_scale = src.get_tensor("w2_scale_ue8m0")
             scale_tensors = (
                 {name: src.get_tensor(name) for name in SCALE_NAMES}
-                if scale_component_schema
+                if scale_component_schema or full_coupled_schema
                 else None
             )
         self.source_design_sha256 = source_design_sha256
@@ -191,15 +196,26 @@ class P8NativeTPMoE:
             raise RuntimeError(f"unexpected W2 scale shape {tuple(w2_scale.shape)}")
         self.experts = experts
         self.scale_component = None
+        self.full_coupled = bool(full_coupled_schema)
+        if self.full_coupled and expected_transform_sha256 is None:
+            raise RuntimeError(
+                "full-coupled P8 requires an externally pinned encoder transform"
+            )
         if scale_tensors is not None:
-            self.scale_component = validate_scale_component(
-                metadata,
-                scale_tensors,
-                layer=self.layer,
-                rank=self.tp_rank,
-                experts=experts,
-                hidden=hidden,
-                intermediate=intermediate,
+            validator = (
+                validate_coupled_component
+                if self.full_coupled
+                else validate_scale_component
+            )
+            validator_kwargs = {}
+            if self.full_coupled:
+                validator_kwargs["expected_transform_sha256"] = (
+                    expected_transform_sha256
+                )
+            self.scale_component = validator(
+                metadata, scale_tensors, layer=self.layer, rank=self.tp_rank,
+                experts=experts, hidden=hidden, intermediate=intermediate,
+                **validator_kwargs,
             )
             if not self.small_m_scheduler or self.fc1_tile_n != 128:
                 raise RuntimeError(
@@ -265,6 +281,7 @@ class P8NativeTPMoE:
         if self.small_m_scheduler and self.trellis_bits != 4:
             raise ValueError("P8 K5 does not use the K4-only small-M specialization")
         self._compiled: dict[tuple[bool, bool], _CompiledArm] = {}
+        self._coupled_reducer = None
 
     def _compile(self, materialized: bool, small_m: bool = False) -> _CompiledArm:
         cache_key = (materialized, small_m)
@@ -287,12 +304,13 @@ class P8NativeTPMoE:
             trellis_bits=self.trellis_bits,
             trellis_codebook="mcg",
             trellis_scaled=True,
-            trellis_identity_boundary=True,
+            trellis_identity_boundary=not self.full_coupled,
             direct_routing=small_m,
             materialize_intermediate=materialized,
             p8_small_m=small_m,
             p8_fc1_tile_n=self.fc1_tile_n if small_m else 128,
             p8_scale_sandwich=self.scale_component is not None,
+            p8_full_coupled=self.full_coupled,
             share_input_across_experts=materialized,
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
@@ -354,7 +372,10 @@ class P8NativeTPMoE:
             _fake_i32((self.experts + 1,)),
             _fake_f32((self.experts,)), _fake_f32((self.experts,)),
             _fake_f32((self.experts,)), _fake_f32((self.experts,)),
-            ptr(cutlass.BFloat16, 16),
+            ptr(
+                cutlass.Float32 if self.full_coupled else cutlass.BFloat16,
+                16,
+            ),
             fake_ptr_i32(),
             ptr(cutlass.Float32, 16),
             1, 1, 1, 1, 1, 1, 1,
@@ -373,8 +394,9 @@ class P8NativeTPMoE:
                 ("topk", self.topk),
                 ("rank", self.tp_rank),
                 ("scaled", 1),
-                ("identity", 1),
+                ("identity", int(not self.full_coupled)),
                 ("scale_sandwich", int(self.scale_component is not None)),
+                ("full_coupled", int(self.full_coupled)),
                 ("codebook", "mcg"),
                 ("deterministic_output", int(self.deterministic_output)),
             ),
@@ -383,6 +405,36 @@ class P8NativeTPMoE:
         arm = _CompiledArm(compiled=compiled, tile_m=tile_m, materialized=materialized, mac=mac)
         self._compiled[cache_key] = arm
         return arm
+
+    def _compile_full_coupled_reducer(self):
+        if not self.full_coupled:
+            raise RuntimeError("coupled reducer requested for non-coupled P8")
+        if self._coupled_reducer is not None:
+            return self._coupled_reducer
+        from b12x.moe._shared.kernels.p8_coupled_topk import (
+            P8CoupledTopKSumKernel,
+        )
+
+        reducer = P8CoupledTopKSumKernel(topk=self.topk, hidden=self.hidden)
+        self._coupled_reducer = b12x_compile(
+            reducer,
+            make_ptr(cutlass.Float32, 16, cute.AddressSpace.gmem, assumed_align=16),
+            make_ptr(cutlass.Float32, 4, cute.AddressSpace.gmem, assumed_align=4),
+            make_ptr(cutlass.BFloat16, 16, cute.AddressSpace.gmem, assumed_align=16),
+            1,
+            current_cuda_stream(),
+            compile_spec=KernelCompileSpec.from_fields(
+                "glm53.p8.coupled_topk_h512",
+                1,
+                ("topk", self.topk),
+                ("hidden", self.hidden),
+                ("rank", self.tp_rank),
+                ("route_dtype", "fp32"),
+                ("output_dtype", "bf16"),
+            ),
+            dsl_compile_options=OptLevel(2),
+        )
+        return self._coupled_reducer
 
     @torch.inference_mode()
     def __call__(
@@ -490,7 +542,7 @@ class P8NativeTPMoE:
             torch.empty(
                 m * self.topk,
                 self.hidden,
-                dtype=torch.bfloat16,
+                dtype=torch.float32 if self.full_coupled else torch.bfloat16,
                 device=self.device,
             )
             if self.deterministic_output
@@ -528,7 +580,10 @@ class P8NativeTPMoE:
             _gptr(cutlass.Uint32, self.w2_sfb),
             row_counts, expert_write_rows, expert_tile_base,
             self.ones, self.ones, self.ones, self.ones,
-            _gptr(cutlass.BFloat16, kernel_output),
+            _gptr(
+                cutlass.Float32 if self.full_coupled else cutlass.BFloat16,
+                kernel_output,
+            ),
             _gptr(cutlass.Int32, token_map, 4),
             _gptr(cutlass.Float32, token_weights, 4),
             m,
@@ -543,14 +598,24 @@ class P8NativeTPMoE:
             _gptr(cutlass.Float16, self.scale_component_packed),
         )
         if self.deterministic_output:
-            _launch_dynamic_topk_sum(
-                route_output=kernel_output,
-                output=output,
-                m=m,
-                num_topk=self.topk,
-                k=self.hidden,
-                stream=current_cuda_stream(),
-            )
+            if self.full_coupled:
+                reducer = self._compile_full_coupled_reducer()
+                reducer(
+                    _gptr(cutlass.Float32, kernel_output),
+                    _gptr(cutlass.Float32, flat_weights, 4),
+                    _gptr(cutlass.BFloat16, output),
+                    m,
+                    current_cuda_stream(),
+                )
+            else:
+                _launch_dynamic_topk_sum(
+                    route_output=kernel_output,
+                    output=output,
+                    m=m,
+                    num_topk=self.topk,
+                    k=self.hidden,
+                    stream=current_cuda_stream(),
+                )
         if self.debug_capture:
             self.debug_tensors = {
                 "packed_a": packed_a, "scale_flat": scale_flat,

@@ -87,7 +87,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
     shared_bytes = sfb_storage_offset + 2 * sfb_stage_bytes
     shared_words = (shared_bytes + 3) // 4
 
-    def __init__(self, *, scale_sandwich: bool = False):
+    def __init__(
+        self, *, scale_sandwich: bool = False, full_coupled: bool = False
+    ):
         # Deliberately no codec/arithmetic toggles in this P8-only arm.
         self.source_halves = 1
         self.deterministic_output = True
@@ -96,8 +98,11 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         self.trellis_direct_lut = False
         self.trellis_codebook = "mcg"
         self.trellis_scaled = True
-        self.trellis_identity_boundary = True
         self.scale_sandwich = bool(scale_sandwich)
+        self.full_coupled = bool(full_coupled)
+        self.trellis_identity_boundary = not self.full_coupled
+        if self.full_coupled and not self.scale_sandwich:
+            raise ValueError("full-coupled P8 FC2 requires scale sandwich")
         self.trellis_lut_offset = self.shared_bytes
 
     @cute.jit
@@ -380,21 +385,32 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                 h3 = self._scale_down_after_h128(
                     h3, scale_component, output_col + Int32(3)
                 )
-                weight = token_weights[source_m_tile * Int32(16)].to(
-                    cutlass.Float32
-                )
-                scatter_output[source_m_tile, output_col] = cutlass.BFloat16(
-                    weight * h0
-                )
-                scatter_output[
-                    source_m_tile, output_col + Int32(1)
-                ] = cutlass.BFloat16(weight * h1)
-                scatter_output[
-                    source_m_tile, output_col + Int32(2)
-                ] = cutlass.BFloat16(weight * h2)
-                scatter_output[
-                    source_m_tile, output_col + Int32(3)
-                ] = cutlass.BFloat16(weight * h3)
+                if cutlass.const_expr(self.full_coupled):
+                    # The replacement deterministic reducer owns route
+                    # weighting, FP32 top-k summation and final H512. Keeping
+                    # these route values unweighted and FP32 is required: an
+                    # H512 cannot legally be applied route-by-route around the
+                    # BF16 reducer boundary.
+                    scatter_output[source_m_tile, output_col] = h0
+                    scatter_output[source_m_tile, output_col + Int32(1)] = h1
+                    scatter_output[source_m_tile, output_col + Int32(2)] = h2
+                    scatter_output[source_m_tile, output_col + Int32(3)] = h3
+                else:
+                    weight = token_weights[source_m_tile * Int32(16)].to(
+                        cutlass.Float32
+                    )
+                    scatter_output[source_m_tile, output_col] = cutlass.BFloat16(
+                        weight * h0
+                    )
+                    scatter_output[
+                        source_m_tile, output_col + Int32(1)
+                    ] = cutlass.BFloat16(weight * h1)
+                    scatter_output[
+                        source_m_tile, output_col + Int32(2)
+                    ] = cutlass.BFloat16(weight * h2)
+                    scatter_output[
+                        source_m_tile, output_col + Int32(3)
+                    ] = cutlass.BFloat16(weight * h3)
             cute.arch.sync_threads()
 
     @cute.kernel
