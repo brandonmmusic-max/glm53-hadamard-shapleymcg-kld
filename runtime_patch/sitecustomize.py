@@ -14,6 +14,18 @@ import hashlib
 from pathlib import Path
 
 
+if os.environ.get("VLLM_NVFP4_MLA_SCALE_COUNTER", ""):
+    try:
+        from nvfp4_mla_scale_counter import install_from_environment as _install_mla_counter
+
+        _install_mla_counter()
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        os._exit(78)
+
+
 if os.environ.get("GLM53_P8_INDEX_ORDER", ""):
     try:
         from p8_index_order import install as _install_index_order
