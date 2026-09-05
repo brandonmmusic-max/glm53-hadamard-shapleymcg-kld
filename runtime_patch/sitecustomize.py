@@ -24,6 +24,7 @@ ROUTED_EXPERTS_SPARSE_MLA_PATCH = os.environ.get(
 ).strip().lower()
 P8_PSEUDOQUANT = os.environ.get("GLM53_P8_PSEUDOQUANT", "").strip().lower()
 P8_NATIVE = os.environ.get("GLM53_P8_NATIVE", "").strip().lower()
+P8_SMALL_M = os.environ.get("GLM53_P8_SMALL_M", "").strip().lower()
 P4_NATIVE = os.environ.get("GLM53_P4_NATIVE", "").strip().lower()
 
 
@@ -49,6 +50,9 @@ if P8_NATIVE and P8_PSEUDOQUANT:
 if P8_NATIVE:
     if P8_NATIVE not in {"1", "true", "yes", "on"}:
         raise RuntimeError(f"invalid GLM53_P8_NATIVE={P8_NATIVE!r}")
+    if P8_SMALL_M and P8_SMALL_M not in {"1", "true", "yes", "on"}:
+        raise RuntimeError(f"invalid GLM53_P8_SMALL_M={P8_SMALL_M!r}")
+    _P8N_SMALL_M = bool(P8_SMALL_M)
     import torch as _p8n_torch
     import vllm.models.glm5next.nvidia.model as _p8n_glm_model
     from p8_native_kernel import P8NativeTPMoE as _P8NativeTPMoE
@@ -132,6 +136,7 @@ if P8_NATIVE:
             hidden=4096,
             intermediate=512,
             swiglu_limit=10.0,
+            small_m_scheduler=_P8N_SMALL_M,
         )
         released = _p8n_release_carrier_parameters(layer)
         print(
@@ -140,6 +145,7 @@ if P8_NATIVE:
             f"design_sha256={_P8N_DESIGN_SHA256} released_carrier_bytes={released} "
             "stream=K4 law=mcg alphabet=E4M3 scale=UE8M0_K32 "
             "boundary=identity ldlq=false",
+            f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
             flush=True,
         )
 
@@ -168,6 +174,7 @@ if P8_NATIVE:
                 "stream=K4 mma=mxf8f6f4 alphabet=E4M3 scale=UE8M0_K32 "
                 "law=procedural_mcg boundary=identity deterministic=route_topk_sum "
                 "physical_bpw=4.25 ldlq=false",
+                f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
                 flush=True,
             )
             layer._glm53_p8_native_forward_logged = True
@@ -248,6 +255,7 @@ if P8_NATIVE:
         f"design_sha256={_P8N_DESIGN_SHA256} K4 procedural_mcg "
         "E4M3 UE8M0_K32 identity deterministic_route_topk_sum "
         "physical_bpw=4.25 ldlq=false",
+        f"small_m_scheduler={str(_P8N_SMALL_M).lower()}",
         flush=True,
     )
 

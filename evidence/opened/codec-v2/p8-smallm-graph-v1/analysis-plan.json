@@ -1,0 +1,25 @@
+{
+  "schema": "glm53-p8-smallm-graph-plan.v1",
+  "frozen_at_utc": "2026-09-05T05:57:11Z",
+  "purpose": "Test whether the bit-exact P8 M1 route/slice scheduler remains correct and faster under fixed-address CUDA-graph replay on each of the four local GPUs.",
+  "arms": {
+    "baseline_image_sha256": "5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8",
+    "candidate_image_sha256": "c9eddeca0d9dedf210eaaff918f1bf44d5338202902143f7d646d2325ad475ed",
+    "sidecar_sha256": "264e05f4d576e6b7c058a3dd7d56829cc4d172d3f831344d5a6ef3b8ced445d0",
+    "dense_sha256": "99e0f1009784e33c8a48552703f64a47f0799626f9b960c384d9955317c47ec0"
+  },
+  "inventory": {
+    "physical_gpus": [0, 1, 2, 3],
+    "tokens": 1,
+    "rank": 0,
+    "layer": 3,
+    "eager_repeats": 5,
+    "graph_warmups": 5,
+    "graph_replays": 5,
+    "graph_timing_repeats": 100
+  },
+  "decision_rule": "Graph closure passes only if every arm on every GPU captures, produces five identical graph outputs, matches its eager output bit for bit, and the candidate graph median is lower than baseline on every GPU. Advance to integrated TP4 serving only if the candidate median reduction is at least 50 percent on every GPU.",
+  "interpretation_boundary": "Synthetic single-layer fixed-address graph replay only; not TP4 serving tokens/s, end-to-end KLD, or product qualification. The original P8 versus EXL3 product failure and allocation stop remain unchanged.",
+  "protected_roles_opened": [],
+  "ldlq": false
+}

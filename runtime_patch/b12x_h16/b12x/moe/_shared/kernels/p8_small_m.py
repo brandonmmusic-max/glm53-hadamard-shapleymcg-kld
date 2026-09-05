@@ -124,7 +124,8 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
 
         intermediate_slice = Int32(0)
         while intermediate_slice < intermediate_tiles:
-            # Baseline restarts its FC2 accumulator for every K128 slice.
+            # The serving M1 monolithic path restarts its FC2 accumulator for
+            # every K128 slice and rounds the ordered running output to BF16.
             for nt in cutlass.range_constexpr(4):
                 facc[0][nt].fill(0.0)
             stage = intermediate_slice & Int32(1)
@@ -249,10 +250,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                         fragment[2] = d2
                         fragment[3] = d3
 
-
-            # Preserve the monolithic boundary exactly:
+            # Preserve the monolithic serving boundary exactly:
             # BF16(down_scale * slice_dot), then route weighting, then the
-            # ordered BF16 running sum. A single full-K FP32 sum is different.
+            # ordered BF16 running sum.
             down_scale = down_alpha[expert_idx].to(cutlass.Float32) * global_scale[
                 expert_idx
             ].to(cutlass.Float32)

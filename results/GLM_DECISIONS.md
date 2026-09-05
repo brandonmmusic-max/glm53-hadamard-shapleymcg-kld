@@ -878,6 +878,40 @@ confirmation, and final roles remained unopened for this redesign branch.
   stop remain unchanged until a newly frozen integrated comparison passes.
   See `results/P8_SMALLM_DEVICE_V1.md`.
 
+## 2026-09-05: Decision 37 — freeze captured-graph and four-GPU closure before serving
+
+- Compare the pinned monolithic P8 image and opt-in small-M candidate on the
+  same rank-0/layer-3 E288 sidecar, dense reference, seed and M1 route payload
+  on each physical GPU. Each arm gets five eager outputs, five graph warmups,
+  five fixed-address graph replays and 100 CUDA-event graph timing samples.
+- Closure requires every arm/GPU cell to capture, remain bitwise identical for
+  all graph replays and match its eager output. The candidate must be faster on
+  every GPU; advancement to integrated TP4 serving additionally requires at
+  least 50% lower median graph time on every GPU.
+- This is a synthetic single-layer graph gate, not serving tokens/s or KLD.
+  Protected experiment roles remain unopened, LDLQ remains excluded, and the
+  original P8 product failure/allocation stop cannot change here. The frozen
+  machine-readable plan is
+  `evidence/opened/codec-v2/p8-smallm-graph-v1/analysis-plan.json`.
+
+## 2026-09-05: Decision 38 — corrected graph closure advances to integrated TP4
+
+- The first command used the probe's forced-materialized default for the
+  scheduler-off arm. That is not the deployed monolithic M1 path and has a
+  different full-K rounding graph. Preserve those results as invalid for the
+  serving decision; do not reinterpret their 16.6-17.8% timing delta.
+- The corrected pinned-image comparison used explicit monolithic scheduler-off
+  versus small-M scheduler-on. Payload and BF16 output hashes matched across
+  arms on every GPU; each graph also matched eager and was deterministic across
+  five replays.
+- Across GPUs 0-3, 100-replay medians fell from 0.956304/0.771760/0.961824/
+  0.775776 ms to 0.144832/0.116480/0.145120/0.118288 ms. Reductions of
+  84.7523-84.9120% clear the frozen 50% threshold on every device.
+- Advance the fail-closed `GLM53_P8_SMALL_M=1` path to one integrated TP4/no-EP/
+  DCP1 GLM serving diagnostic with FULL CUDA graphs. This gate does not amend
+  the original product failure or restart Shapley allocation. See
+  `results/P8_SMALLM_GRAPH_V1.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

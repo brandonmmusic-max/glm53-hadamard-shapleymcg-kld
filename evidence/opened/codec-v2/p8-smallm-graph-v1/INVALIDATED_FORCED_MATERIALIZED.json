@@ -1,0 +1,26 @@
+{
+  "schema": "glm53-p8-smallm-graph-invalidation.v1",
+  "recorded_at_utc": "2026-09-05T06:08:00Z",
+  "status": "invalid_for_serving_decision",
+  "affected_files": [
+    "baseline-gpu0.json",
+    "baseline-gpu1.json",
+    "baseline-gpu2.json",
+    "baseline-gpu3.json",
+    "candidate-gpu0.json",
+    "candidate-gpu1.json",
+    "candidate-gpu2.json",
+    "candidate-gpu3.json",
+    "same-image-baseline-gpu0.json",
+    "v2-baseline-gpu0.json",
+    "v2-candidate-gpu0.json",
+    "v3-baseline-gpu0.json",
+    "v3-candidate-gpu0.json",
+    "v4-baseline-gpu0.json",
+    "v4-candidate-gpu0.json"
+  ],
+  "cause": "The scheduler-off probe defaulted to force_materialized=true. Real M1 serving and the first device A/B use the monolithic arm. The materialized baseline also has a different full-K BF16 boundary, so its output hash cannot serve as the scheduler closure reference.",
+  "correction": "Rerun scheduler-off with --mode monolithic, require identical payload hashes and cross-arm output hashes, and retain the original candidate per-K128 ordered BF16 boundary.",
+  "protected_roles_opened": [],
+  "ldlq": false
+}

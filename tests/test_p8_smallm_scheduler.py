@@ -90,6 +90,14 @@ def test_dynamic_calls_route_ids_and_bypasses_old_fc2():
     assert '"--timing-repeats"' in probe
     assert 'torch.cuda.Event(enable_timing=True)' in probe
     assert 'statistics.median(samples)' in probe
+    assert 'torch.cuda.CUDAGraph()' in probe
+    assert '"matches_eager_output"' in probe
+    assert 'torch.Generator(device="cuda").manual_seed(args.seed)' in probe
+    assert 'default="monolithic"' in probe
+    assert '"resolved_mode"' in probe
+    sitecustomize = (PATCH / "sitecustomize.py").read_text()
+    assert 'GLM53_P8_SMALL_M' in sitecustomize
+    assert 'small_m_scheduler=_P8N_SMALL_M' in sitecustomize
 
 
 def _bf16(value):
@@ -98,8 +106,7 @@ def _bf16(value):
     return struct.unpack("<f", struct.pack("<I", bits))[0]
 
 
-def test_rounding_boundary_counterexample_requires_ordered_slices():
-    # A full-K FP32 sum followed by one rounding fails the sealed baseline.
+def test_rounding_boundary_matches_monolithic_serving_baseline():
     slices = [1.0, 2**-8, 2**-8, 0.0]
     value = 0.0
     for partial in slices:
