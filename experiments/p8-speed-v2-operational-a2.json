@@ -1,0 +1,22 @@
+{
+  "schema": "glm53-p8-speed-operational-amendment.v1",
+  "recorded_at": "2026-09-05T00:26:29-04:00",
+  "prior_plan_sha256": "5ac7be9078969028263a8321ad377297290be4395f6bfeb27baccce41483022c",
+  "prior_attempt": "speed-v2a1",
+  "failure": "EXL3 loaded but profile forward selected direct_dcp_a2a_lse_reduce, which rejected a non-packed-head output stride. No measured speed cell completed.",
+  "source_evidence": {
+    "reference_compose": "/home/brandonmusic/KLC_SANDBOXES/glm-5.3-flash-exl3-4bpw-release/runtime/compose.sm120-tp4-vision-mtp5.yaml",
+    "reference_compose_sha256": "5558cb276b964e78571e71ffad82c9830c3a602b559c9472bbe92e1f050860d7",
+    "reference_lines": [19, 20],
+    "installed_source": "vllm/model_executor/layers/attention/mla_attention.py:902-910 selects B12X DCP A2A only when VLLM_USE_B12X_DCP_A2A is enabled"
+  },
+  "baseline_environment_restored_from_reference": {
+    "VLLM_USE_B12X_DCP_A2A": "1",
+    "VLLM_B12X_MLA_CKV_GATHER": "0"
+  },
+  "candidate_environment_changed": false,
+  "measured_speed_cells_before_amendment": 0,
+  "output_root_after": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/speed-v2a2",
+  "claim_boundary": "Restores existing baseline kernel selection, not a new kernel implementation. Product comparison with per-arm topology differences remains explicit.",
+  "unchanged": ["models", "images", "kernel source code", "per-arm topology", "requests", "five cold runs per arm", "speed thresholds", "analysis code", "KLD result", "protected roles"]
+}
