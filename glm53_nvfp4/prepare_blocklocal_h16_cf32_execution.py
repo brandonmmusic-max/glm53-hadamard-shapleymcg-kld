@@ -28,7 +28,11 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
     build_receipt = json.loads(args.full_build.read_text())
     if (
-        build_receipt.get("schema") != "glm53-rotation-v6.blocklocal-h16-layer3-full-build.v1"
+        build_receipt.get("schema")
+        not in {
+            "glm53-rotation-v6.blocklocal-h16-layer3-full-build.v1",
+            "glm53-rotation-v6.blocklocal-h16-layer3-full-build.v2",
+        }
         or build_receipt.get("status") != "pass"
         or build_receipt.get("experts") != 288
         or build_receipt.get("protected_roles_opened") != []
@@ -51,13 +55,13 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         raise RuntimeError("candidate overlay does not close against the all-expert build")
 
     return {
-        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v2",
+        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decision_before_result": True,
         "run_order": ["stock", "candidate"],
         "run_ids": {
-            "stock": "rotation-v6-blocklocal-h16-l3-stock-cf32-v2",
-            "candidate": "rotation-v6-blocklocal-h16-l3-candidate-cf32-v2",
+            "stock": "rotation-v6-blocklocal-h16-l3-stock-cf32-v3",
+            "candidate": "rotation-v6-blocklocal-h16-l3-candidate-cf32-v3",
         },
         "stopping_rule": "one fresh complete run per arm; no resume, reroll, exclusion, or substitution",
         "decision_rule": (
