@@ -207,11 +207,14 @@ for the verified local commit/run ordering and its limitations.
 
 ### Native product boundary
 
-The physical layer-3 **P8** endpoint has achieved the intended fused path:
+The physical **P8** endpoint first closed on layer 3 and has now executed on
+all 42 routed layers in the completed full-model measurement described in
+[P8_FULLMODEL_CF32](results/P8_FULLMODEL_CF32.md). It uses the intended fused path:
 the K4 procedural-MCG stream is decoded per element in the kernel prologue,
 the resulting E4M3 codes use the physical UE8M0/32 weight-scale plane, and the
-matrix products execute through `mxf8f6f4`. There is no dense BF16 weight
-materialization or BF16 weight matmul in that endpoint. This is one fused
+matrix products execute through `mxf8f6f4`. There is no dense BF16 routed-weight
+materialization or BF16 routed-weight matmul in that endpoint. Unchanged
+non-routed tensors are outside this statement. This is one fused
 kernel path, not one machine instruction; `mxf8f6f4` has twice the MMA issue
 count of NVFP4 for the same logical K span.
 
@@ -223,8 +226,9 @@ RNE with signed-zero preservation, and its offline assembly contains 15
 native E2M1 K64 MMA sites at 62 registers and 1,728 bytes shared memory with
 zero spills. It still requires device bit-exact and arithmetic closure,
 coherent generation, KLD, graph parity, determinism, and speed. Therefore the
-current evidence supports a native Tensor Core P8 codec for one physical
-layer and an integrated structural P4 implementation, not yet a qualified
+current evidence supports native Tensor Core P8 execution on all 42 routed
+layers with developmental full-model KLD, and an integrated structural P4
+implementation, not yet a qualified
 NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
 BF16 overlays and must not be cited as native-kernel execution.
 
@@ -259,7 +263,9 @@ safetensors container. On rank 0, eight experts passed the materialized fused
 kernel at M=3 and M=33 with cosine `0.999913` and `0.999857`, relative L2
 `0.013157` and `0.016887`, finite outputs, and bitwise-identical hashes across
 five runs. This demonstrates reusable, layer-parameterized P8 device arithmetic;
-it remains a TP-local closure result rather than full-model KLD or speed.
+that particular probe remains a TP-local closure result. The later all-layer
+KLD is separate evidence and does not supply five-run full-model determinism
+or a serving-speed pass.
 
 | Endpoint | Mean KLD | Change vs same-loader stock | Paired BCa 95% CI for candidate minus stock | Status |
 |---|---:|---:|---:|---|
