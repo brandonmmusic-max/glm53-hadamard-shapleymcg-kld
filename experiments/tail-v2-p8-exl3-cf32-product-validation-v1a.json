@@ -1,0 +1,671 @@
+{
+  "claim_boundary": "Same Tail-V2 B12X/NVFP4 attention, graphs, TP4, four GPUs and no MTP; P8 noEP/DCP1/E4M3 versus production EXL3 EP4/DCP4/BF16 is a product comparison, not codec-only causality.",
+  "cold_runs_per_arm": 5,
+  "decision_before_result": {
+    "determinism": "all 64 arm-window cells must have one raw SHA across five cold runs",
+    "quality": "report paired CF32 P8-minus-EXL3 KLD BCa CI; no post-hoc threshold",
+    "speed": "report all runs and medians; P8 must exceed EXL3 in both primary medians to call the product faster"
+  },
+  "determinism": "five independent cold server starts per arm; each window raw SHA-256 must match repeat 1 bit-for-bit",
+  "exl3_activation_receipt": {
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/exl3-tail-v2-product-image-v1a/activation-boundary.json",
+    "sha256": "3fe2d7013894c498a00ae58c7e8d92c2356ebc06e69da4a608698be99bcb8583"
+  },
+  "image_receipts": {
+    "exl3": {
+      "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/exl3-tail-v2-product-image-v1a/receipt.json",
+      "sha256": "1558102308f101951a2f8fcff5b9103d709960c92dfff4a66c157b62cbdf9d29"
+    },
+    "p8": {
+      "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-tail-repair-image-v2a/receipt.json",
+      "sha256": "96f2389d872620ee084d2c9b51d7a06767545d1e396cb4d46517df5872e408cc"
+    }
+  },
+  "images": {
+    "exl3": "sha256:af4e6a9ac0feb29ae2399ea45fad7db189594f0ff564c5bff3a691156c60b6b7",
+    "p8": "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745"
+  },
+  "kld_analysis": "paired CF32 by window using repeat 1 only; repeats 2-5 are determinism replications, not added n",
+  "max_new_nvme_bytes": 30000000000,
+  "opened_roles": [
+    "conditional-fit"
+  ],
+  "order": [
+    {
+      "arm": "exl3",
+      "repeat": 1
+    },
+    {
+      "arm": "p8",
+      "repeat": 1
+    },
+    {
+      "arm": "p8",
+      "repeat": 2
+    },
+    {
+      "arm": "exl3",
+      "repeat": 2
+    },
+    {
+      "arm": "exl3",
+      "repeat": 3
+    },
+    {
+      "arm": "p8",
+      "repeat": 3
+    },
+    {
+      "arm": "p8",
+      "repeat": 4
+    },
+    {
+      "arm": "exl3",
+      "repeat": 4
+    },
+    {
+      "arm": "exl3",
+      "repeat": 5
+    },
+    {
+      "arm": "p8",
+      "repeat": 5
+    }
+  ],
+  "output": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/tail-v2-p8-exl3-cf32-product-validation-v1a",
+  "patched_kpool_sha256": "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251",
+  "preserved_failed_exl3_build_receipt": {
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/exl3-tail-v2-product-image-v1/receipt.json",
+    "sha256": "3bd539ea02ff7f9b9f8dcd8df8054a14ef56ecb5550b6a56f9ae1f939def5cdb"
+  },
+  "product": {
+    "exl3": {
+      "activation_precision": "BF16 model and EXL3 kernel boundary",
+      "moe_backend": "b12x-exl3-full-expert",
+      "payload_bpw": 4.0,
+      "quantization": "exl3"
+    },
+    "p8": {
+      "activation_precision": "E4M3 UE8M0_K32 at both native P8 MoE MMA boundaries",
+      "moe_backend": "native-p8-mxf8f6f4-n64-fused-scratch",
+      "payload_bpw": 4.25,
+      "quantization": "modelopt_mixed"
+    }
+  },
+  "protected_roles_opened": [],
+  "raw_bytes_per_window": 1268157440,
+  "retry_policy": "no resume or silent reroll; preserve failed receipts and amend before another attempt",
+  "roles": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+  "roles_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+  "schema": "glm53.tail-v2-product-validation-plan.v1",
+  "source_sha256": {
+    "experiments/p8-tail-omission-repair-v1-prereg.json": "aab7f4e03a4fcff71f8502aa71a6f85b61a3addf4ccdab5fb3a9ced424d9d603",
+    "experiments/p8-tail-omission-repair-v1a-amendment.json": "b4615fcb2565172830bdcb94baf5c93bb2d6d2077f540ca0ef1f9978f0abaed4",
+    "experiments/p8-tail-omission-repair-v1b-amendment.json": "a60c2dcda0c74ec1ad2dbb23cf413372dcac8835211a04baa56e39376066d8b4",
+    "experiments/p8-tail-omission-repair-v2-prereg.json": "1382830e280825d395c1aed23d8af0da9d27690945faab791276a0ec0858e055",
+    "experiments/p8-tail-omission-repair-v2a-build-amendment.json": "6e87a453c02c8c24e9b67244349b2118733d6a870ce9e59b941a0ffd96b5d192",
+    "glm53_nvfp4/analyze_p8_fc1_tiles.py": "6b6fc693f9e4cc42814fe07c76f489fa0c5c4b6587c3461f8b164ff2c13ae5b9",
+    "glm53_nvfp4/audit_speed_graphs.py": "8f4dfcb9fb9397b486eb819cbc6554a4c5bd8cc07de45b9ec2fcb2fe64c4231c",
+    "glm53_nvfp4/p8_decode_analysis.py": "7ff855ea8d72d004a404a5932ae3700b9a86ecc1a03e33b43d6842895086e560",
+    "glm53_nvfp4/p8_decode_launcher.py": "3589d0c4a67a27d165cc2acf46e3ceaf951e6bd8d8312e51c46f52a20b89192a",
+    "glm53_nvfp4/p8_decode_protocol.py": "0cfc5d031b5bd4e6297c7aa35c6d103d75cbd02d9e936da6e5373f5edc2f2e84",
+    "glm53_nvfp4/p8_fc1_cold_compare.py": "70090f2ca05fe659f4e282419e6c3b98ad87bead4a514459375b95792717c5ac",
+    "glm53_nvfp4/p8_fc1_integration.py": "27e54a66826cd778408af1f6993564d2320fe934bdbb6779ddd5d7b47b87ac12",
+    "glm53_nvfp4/p8_index_order_device_runner.py": "cc03c50c85e0217415d72e394daaad5b75386812678f6f7bb84b87bd3693711d",
+    "glm53_nvfp4/p8_index_order_full.py": "5097359af75f72f5c92d2ec5a50571e4cc6413d740f72b13265cf2d3f2a31596",
+    "glm53_nvfp4/p8_index_order_full_analysis.py": "0adb15bcda301f408629e97802c4156d3b5e5ccaf40935369615a8b42c7ca718",
+    "glm53_nvfp4/p8_index_order_integration.py": "4b3cc02e7314b52f0b6e5844ac74b506f5cdd0051bdd8a304ee7e25bb89ad3e7",
+    "glm53_nvfp4/p8_index_trace_analysis.py": "7825588d60ccc649ebee55545cbafa8f818afb6c137bddd4c868c040a3ae017e",
+    "glm53_nvfp4/p8_index_trace_launcher.py": "18a476aef75856d5236d98d40e351199c889f3a07bc593f1e01c20c7cf7713f3",
+    "glm53_nvfp4/p8_profile_launch.py": "9447a15fba3b6736ebc979c14d14e71205424bcba48ad8a8043b5bccfa00f232",
+    "glm53_nvfp4/p8_smallm_profile.py": "05594566c727564f13112fff5aec6e3dbc0a70a05340d9efb7060295c87b8bd9",
+    "glm53_nvfp4/p8_tail_repair.py": "392d20924830ce90d6847be9b90025fa5f01ffeac9bb4a74fb8b5a61159124a2",
+    "glm53_nvfp4/p8_tail_repair_v2.py": "0b70080679fa94fcf6ced805d9eb0edb2dae3d29fc826b70707e9f03b64d1404",
+    "glm53_nvfp4/p8_weight_identity.py": "b4ae53903d433fdce61cbcbf86691ed64fdd2a10f3274e68d31092f5f34da656",
+    "glm53_nvfp4/paired_role_analysis.py": "2bbb546a5c9c9eb503877c3b858001daf717b014fd4820bd44fb76ad88be32d1",
+    "glm53_nvfp4/probe_p8_fc1_tiles.py": "b0351fa2338e6ea2b3ccda289cbe1f889c7415eb267abb3426eba70750d42a61",
+    "glm53_nvfp4/role_eval.py": "9b880e04614d640b88cf35a13d0bab30f46bde745249175a307814cd11828cb6",
+    "glm53_nvfp4/tail_v2_product_runner.py": "6b67725be05375553dcbaa18a187d96cdc14a7cff4eef97b16a292c04bf2d8ef",
+    "glm53_nvfp4/tail_v2_product_validation.py": "bb06c1c5160b8e05eb074b43211dfde55a54c314955f835561a3bfbe65cfa16f",
+    "runtime_patch/p8_decode_capture/Dockerfile": "4a581ffd22368fad985bff9ed717dde0feb63ebf71dc174a9fee816d902c6e2b",
+    "runtime_patch/p8_decode_capture/__init__.py": "267c4f5a565687a18b224d04c1f5c702149ea8ac866986dc5922c084077fcb41",
+    "runtime_patch/p8_decode_capture/processor.py": "4886091710d11c00641af8074332cdd19116fa41a811be1134e7dfb713b6f287",
+    "runtime_patch/p8_decode_capture/sampler-v2-hook.patch": "8bfd55982f93be66561005094f85e14f2e9f49f1b27c0b589b558759371b5e41",
+    "runtime_patch/p8_decode_capture/v2_hook.py": "62f35d78931a7251cd3be594d3228b0f13868f39b3e25adb5c0ad8a96c87c683",
+    "runtime_patch/p8_decode_capture/warmup-v2-hook.patch": "b358dd7a6f85205a0479102d42df779ee812c81e4bc8ac55ba95444c0ff5d5cc",
+    "runtime_patch/p8_index_order/__init__.py": "c75c54fc72f1598528b560104e922d3b008e484ccb3c5b25c85cece71f1f75c8",
+    "runtime_patch/p8_index_order/patches.py": "6d6e93c7742c9ecc9ce31fadcb24752b4605444aeea41a70b5924a3b1fbe923e",
+    "runtime_patch/p8_index_order_receipt.py": "d1264d7bb186ff51a61b3e931763b829afdf27e2769c50cb7719f314981f7a54",
+    "runtime_patch/p8_index_trace/__init__.py": "9e3d51544a550aa4dd1af33f1e1cec79d8b2d46c3c286e9ae2b165156f6d3ecb",
+    "runtime_patch/p8_index_trace/observer.py": "338847260e9127d780ca00be58bd1fe8ec50b43a47ba5a5d4f4b92ded176fdc1",
+    "runtime_patch/p8_index_trace/patches.py": "009967230af7d9a5f59e434fbc88970fedde777b5687e4d2f77c694e71c9303f",
+    "runtime_patch/p8_native_kernel.py": "083829f6e7d83ca18a6b6bb602e023bb894eca3a2c7cdb61f6c7c40aeb45a9d0",
+    "runtime_patch/p8_smallm_schedule.py": "804fae60a3b2e5fdea31d0fc1f343e545a45a4a3e859d617bc667bf3ea706df6",
+    "runtime_patch/p8_tail_repair/Dockerfile": "72886c80272268d5472e6a38c99d783b8163f8cdf6be74d8631a219840c86d7a",
+    "runtime_patch/p8_tail_repair/kpool-tail-consumed-v1.patch": "2cb517ac5e28e480c4321d756043789358b22b5324947e3398d083a3393e7801",
+    "runtime_patch/p8_tail_repair_v2/Dockerfile": "1c97801a144b1937cd807d10c10384c662a5a804429b21b6f9a6d883166ea8b7",
+    "runtime_patch/p8_tail_repair_v2/Dockerfile.exl3-product": "899c3abef776416eb125d0965acaf8a6939d10a26ad0ce1cf9a0cf2cdeaf5ef6",
+    "runtime_patch/p8_tail_repair_v2/kpool-tail-after-valid-history-v2.patch": "b83ba35895a5dfaa2478e3216b4ebc68bb74f73df22931d9ca8ffbdedaf7e7c7",
+    "runtime_patch/sitecustomize.py": "362ab4bd155857aee0f3b43c15c279ca5641c2cb34e9a8104125f6f48bd44123",
+    "scripts/build_exl3_tail_v2_product_image.py": "18127237a669790c29162168717186cf4125f0a9b80bc5574d9960c77717188c",
+    "scripts/build_p8_decode_capture_image.py": "a6399a7ff0aa2a82ef40acb266543f1c54ff0ff104ba09442e85686e25452bbb",
+    "scripts/build_p8_tail_repair_image.py": "f3c58fc224c7cdc9d8b202e249ccf16a043d869a100e82ee39a16af6dc4c8929",
+    "scripts/build_p8_tail_repair_v2_image.py": "8149622634a8d846b6261127b8be3a1ddef399ae59e2e15c081388f73df8f3c4",
+    "scripts/preflight_p8_index_order_device.py": "cb71b7356e13155d9ec55d27fb8070ab07868f508879c4c124ace230248299b8",
+    "scripts/preflight_p8_index_order_import.py": "75960eb984bf35e3caff8a298f88a103b94be25f2e9174c881854540c2ca33f0",
+    "scripts/preflight_p8_index_order_serving_import.py": "2237c10c0e83b04a229769da5da2cce1241f98895f591e9db039cbae9ede454c",
+    "scripts/preflight_p8_index_trace.py": "313520dec38d2b05eeff175b824006fcd9ff7b56b37937fc9f976e8f9b026746",
+    "scripts/preflight_p8_index_trace_import.py": "3d5429b1e10f4b7940feec9f2557740d216dcb7a3ab685ac406db927f9723e9c",
+    "scripts/prepare_tail_v2_product_validation.py": "2cafb59dc6fc67139b72e6b404b4bfb8f7d8cbd2ea7c0f0da6af2e422929afb3",
+    "scripts/run_p8_tail_repair_v2_device_closure.py": "5b60fdfd395ea93095c555a096df444c9eb224b7e16001c8be3bc3b43468f68d",
+    "scripts/tail_v2_stream_score_delete.py": "14af16a7f5b4f236e1720258bd05c5e8090b7e1dc830ab568c941bd3b7336231",
+    "scripts/verify_exl3_tail_v2_activation_boundary.py": "7903b5be81503dfdc81e29f0bf2cd2a9b1cea4f985b47aea33d1f0cc0012e413",
+    "scripts/verify_p8_tail_repair_v2_device.py": "21f6b082df88376821cd0586a333e82ed54e3fb93c1a9ac54f3fa4e454b94960",
+    "tests/test_build_p8_decode_capture_image.py": "b052196e35c76cd3b1a9133de60844f65bb0397d73438d5b174b2abdeedc2224",
+    "tests/test_p8_decode_analysis.py": "50885cb81b290175a31c0e0b60e8e1b41bdbd4a6ad29166dcc22cb0e536885e4",
+    "tests/test_p8_decode_analysis_receipts.py": "5225278ba666568b3ca3b753a1d34f2257ca36844991a9b18348eb7392d4c4ed",
+    "tests/test_p8_decode_capture_v2.py": "495119c09364901c444cf8e7e95f2019355ebbcd6ccc4a4fddc1fed6ecb12e4a",
+    "tests/test_p8_decode_launcher.py": "496e7a6fbcab7fd03011d6ce0c22a8ccf306ee23e8c315996b45cf832e56cd0d",
+    "tests/test_p8_fc1_cold_compare.py": "c2c301e13a34c0b0b6a6b650e21f0c5bd97897390247a64ce8c5f3893980b91a",
+    "tests/test_p8_index_order_device.py": "fd351c12272ae2032cf95f9a62e0d0801dcd72604c26e8dd033c8a979ae91361",
+    "tests/test_p8_index_order_device_runner.py": "fb20dca04f07a80d19378dff695e151de750b18ed493094120be5a63c8bc87ca",
+    "tests/test_p8_index_order_full.py": "8251fded259e1f0f5540515b647386f915c1c7abb3736b60f47852e2a24a8695",
+    "tests/test_p8_index_order_full_analysis.py": "0e55e4c0a5afe7c71c85b11591e60937b15528035b0dd8bd8fe5333c974d688b",
+    "tests/test_p8_index_order_integration.py": "a6b26cdda0cf3e121732394d03c85d5b2d7c8d7a281acacaad74e042ef13daf4",
+    "tests/test_p8_index_order_patch.py": "96a586d53fc8497378ea5df84ef48cde87d8043126d0e6e170554fbf60dbe3a1",
+    "tests/test_p8_index_order_receipt.py": "bfc4afabb6bfb00e3255948921d9b23ac3fce1c3930740f80dc5fac62979d4d8",
+    "tests/test_p8_index_trace_analysis.py": "4695d3e0c3250e8e4f4ecf1313ad964d84a44db2340c5afe4afeb5f6b614317f",
+    "tests/test_p8_index_trace_launcher.py": "284dd09cf883ce6a7a480a18a1c61cec1d9272a383949735e3bcb6f186987c8d",
+    "tests/test_p8_index_trace_observer.py": "922d9a8b69111dfbd8c0dc082a1ae4e27bce945acef1c3a1f7230b40709602ac",
+    "tests/test_p8_tail_repair.py": "08645b704c38b776dd4e6deab485c30dcf630deb2f796cd180400657d1ad0b1a",
+    "tests/test_p8_tail_repair_v2.py": "89fd25629e504f0b172ab14f1fae61939d390fb505920409435bbcd353281876",
+    "tests/test_tail_v2_product_validation.py": "b7495662596d0c4256842d4b3b045a1ed7e5975e6ac7966caa956d5e2da20e9d"
+  },
+  "speed": {
+    "capture_hook_enabled": false,
+    "cold_runs_per_arm": 5,
+    "cuda_graphs": true,
+    "order": [
+      {
+        "arm": "exl3",
+        "repeat": 1
+      },
+      {
+        "arm": "p8",
+        "repeat": 1
+      },
+      {
+        "arm": "p8",
+        "repeat": 2
+      },
+      {
+        "arm": "exl3",
+        "repeat": 2
+      },
+      {
+        "arm": "exl3",
+        "repeat": 3
+      },
+      {
+        "arm": "p8",
+        "repeat": 3
+      },
+      {
+        "arm": "p8",
+        "repeat": 4
+      },
+      {
+        "arm": "exl3",
+        "repeat": 4
+      },
+      {
+        "arm": "exl3",
+        "repeat": 5
+      },
+      {
+        "arm": "p8",
+        "repeat": 5
+      }
+    ],
+    "primary_decode": "C1 32K OpenAI continuous-usage output tokens/s",
+    "primary_prefill": "32K Prometheus kv_computed server tokens/s",
+    "secondary": "64K prefill and C1 decode"
+  },
+  "status": "sealed-before-gpu-execution",
+  "storage_policy": "one window raw at a time; durable score and retirement receipts; raw unlinked before next request",
+  "teacher_root": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher",
+  "topology": {
+    "exl3": {
+      "dcp": 4,
+      "ep": true,
+      "tp": 4
+    },
+    "p8": {
+      "dcp": 1,
+      "ep": false,
+      "tp": 4
+    }
+  },
+  "weight_audit": {
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-smallm-scheduler-v1/fc1-cold-comparison-v1/weight-audit-prerequisite.json",
+    "sha256": "8ce9c07dd89e307ad50aa7c4af93ffbdac51e0637a143ceb64add47f8651eefb"
+  },
+  "windows": [
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0056",
+      "input_sha256": "21d952a5587f2b985a3db4853d446eabc0d05b13964f441e5d30c4d13e92ad6d",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0056.safetensors",
+      "teacher_sha256": "55a70a330f39c5f23294c23d270a1ddc53031def99a42206e2706d4d0bb4466b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0056.tokens.npy",
+      "token_values_sha256": "219d8cd8873c6cf41f52782297cc5cfa9c4ed9666f2bc30d84cee9caa68ea744"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0008",
+      "input_sha256": "c6d580427dea063ddfd06cb599c1369fb9efbf84532d47f55ae72a5cd76ffddb",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0008.safetensors",
+      "teacher_sha256": "040641247b2e060035d89c2e7345e029d7c142983585e7c5d63dc818486f650d",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0008.tokens.npy",
+      "token_values_sha256": "581d72e3e78b15c02d9e73f6bc742260cb57cdcd74337f4419c8f90cbc7c9c11"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0100",
+      "input_sha256": "918a8bebb0c12c817b7cb4be4b726bf8b39dc8e51a0a3a7ecdc224125898fbbd",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0100.safetensors",
+      "teacher_sha256": "f62991383b3ef5e8db0ed71442b17c428972e58da1c868c6aeb0f3fa143c865b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0100.tokens.npy",
+      "token_values_sha256": "7f008ec99068f373c6e15dd059ee977fb70e6dc832f46e009f0f299d48d19892"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0094",
+      "input_sha256": "6be0a582894a1f7ed2bdb55bdf1ed7f515ef867681e9874362fcbd6af73e69a5",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0094.safetensors",
+      "teacher_sha256": "656911b8fb34d7f42e984dd21311caf9ef56db0b7618b414cad4089562d93cba",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0094.tokens.npy",
+      "token_values_sha256": "6b6a9b21c49a9984cc8c5ea90e0bda6db5761d039c7cdd335dc65e30444e017b"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0083",
+      "input_sha256": "537f95642b564e9fcd51877acc3a1382b406a4c9e2f165bef6a6bb0aa99addd2",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0083.safetensors",
+      "teacher_sha256": "66a7870a1f13c8b5d647c1681fca005bb0f55a6e502e94f282da673a6bed3f1b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0083.tokens.npy",
+      "token_values_sha256": "3df9d2872815e061ff8d32a9a19da0d11d80ac67070cccd28579b24ec3079552"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0021",
+      "input_sha256": "7e12a220d5d1c3fe51d60e3f57a11e5448524cc893ab70d6b490b9d3e6e36ed9",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0021.safetensors",
+      "teacher_sha256": "ebf76910c4db8f6955ad03f2ec7352e2f8aaf15e0c939d28f9a7d78f6bd7451b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0021.tokens.npy",
+      "token_values_sha256": "dbd9f2539cb3e97127ae760a04ca5b3456b0b13d6ce8698f88b215cc68b8f1a9"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0098",
+      "input_sha256": "f5fef37d67821fc86fc89e1e06e541102b6507b456b24a214d20665f3baef92c",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0098.safetensors",
+      "teacher_sha256": "16e3d9524100836c020535635f7722a4c93ce0fdddc2ad0781f25bda77e8bcc9",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0098.tokens.npy",
+      "token_values_sha256": "749bda3291a0323d286b0018b7dc3e0f469de8afd5d194370cde357b7b315c7d"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0080",
+      "input_sha256": "62735734619ebc8da4996914f2f12c05b53b423e5501cc8e12a223c0ad24728f",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0080.safetensors",
+      "teacher_sha256": "e9c1a77490a5db63d410297bd8febe06adf4df2a6f4e16552db187738c9289d2",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0080.tokens.npy",
+      "token_values_sha256": "a31d43f38710eb305c684501a2b02909a4e82c43101c07e76e4a3ca4edb4d0dd"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0081",
+      "input_sha256": "363bd9a0d17c3ba30023ccd62d2c9aedcd760ccf0b8f7fb67eba44d567aedc5c",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0081.safetensors",
+      "teacher_sha256": "5ae07760d91030d1eba925b76ea463309baa49c2e7d5f5e14409a23ced7fd20d",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0081.tokens.npy",
+      "token_values_sha256": "350628488b94d59f3e4f3e99a418913544ea1fe7eacee14a642b996d9c614d16"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0123",
+      "input_sha256": "691e47fb8f0572ef5e6156821600967b61e0a047d413f39442eb650da1fc24c8",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0123.safetensors",
+      "teacher_sha256": "4a24b5b750ba98c06d9bc69e19334aff89e7bd4f9429592598af5d62de7ecb42",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0123.tokens.npy",
+      "token_values_sha256": "aab84ee426f91621d123aa68bd53f75e220fbaf8cb270db1feab1529a62ddbf0"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0090",
+      "input_sha256": "d90d9f881c78bbda6a7a2ed11283d6d77ed9f60f9f005f7fceea5a5145de1012",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0090.safetensors",
+      "teacher_sha256": "db2a5fe33c9e457a22ebeb31a7073c1dac666b877503e9b4e90a8d6abf7b8a32",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0090.tokens.npy",
+      "token_values_sha256": "a06e76993db717afee847fcc4d86f10b52dd23cdce5dae916f32d238d08d886c"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0062",
+      "input_sha256": "bf84f8bec93ddb1eff28f6886e6206c300f67b5fa75c6f4a6f7192da2585c2a2",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0062.safetensors",
+      "teacher_sha256": "d6f7883a533625c7c75119fe7403b48bf81885b1de0b311a1a0571949f7f231c",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0062.tokens.npy",
+      "token_values_sha256": "7c6d2ef2f4b7c7091a517f6ccd778009f9ee144165c9aecf2f8f28aea7b3753f"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0047",
+      "input_sha256": "524b65e6369a63d17557ff7349018e2abbde2b0380389fb9e47b27525bacd99e",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0047.safetensors",
+      "teacher_sha256": "8513cdcb9940786c7c42bf14d2f5f2cd452791e4ec6036c06a1f973eb969018d",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0047.tokens.npy",
+      "token_values_sha256": "89730ee6826d4302c352156d5df766c51622a8b6681b8052d4ca6e7d481177fe"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0051",
+      "input_sha256": "69cceca1cf05be9d85157a9a21c0f62d98c632e45e0ef1ae81537da5ce1d1a1e",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0051.safetensors",
+      "teacher_sha256": "177477c19b54dc0b0230e19202d48ab71d52f2b1a37fe383511bb64f0aae2fcf",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0051.tokens.npy",
+      "token_values_sha256": "c79269b16560e7301549593443c9394007e7a957ad149c46224e7ad271dc6a18"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0055",
+      "input_sha256": "6bd43cbcc1e94326307cc04a64f5e8d1a5927a7af8b86e171701d7481833e4b9",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0055.safetensors",
+      "teacher_sha256": "7679c828eae4bf08f17598d044904693fc90c05b9d3f189dddeeb846100e43a7",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0055.tokens.npy",
+      "token_values_sha256": "feec9ac508172dd275ec6452a03493acab5ffdff9bb57161317c77f24daf90f2"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0031",
+      "input_sha256": "366a9f7115192e3e1b0370a94e5f8f7bb27cf392dd80750865c7f594306a475c",
+      "prediction_positions": 2047,
+      "source_partition": "previously-used-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0031.safetensors",
+      "teacher_sha256": "e04a6c04a951efb5a178927e91457535cc67745ce5c81e785cb6d963aac6ce83",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0031.tokens.npy",
+      "token_values_sha256": "2cff3482b4212537d0c35b88b8a0f479502c8905952430c973d25b1ab0bb5818"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0003",
+      "input_sha256": "4460d5c70ccdf0fb3b65706f066bd2475baf2d685626f06d79e4ee3116dbed3f",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0003.safetensors",
+      "teacher_sha256": "7677c89cc3dee8e2a64e3c7947add39475f828921a3a8fe2e92b379b3ed8320b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0003.tokens.npy",
+      "token_values_sha256": "d416537c6e8273747bf025e97287a0bb6e3ff047bfee65cf54e4dfe287569b93"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0009",
+      "input_sha256": "d79bd597b3eadefbf9627cd2196fed794d2219a5eb837a7f7fd5ad7802672e8b",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0009.safetensors",
+      "teacher_sha256": "00701ad8bf4a4a5eedcedd4eafd956830c9ff1c790b15074ca721a3462abf930",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0009.tokens.npy",
+      "token_values_sha256": "fc1166707f5938a914faf364dab717b0de3ea0e8451ed1a3fb399469e659b105"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0010",
+      "input_sha256": "25b458dce7a6d0c15d3e7f767829317ebd922178fd7e3af04c51c8f0caed6f14",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0010.safetensors",
+      "teacher_sha256": "f9bf4519890b70d972dfdf9760181418eb7c55b6237c0108f01d44df89943278",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0010.tokens.npy",
+      "token_values_sha256": "ddd9d769a76eba74bc8e680ff25736a3b9146371801d1d2b29e4dc48f6d256a2"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0011",
+      "input_sha256": "d4c8fc140e9fb5f119d95581ddbcf88baed9bf7c0b6b7c1db2941b33e6a2e1b9",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0011.safetensors",
+      "teacher_sha256": "9f37c4ead38bb80a5d85f825b156e5b493b6d3f1ca9dabfad06b0416f37db286",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0011.tokens.npy",
+      "token_values_sha256": "c4b96acfa47944be3485b20eab76eb16d59913c9fedb5001a537335a3ee13614"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0030",
+      "input_sha256": "67c28a42e317aa90ff2d09f4204a47081ec9a29dabea2f2e15ba537d47da1dce",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0030.safetensors",
+      "teacher_sha256": "90c08d120cfac926855e15c106dba1e242099bcd0ae6da7655bfaa54d5ce2420",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0030.tokens.npy",
+      "token_values_sha256": "d644a79da2ba01cefc5f2020eab9e8662d45ba3025377844e4bf4d3f1d36802d"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0032",
+      "input_sha256": "22102181840013e05b552af1a20ca576ffdd686d332014953787ef9ae47d04ec",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0032.safetensors",
+      "teacher_sha256": "1aa70ccf8e224c3a58834e2232a3a2477768db29ffeca39f5b27c17ad8c40c2b",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0032.tokens.npy",
+      "token_values_sha256": "88745c333ead140a6fb05929031613429cbd42e25881d92add968a94a5d2d930"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0035",
+      "input_sha256": "b9e87c451721ca9eaa1ded0f42eed7a834819a8047a89dcbdb75ded2556e5693",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0035.safetensors",
+      "teacher_sha256": "4e958dce74e093eb62ba5ac210fe0a4e50f12f1875de678769700cde206b429d",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0035.tokens.npy",
+      "token_values_sha256": "49f702136da39db9e762b6815a1952c0eba0a1fb04af22fb28a27bb63e2a41dc"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0040",
+      "input_sha256": "f0c35dcf41ba1f35e62b200bdb806f3aa11468c86a3e733abff1808f4f05c501",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0040.safetensors",
+      "teacher_sha256": "f4c96798fc9eb5564d9aec52779cc0ce88bc55312dcd7663240938d711c8a90d",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0040.tokens.npy",
+      "token_values_sha256": "50f3bc08ab37c551a05364eb48f0d726742f19331e79114dd5a9fb3c42ce6d4f"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0041",
+      "input_sha256": "0bb8fad47a5e1293352926d1c60712133308c4e91a5d7f7f31530092fbc38408",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0041.safetensors",
+      "teacher_sha256": "c2bbe4ea31532baceff966423c6ce6e042aebb5a2eb1de45e382a7d3df6f6827",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0041.tokens.npy",
+      "token_values_sha256": "8acf2614f0f787c185af112f21bcdf247c9b6ae76d292ada28f476e2a7b0241d"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0046",
+      "input_sha256": "5d3ff44cfdbe1c9c33eabcf7400a9c2a4aef17d193cff2cb39b5dc73baa881ce",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0046.safetensors",
+      "teacher_sha256": "3caa5c58fb0b0e80129d551b39867fd52fefd93830060bb5655862fdd0e3b8ce",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0046.tokens.npy",
+      "token_values_sha256": "3f2df1c090abf4473163a078c168fec33ab98ed6415985b92449caa861c04444"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0060",
+      "input_sha256": "6c189792cdcf7081dbaac8005511e71635c24669a82a9c5769258bf09f15f082",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0060.safetensors",
+      "teacher_sha256": "d9e6344664b92527ee58d3bca038702676b357e7052ade03ac4bc9c70908cc34",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0060.tokens.npy",
+      "token_values_sha256": "04ffe38aafcd9407b2846d59e8d797bee04b97f00683f8bc74d475a2d6b8592b"
+    },
+    {
+      "domain": "axis4_reasoning_termination",
+      "id": "conditional-fit-0063",
+      "input_sha256": "e6f8a4df2b88bcbac8471ad6f6525464a42cf300cf42c5df7f6e607ab4e63cce",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0063.safetensors",
+      "teacher_sha256": "a9bb59659437c1df5b3f3ef0b54eda61402842a2597b76b0124f58b59ecf3ab4",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0063.tokens.npy",
+      "token_values_sha256": "38003e2d26db850dd8ff39f2e95fa3d1be9a34838c70d9f7e87056b7ef50b67d"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0074",
+      "input_sha256": "0826c73d214d2aa0c8fb53b9010063b8bd4ed3668ed6c21311b17606193eae7b",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0074.safetensors",
+      "teacher_sha256": "440341730d063ae27bbc15bcbfc879d9d16b3b25691d97b8cfd60be8f32f2313",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0074.tokens.npy",
+      "token_values_sha256": "6f6618094ffce3f44b50f94cc533d338a3bfbbda7432890cd5ad2c13efd50129"
+    },
+    {
+      "domain": "axis3_code_agentic",
+      "id": "conditional-fit-0099",
+      "input_sha256": "945156ccddec2b941c81e78087a1d26a14f6ce19a3c26a5edff86bee98020804",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0099.safetensors",
+      "teacher_sha256": "da8dea840dd57564f0b3675872eaf297631b38a6d8dabcde7f8b54db06623e9a",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0099.tokens.npy",
+      "token_values_sha256": "07e37956eb606026bdd7479ac5516275e92c0ee834c3c0439a3f300f9099608d"
+    },
+    {
+      "domain": "axis2_legal",
+      "id": "conditional-fit-0113",
+      "input_sha256": "5d720cfe777dcb387dc9e37da41ad0fe479e40bccaf146547e9f470604d84094",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0113.safetensors",
+      "teacher_sha256": "6dc5f38f3436d6833b0ab68ce34e0f7ee5cde80359c26602526d8de512fd3207",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0113.tokens.npy",
+      "token_values_sha256": "742ab50951388e712d20dab49b12ad7eb31490cfe5091a2fbc76f31ed8fa1b09"
+    },
+    {
+      "domain": "axis1_general",
+      "id": "conditional-fit-0118",
+      "input_sha256": "1c797b2e734b8465ce5c68cb3e3a82f7edfb23497daba1baaa4d09443be775d4",
+      "prediction_positions": 2047,
+      "source_partition": "previously-unscored-conditional-fit",
+      "teacher_bytes_verified": true,
+      "teacher_path": "logits/full-panel/conditional-fit/conditional-fit-0118.safetensors",
+      "teacher_sha256": "e296287593aa0dc89b695a6a082a224a85904757c4a3cefa69729394d1469f89",
+      "teacher_source_role": "conditional-fit",
+      "token_path": "/home/brandonmusic/KLC_SANDBOXES/glm53-flash-kld-eval/data/teacher/calibration/panel-v1/arrays/conditional-fit-0118.tokens.npy",
+      "token_values_sha256": "2e03fdfcf4d54fc3174ee4620d5efd9f2e5c10e2e6e0b1217577f08392a09749"
+    }
+  ]
+}

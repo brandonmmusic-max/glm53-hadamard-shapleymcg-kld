@@ -1,0 +1,65 @@
+{
+  "schema": "glm53.nvfp4-mla-scale-counter-prereg.v1",
+  "status": "prepared-not-launched",
+  "created_at": "2026-09-05T14:16:24-04:00",
+  "observation": "After the validated tail-V2 repair, the four-window P8 B12X/NVFP4 mean KLD was 0.05156859723116893 versus 0.04839164 on the combined FP8-backend/FP8-KV control, leaving an approximately 6.6 percent directional residual under non-isolated systems.",
+  "decision_question": "Do real conditional-fit writer inputs exceed the static 288-byte NoPE NVFP4 writer's E4M3 group-scale range, making the existing per-layer outer-scale bank an empirically supported calibration target?",
+  "primary_hypothesis": "At least one attention layer has writer-domain group_amax greater than 6*448 on real conditional-fit traffic after its configured outer-scale divide.",
+  "rivals": [
+    "The scale bank has adequate headroom and the remaining KLD is caused elsewhere.",
+    "Non-finite or padded graph rows create apparent exceedance unless excluded.",
+    "The observer changes execution or logits and its measurements are not admissible."
+  ],
+  "candidate": "Tail-V2 runtime plus read-only NVFP4 MLA writer-input counter enabled.",
+  "control": "The identical tail-V2 runtime with the counter disabled.",
+  "changed_variable": "Read-only counter reductions and request-boundary receipts only; no writer, reader, scale file, model weight, cache byte, attention selection, or output arithmetic changes.",
+  "mandatory_integrity_gate": {
+    "data_role": "fit canary; it is not one of the 32 conditional-fit windows",
+    "procedure": "Cold-start uninstrumented and instrumented arms with identical immutable identities, warm them identically, force the same token sequence, and capture every aligned FP32 pre-mask causal logit.",
+    "pass": "Shapes, row identities, forced token IDs and SHA-256 of the complete raw FP32 logits are bit-identical between arms on every TP rank-reduced output.",
+    "failure": "Stop; do not interpret counter receipts or run the conditional-fit panel. Preserve the failed canary and repair under a new protocol version."
+  },
+  "panel": {
+    "role": "conditional-fit",
+    "manifest": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+    "windows": 32,
+    "sampling": "the already fixed domain-balanced panel; no substitution or exclusion",
+    "execution": "one request at a time under the production FULL CUDA-graph mode; graph capture registers counter reductions behind a zero device gate; reset is processed by the outer model-runner hook after warmup and before first replay; dump_reset at every request boundary; final dump before a disposable flush request"
+  },
+  "measurements": {
+    "experimental_unit": "conditional-fit window; TP/DCP ranks and layers are repeated subsamples, not independent units",
+    "per_layer_rank": [
+      "max_writer_amax_ratio = max(group_amax)/(6*448)",
+      "saturated_groups and saturated_group_fraction, defined as requested E4M3 scale > 448",
+      "saturated_tokens and saturated_token_fraction, defined as any saturated group in a valid token",
+      "max_requested_e4m3_scale = max(group_amax/6)",
+      "max_original_domain_amax = max_writer_amax * configured outer scale",
+      "zero_values, all_zero_groups, all_zero_tokens, and scale_rounds_zero_groups",
+      "nonfinite_values, nonfinite_groups, and nonfinite_tokens"
+    ],
+    "validity": "Only slot IDs in [0,num_blocks*block_size) count; invalid CUDA-graph padding rows are excluded. Every rank receipt is required.",
+    "aggregation": "Preserve every window/layer/rank row. Summarize maxima and fractions over windows without treating ranks, layers, groups, tokens, or values as independent repetitions."
+  },
+  "decision_before_result": {
+    "scale_range_exceedance_supported": "Any valid saturated group with max_writer_amax_ratio > 1 and zero non-finite values supports the narrow claim that the current scale bank is too small for at least one observed conditional-fit group.",
+    "scale_range_exceedance_not_observed": "All 32 windows and all expected layer/rank receipts have max_writer_amax_ratio <= 1, zero saturated groups, and zero non-finite values.",
+    "invalid": "Any canary mismatch, missing window/layer/rank receipt, record width other than 288, non-finite writer input, role substitution, or silent retry invalidates this diagnostic.",
+    "quality_boundary": "Exceedance does not prove it explains KLD. A refit scale bank is a new candidate and requires its own frozen, uninstrumented KLD A/B."
+  },
+  "required_result_labels": [
+    "attention backend",
+    "KV dtype and 288-byte ABI",
+    "MoE backend",
+    "activation precision",
+    "stored bpw",
+    "TP/DCP/EP topology",
+    "CUDA graph mode",
+    "MTP/speculation status",
+    "model/checkpoint revision",
+    "image digest and scale-bank hash"
+  ],
+  "performance_boundary": "Instrumentation adds GPU reductions and host synchronization. No instrumented timing, prefill, decode, latency, throughput, or speed comparison is admissible; speed checks use the counter-disabled tail-V2 image.",
+  "storage": "Receipts are small JSON only. No logits or large captures are written by the counter, and nothing is written to klcstore.",
+  "protected_roles_opened": [],
+  "ldlq": "N/A - attention KV scale diagnostic; does not modify the P8 encoder or ABI"
+}
