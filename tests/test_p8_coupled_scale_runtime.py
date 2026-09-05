@@ -201,10 +201,10 @@ def test_runtime_sources_are_syntactic_and_scale_hooks_have_exact_seams() -> Non
     assert "trellis_lut, scale_component, smem_base" in source["fc2"]
     assert "trellis_lut,\n                    trellis_rotations," in source["dynamic"]
 
-    # The legal implementation selects one N128 owner. N64/N32 and non-M1
-    # scale execution fail closed rather than moving svh before H128.
+    # Scale-only remains M1; full coupling additionally owns exact grouped
+    # M64/N128 CTAs rather than moving svh across an ownership boundary.
     assert "One-CTA N128 owner for the H128 scale-sandwich boundary" in source["fc1"]
-    assert "P8 scale sandwich requires M1 N128 CTA ownership" in source["dynamic"]
+    assert "P8 scale sandwich requires exact M1 or full-coupled M64/N128 ownership" in source["dynamic"]
     assert "P8 scale sandwich currently supports M=1 only" in source["wrapper"]
     assert "p8_scale_sandwich=self.scale_component is not None" in source["wrapper"]
     assert "_w4a8_had128_quad" in source["fc1"]

@@ -83,7 +83,7 @@ class P8CoupledPrefillGeometry:
 
     @property
     def scale_flat_bytes_logical(self) -> int:
-        return self.tokens * (self.hidden // 32)
+        return materialized_scale_storage_elements(self.tokens, self.hidden)
 
     @property
     def intermediate_bytes(self) -> int:
@@ -123,4 +123,37 @@ def prefill_strategy(tokens: int) -> str:
     return "m1-n128" if tokens == 1 else "forced-split-m64"
 
 
-__all__ = ["P8CoupledPrefillGeometry", "prefill_strategy"]
+def materialized_scale_storage_elements(tokens: int, hidden: int = 4096) -> int:
+    """Exact shared-input UE8M0 byte count for materialized W4A8.
+
+    The front end writes ``token * (H/32) + block``.  FC1 reads one packed
+    u32 at ``token * (H/32) + 4*k128`` for each K128 tile, covering the same
+    four bytes.  Therefore both producer and consumer have inclusive maximum
+    index ``tokens * (H/32) - 1``; grouped route rows never index this plane.
+    """
+
+    if tokens <= 0:
+        raise ValueError("token count must be positive")
+    if hidden <= 0 or hidden % 128:
+        raise ValueError("hidden must be positive and divisible by 128")
+    return tokens * (hidden // 32)
+
+
+def materialized_scale_index_bounds(
+    tokens: int, hidden: int = 4096
+) -> tuple[int, int, int]:
+    """Return inclusive producer/consumer maxima and required byte count."""
+
+    elements = materialized_scale_storage_elements(tokens, hidden)
+    producer_max = (tokens - 1) * (hidden // 32) + (hidden // 32 - 1)
+    last_k128 = hidden // 128 - 1
+    consumer_max = (tokens - 1) * (hidden // 32) + 4 * last_k128 + 3
+    return producer_max, consumer_max, elements
+
+
+__all__ = [
+    "P8CoupledPrefillGeometry",
+    "materialized_scale_index_bounds",
+    "materialized_scale_storage_elements",
+    "prefill_strategy",
+]

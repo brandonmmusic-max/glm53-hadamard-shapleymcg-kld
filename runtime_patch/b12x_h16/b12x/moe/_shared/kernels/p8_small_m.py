@@ -75,6 +75,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
 
     tile_m = 16
     source_tile_m = 16
+    mma_m_blocks = 1
+    owned_row_groups = 4
+    prefill_grouped = False
     a_payload_bytes = 16 * 128
     a_scale_bytes = 16 * 4
     a_stage_bytes = a_payload_bytes + a_scale_bytes
@@ -177,9 +180,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         # Each warp owns M16xN32: one M16 block and four N8 fragments.
         facc = tuple(
             tuple(cute.make_rmem_tensor((4,), cutlass.Float32) for _nt in range(4))
-            for _blk in range(1)
+            for _blk in range(self.mma_m_blocks)
         )
-        for blk in cutlass.range_constexpr(1):
+        for blk in cutlass.range_constexpr(self.mma_m_blocks):
             for nt in cutlass.range_constexpr(4):
                 facc[blk][nt].fill(0.0)
 
@@ -226,15 +229,15 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
             cute.arch.fence_proxy("async.shared", space="cta")
             cute.arch.sync_threads()
 
-            asc = cute.make_rmem_tensor((1,), Uint32)
-            for blk in cutlass.range_constexpr(1):
+            asc = cute.make_rmem_tensor((self.mma_m_blocks,), Uint32)
+            for blk in cutlass.range_constexpr(self.mma_m_blocks):
                 sf_row = Int32(blk * 16) + q + ((lane & Int32(1)) << Int32(3))
                 asc[blk] = ld_shared_u32(sfa_base + (sf_row << Int32(2)))
 
             for kb in cutlass.range_constexpr(4):
                 u_phys = (Int32(kb * 2) + (c >> Int32(1))) ^ q
-                a_frag = cute.make_rmem_tensor((1, 4), Uint32)
-                for blk in cutlass.range_constexpr(1):
+                a_frag = cute.make_rmem_tensor((self.mma_m_blocks, 4), Uint32)
+                for blk in cutlass.range_constexpr(self.mma_m_blocks):
                     a_lo = (
                         a_base
                         + Int32(blk * 16 * self.tile_k)
@@ -288,7 +291,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                         sfb_word = ld_shared_u32(
                             sfb_base + ((n8 * Int32(8) + q) << Int32(2))
                         )
-                    for blk in cutlass.range_constexpr(1):
+                    for blk in cutlass.range_constexpr(self.mma_m_blocks):
                         fragment = facc[blk][nt]
                         if cutlass.const_expr(self.w4a8_trellis):
                             d0, d1, d2, d3 = mxfp8_mma_m16n8k32_f32_e4m3(
@@ -350,67 +353,88 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                 expert_idx
             ].to(cutlass.Float32)
             physical_base = smem_base
-            if q == Int32(0):
-                col_in_tile = warp_idx * Int32(32) + c * Int32(2)
-                for nt in cutlass.range_constexpr(4):
-                    col = col_in_tile + Int32(nt * 8)
-                    st_shared_u32(
-                        physical_base + col * Int32(2),
-                        _p8_pack_f32x2_to_half2(
-                            down_scale * facc[0][nt][0],
-                            down_scale * facc[0][nt][1],
-                        ),
-                    )
+            col_in_tile = warp_idx * Int32(32) + c * Int32(2)
+            for nt in cutlass.range_constexpr(4):
+                col = col_in_tile + Int32(nt * 8)
+                for blk in cutlass.range_constexpr(self.mma_m_blocks):
+                    fragment = facc[blk][nt]
+                    row_lo = Int32(blk * 16) + q
+                    row_hi = row_lo + Int32(8)
+                    if row_lo < valid_rows:
+                        st_shared_u32(
+                            physical_base
+                            + (row_lo * Int32(self.tile_n) + col) * Int32(2),
+                            _p8_pack_f32x2_to_half2(
+                                down_scale * fragment[0],
+                                down_scale * fragment[1],
+                            ),
+                        )
+                    if row_hi < valid_rows:
+                        st_shared_u32(
+                            physical_base
+                            + (row_hi * Int32(self.tile_n) + col) * Int32(2),
+                            _p8_pack_f32x2_to_half2(
+                                down_scale * fragment[2],
+                                down_scale * fragment[3],
+                            ),
+                        )
             cute.arch.sync_threads()
-            if warp_idx == Int32(0):
-                hcol = lane * Int32(4)
-                addr = physical_base + hcol * Int32(2)
-                h0 = _p8_ld_shared_f16_to_f32(addr)
-                h1 = _p8_ld_shared_f16_to_f32(addr + Int32(2))
-                h2 = _p8_ld_shared_f16_to_f32(addr + Int32(4))
-                h3 = _p8_ld_shared_f16_to_f32(addr + Int32(6))
-                h0, h1, h2, h3 = _w4a8_had128_quad(
-                    h0, h1, h2, h3, lane
-                )
-                output_col = output_tile * Int32(128) + hcol
-                h0 = self._scale_down_after_h128(
-                    h0, scale_component, output_col
-                )
-                h1 = self._scale_down_after_h128(
-                    h1, scale_component, output_col + Int32(1)
-                )
-                h2 = self._scale_down_after_h128(
-                    h2, scale_component, output_col + Int32(2)
-                )
-                h3 = self._scale_down_after_h128(
-                    h3, scale_component, output_col + Int32(3)
-                )
-                if cutlass.const_expr(self.full_coupled):
-                    # The replacement deterministic reducer owns route
-                    # weighting, FP32 top-k summation and final H512. Keeping
-                    # these route values unweighted and FP32 is required: an
-                    # H512 cannot legally be applied route-by-route around the
-                    # BF16 reducer boundary.
-                    scatter_output[source_m_tile, output_col] = h0
-                    scatter_output[source_m_tile, output_col + Int32(1)] = h1
-                    scatter_output[source_m_tile, output_col + Int32(2)] = h2
-                    scatter_output[source_m_tile, output_col + Int32(3)] = h3
-                else:
-                    weight = token_weights[source_m_tile * Int32(16)].to(
-                        cutlass.Float32
+            for row_group in cutlass.range_constexpr(self.owned_row_groups):
+                hrow = warp_idx + Int32(row_group * self.num_warps)
+                if hrow < valid_rows:
+                    hcol = lane * Int32(4)
+                    addr = physical_base + (
+                        hrow * Int32(self.tile_n) + hcol
+                    ) * Int32(2)
+                    h0 = _p8_ld_shared_f16_to_f32(addr)
+                    h1 = _p8_ld_shared_f16_to_f32(addr + Int32(2))
+                    h2 = _p8_ld_shared_f16_to_f32(addr + Int32(4))
+                    h3 = _p8_ld_shared_f16_to_f32(addr + Int32(6))
+                    h0, h1, h2, h3 = _w4a8_had128_quad(
+                        h0, h1, h2, h3, lane
                     )
-                    scatter_output[source_m_tile, output_col] = cutlass.BFloat16(
-                        weight * h0
+                    output_col = output_tile * Int32(128) + hcol
+                    h0 = self._scale_down_after_h128(
+                        h0, scale_component, output_col
                     )
-                    scatter_output[
-                        source_m_tile, output_col + Int32(1)
-                    ] = cutlass.BFloat16(weight * h1)
-                    scatter_output[
-                        source_m_tile, output_col + Int32(2)
-                    ] = cutlass.BFloat16(weight * h2)
-                    scatter_output[
-                        source_m_tile, output_col + Int32(3)
-                    ] = cutlass.BFloat16(weight * h3)
+                    h1 = self._scale_down_after_h128(
+                        h1, scale_component, output_col + Int32(1)
+                    )
+                    h2 = self._scale_down_after_h128(
+                        h2, scale_component, output_col + Int32(2)
+                    )
+                    h3 = self._scale_down_after_h128(
+                        h3, scale_component, output_col + Int32(3)
+                    )
+                    output_row = source_m_tile
+                    if cutlass.const_expr(self.prefill_grouped):
+                        physical_row = physical_row_base + hrow
+                        output_row = token_map[physical_row].to(Int32)
+                    if cutlass.const_expr(self.full_coupled):
+                        # Keep route values unweighted and FP32: route
+                        # weighting, top-k sum and final H512 belong to the
+                        # replacement reducer. Grouped prefill scatters by the
+                        # deterministic pair index in token_map.
+                        scatter_output[output_row, output_col] = h0
+                        scatter_output[output_row, output_col + Int32(1)] = h1
+                        scatter_output[output_row, output_col + Int32(2)] = h2
+                        scatter_output[output_row, output_col + Int32(3)] = h3
+                    else:
+                        weight = token_weights[source_m_tile * Int32(16)].to(
+                            cutlass.Float32
+                        )
+                        scatter_output[output_row, output_col] = cutlass.BFloat16(
+                            weight * h0
+                        )
+                        scatter_output[
+                            output_row, output_col + Int32(1)
+                        ] = cutlass.BFloat16(weight * h1)
+                        scatter_output[
+                            output_row, output_col + Int32(2)
+                        ] = cutlass.BFloat16(weight * h2)
+                        scatter_output[
+                            output_row, output_col + Int32(3)
+                        ] = cutlass.BFloat16(weight * h3)
             cute.arch.sync_threads()
 
     @cute.kernel
