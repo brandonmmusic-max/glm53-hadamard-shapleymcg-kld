@@ -955,6 +955,22 @@ confirmation, and final roles remained unopened for this redesign branch.
   to an integrated trace of the closed N128x2 small-M path; allocation remains
   stopped. See `results/P8_SMALLM_N256_DEVICE_V1.md`.
 
+## 2026-09-05: Decision 42 — profile the integrated small-M path before another change
+
+- Clone the authenticated 75.5962 tok/s run with its measured N128x2 image and
+  unchanged runtime tree. Change only profiler instrumentation, model name,
+  port and trace destination. Capture 16 decode iterations on all four ranks
+  with the existing synthetic 32K client.
+- Account separately for dynamic FC1, small-M FC2, top-k reduction, native dense
+  MMA/GEMV, attention, communication, fills and other work. Attribute graph
+  nodes to launch correlation IDs; report interval unions and per-rank sums.
+- Select the next optimization from the largest actionable cost on critical
+  ranks. The old non-MoE timing estimate is a hypothesis until this trace
+  measures it. One server is one experimental unit; graph iterations are
+  subsamples. Plan: `experiments/p8-smallm-profile-v1.json` with SHA256 seal.
+- Use only synthetic inputs, preserve the failed product gate and stopped
+  allocation, and restore prior service states after the capture.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
