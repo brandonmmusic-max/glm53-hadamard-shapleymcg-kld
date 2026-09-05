@@ -859,6 +859,25 @@ confirmation, and final roles remained unopened for this redesign branch.
   only after a closed candidate exists. The failed product gate and allocation
   stop remain immutable. See `results/P8_DECODE_NSYS_V1.md`.
 
+## 2026-09-05: Decision 36 — P8 M1 route/slice candidate clears its first device A/B
+
+- The opt-in candidate uses eight M16 route tiles, 32 route/K128 FC1 tasks and
+  128 route/N256 FC2 tasks while retaining K4 procedural MCG, E4M3
+  `mxf8f6f4`, physical UE8M0/32, ordered BF16 slice boundaries and the existing
+  deterministic top-k reduction. M2/M3 fall back to the frozen path.
+- On rank 0 / layer 3 at full E288 geometry, baseline and candidate produced
+  identical BF16 hashes across five repeats. Separately seeded M2 and M3
+  fallback hashes also matched the separately frozen baseline exactly.
+- After 20 warmups, 100 CUDA-event samples measured median 1.134288 ms for the
+  frozen monolithic M1 layer call and 0.313248 ms for the candidate: a 72.3837%
+  reduction or 3.6211x speedup. This is a single-GPU eager developmental A/B,
+  not graph-replayed serving throughput or product qualification.
+- Advance to poisoned scratch, captured-graph and four-rank integration gates.
+  Attribute the timing to the combined routing/decomposition/capacity candidate,
+  not to one isolated mechanism. The completed product failure and allocation
+  stop remain unchanged until a newly frozen integrated comparison passes.
+  See `results/P8_SMALLM_DEVICE_V1.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
