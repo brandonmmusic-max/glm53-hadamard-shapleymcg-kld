@@ -77,7 +77,7 @@ def test_dynamic_calls_route_ids_and_bypasses_old_fc2():
     assert "self.materialize_intermediate and not self.external_materialized_fc2" in source
     assert "phase2_experts = topk_ids" in source
     assert "self.materialized_phase2_kernel = P8SmallMPhase2Kernel()" in source
-    assert 'assert a_input.shape[0] == 1' in source
+    assert 'CuTe exposes these tensor extents as staged values' in source
     wrapper = (PATCH / "p8_native_kernel.py").read_text()
     assert "small_m_scheduler: bool = False" in wrapper
     assert "p8_small_m=small_m" in wrapper
