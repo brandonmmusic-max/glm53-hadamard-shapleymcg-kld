@@ -1251,6 +1251,12 @@ confirmation, and final roles remained unopened for this redesign branch.
   The exact image imports the patched warmup and accepts the actual pinned
   synthetic sampling signature. These are structural checks only; the next
   authorized action is sealing and executing the unchanged numerical gate.
+- Sealed at 08:13 UTC: `experiments/p8-forced-m1-v2-v2.json`, SHA-256
+  `0faf9049d5f565e887570a6eff6ceac431ad4b6d767f2a72ab4b324b348d29c3`.
+  All32 approved teachers freshly byte-verified; four domains retain eight
+  windows each, first canary conditional-fit-0056. Proceed under the existing
+  model-stack lock and restore prior service states. This entry precedes
+  execution; no canary pass or full KLD result is claimed by the seal.
 
 ## 2026-09-03: uniform rotation
 

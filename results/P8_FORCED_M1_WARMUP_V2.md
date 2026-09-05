@@ -82,6 +82,15 @@ before and after replay; its plan is not rewritten to fit the new worktree.
 
 ## Boundaries
 
+The new plan is [p8-forced-m1-v2-v2.json](../experiments/p8-forced-m1-v2-v2.json),
+SHA-256 `0faf9049d5f565e887570a6eff6ceac431ad4b6d767f2a72ab4b324b348d29c3`.
+Planning freshly byte-verified all 32 approved teacher files, confirmed eight
+windows in each of four domains, pinned 29 source files, and budgeted
+83,698,391,040 raw capture bytes plus 20 GiB free-space margin. The service
+name is `glm53-p8-forced-m1-v2-v2.service`; the fresh raw output is
+`/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-smallm-scheduler-v1/forced-m1-v2-v2`.
+Sealing and launch are not completion evidence; terminal receipts govern.
+
 CPU tests and a successful image build are not capture proof. Capture timing
 is not a throughput measurement. The separate five-cold-run speed pass remains
 100.5501 versus 91.2200 decode tok/s and 6,959 versus 6,239 server-prefill
