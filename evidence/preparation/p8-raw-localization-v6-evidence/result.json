@@ -1,0 +1,65 @@
+{
+  "closure_pass": false,
+  "decision": "fail",
+  "error": {
+    "message": "selected raw FC1 row 1 retained sentinel words",
+    "type": "RuntimeError"
+  },
+  "gpu_used": true,
+  "protocol": {
+    "capture": "for each route slot and output tile, intermediate row slot*16+tile stores gate[128]|up[128] as raw FP16 immediately before joint H128",
+    "decision_rule": {
+      "localized_after_raw_fc1": "observed-carrier gate and up both satisfy the numeric gate; continue instrumentation after the first joint H128",
+      "localized_at_or_before_raw_fc1": "either observed-carrier projection fails; inspect stream decode, W13 scale/MMA geometry, and projection ordering"
+    },
+    "evidence_level": "gpu-localization-only",
+    "failure_policy": "fail closed on identity drift, non-SM120, non-M1/full-coupled dispatch, capture-row collision or bounds error, missing debug carrier, nonfinite FP16 capture, or malformed projection geometry",
+    "forbidden_claims": [
+      "closure pass",
+      "KLD qualification",
+      "throughput qualification",
+      "serving qualification",
+      "all-layer or all-rank qualification"
+    ],
+    "geometry": {
+      "experts": 288,
+      "fc1_tile_n": 128,
+      "hidden": 4096,
+      "layer": 3,
+      "local_intermediate": 512,
+      "physical_rows": 128,
+      "rank": 0,
+      "selected_experts": [
+        0,
+        1,
+        17,
+        63,
+        127,
+        191,
+        255,
+        287
+      ],
+      "tokens": 1,
+      "topk": 8
+    },
+    "input_prequant_trace": "exactly 512 bytes in the MCG-dead trellis_lut ABI slot: raw K32 block40, normalized block40, raw block62, normalized block62 as FP32",
+    "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
+    "ldlq": false,
+    "numeric_gate": {
+      "each_selected_expert_and_projection_cosine_strictly_greater_than": 0.995,
+      "each_selected_expert_and_projection_relative_l2_strictly_less_than": 0.12
+    },
+    "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
+    "projection_contract": "W13 trellis slot0=gate, slot1=up; physical W13 scale plane=up|gate",
+    "purpose": "localize v4 middle-carrier divergence before or after raw W13 MMA",
+    "reference_arms": [
+      "canonical CPU input carrier",
+      "observed device E4M3/UE8M0 input carrier reconstructed in logical K order"
+    ],
+    "schema": "glm53.p8-full-coupled-m1-raw-fc1-diagnostic.v1"
+  },
+  "protocol_sha256": "c8be5ce44879efc9f4d821541d62aad09fcbb5ed2358c11ee16d6a14ba63a45c",
+  "qualification_allowed": false,
+  "schema": "glm53.p8-full-coupled-m1-raw-fc1-diagnostic.v1",
+  "traceback": "Traceback (most recent call last):\n  File \"/work/scripts/run_p8_coupled_m1_raw_fc1_diagnostic.py\", line 783, in main\n    result = run_probe(args)\n             ^^^^^^^^^^^^^^^\n  File \"/work/scripts/run_p8_coupled_m1_raw_fc1_diagnostic.py\", line 583, in run_probe\n    capture_audit = audit_raw_capture_bounds(debug[\"intermediate_u32\"])\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/scripts/run_p8_coupled_m1_raw_fc1_diagnostic.py\", line 152, in audit_raw_capture_bounds\n    raise RuntimeError(f\"selected raw FC1 row {row} retained sentinel words\")\nRuntimeError: selected raw FC1 row 1 retained sentinel words\n"
+}
