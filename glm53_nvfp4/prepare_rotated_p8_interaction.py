@@ -33,6 +33,7 @@ def _file(path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-p8-design", type=Path, required=True)
+    parser.add_argument("--layer", type=int, default=3)
     parser.add_argument("--rotation", type=Path, required=True)
     parser.add_argument("--train-analysis", type=Path, required=True)
     parser.add_argument("--tune-analysis", type=Path, required=True)
@@ -42,6 +43,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
+    if not 3 <= args.layer <= 44:
+        raise ValueError("layer must be 3..44")
 
     base = json.loads(args.base_p8_design.read_text())
     if (
@@ -78,9 +81,9 @@ def main() -> None:
         if (
             metadata.get("schema") != "glm53-rotation-v8.shared-butterfly16.v1"
             or metadata.get("scope") != "mid-only"
-            or metadata.get("layer") != "3"
+            or metadata.get("layer") != str(args.layer)
             or float(metadata.get("angle_pi", "nan")) != 0.0625
-            or set(src.keys()) != {"layer_003_mid"}
+            or set(src.keys()) != {f"layer_{args.layer:03d}_mid"}
         ):
             raise RuntimeError("rotation is not the selected canonical p00625 payload")
 
@@ -118,12 +121,15 @@ def main() -> None:
         "decision_before_result": True,
         "decision_record": "DECISIONS_GLM53.md#21",
         "git_commit": commit,
-        "layers": [3],
+        "layers": [args.layer],
         "rotation": {
             "id": "p00625",
             "angle_pi": 0.0625,
             **_file(args.rotation),
-            "selection": "fixed before tune close; one interaction regardless of tune outcome",
+            "selection": (
+                "p00625 fixed by the completed layer-3 fit analysis before the "
+                "three-layer P8 encoder test; no per-layer angle search"
+            ),
             "tune_decision_control": tune["decision"],
         },
         "base_p8_design": _file(args.base_p8_design),

@@ -24,6 +24,7 @@ DCP_SIZE=${GLM53_DCP_SIZE:-4}
 ROUTE_CAPTURE_OUTPUT=${GLM53_ROUTE_CAPTURE_OUTPUT:-}
 P8_PSEUDOQUANT=${GLM53_P8_PSEUDOQUANT:-}
 P8_PSEUDOQUANT_ARM=${GLM53_P8_PSEUDOQUANT_ARM:-candidate}
+P8_LAYERS=${GLM53_P8_LAYERS:-3}
 P8_BOUNDARY_FILES=${GLM53_P8_BOUNDARY_FILES:-}
 P8_POLICY=${GLM53_P8_POLICY:-}
 P8_MID_BUTTERFLY_ANGLE_PI=${GLM53_P8_MID_BUTTERFLY_ANGLE_PI:-}
@@ -159,7 +160,7 @@ if [ -n "$P8_PSEUDOQUANT" ]; then
     -e PYTHONPATH=/runtime-patch:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x
     -e GLM53_P8_PSEUDOQUANT="$P8_PSEUDOQUANT"
     -e GLM53_P8_PSEUDOQUANT_ARM="$P8_PSEUDOQUANT_ARM"
-    -e GLM53_P8_LAYERS=3
+    -e GLM53_P8_LAYERS="$P8_LAYERS"
     -e GLM53_P8_BOUNDARY_FILES="$P8_BOUNDARY_FILES"
   )
   [ -z "$P8_POLICY" ] || rotation_env+=( -e GLM53_P8_POLICY="$P8_POLICY" )
@@ -284,8 +285,8 @@ docker image inspect "$IMAGE" >"$SESSION/image-inspect.json"
 [ "$(docker inspect "$TEST" --format '{{.Image}}')" = "$IMAGE_ID" ]
 docker logs "$TEST" >"$SESSION/server-ready.log" 2>&1 || true
 [ -z "$ROUTE_CAPTURE_OUTPUT" ] || grep -q 'GLM53_ROUTED_EXPERTS_SPARSE_MLA_PATCH_ACTIVE' "$SESSION/server-ready.log"
-[ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
-[ "$P8_PSEUDOQUANT_ARM" != mid-butterfly ] || grep -q 'GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=3 .*arm=mid-butterfly angle_pi=0.0625 ' "$SESSION/server-ready.log"
+[ -z "$P8_PSEUDOQUANT" ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=$P8_LAYERS .* arm=$P8_PSEUDOQUANT_ARM .*ldlq=false" "$SESSION/server-ready.log"
+[ "$P8_PSEUDOQUANT_ARM" != mid-butterfly ] || grep -q "GLM53_P8_PSEUDOQUANT_PATCH_ACTIVE layers=$P8_LAYERS .*arm=mid-butterfly angle_pi=0.0625 " "$SESSION/server-ready.log"
 [ -z "$P8_NATIVE" ] || grep -q "GLM53_P8_NATIVE_PATCH_ACTIVE layers=$P8_NATIVE_LAYERS tp=4 .*K4 procedural_mcg E4M3 UE8M0_K32 identity deterministic_route_topk_sum physical_bpw=4.25 ldlq=false" "$SESSION/server-ready.log"
 [ -z "$P4_NATIVE" ] || grep -q "GLM53_P4_NATIVE_PATCH_ACTIVE layers=$P4_NATIVE_LAYERS tp=4 .*schema=glm53-p4-mcg-tp-rank.v2 .*mma=mxf4nvf4 .*physical_bpw=4.5 .*ldlq=false" "$SESSION/server-ready.log"
 [ "$ROTATION" = identity ] || grep -q "GLM53_BLOCK_ROTATION_PATCH_ACTIVE mode=$ROTATION layers=$LAYERS scope=$ROTATION_SCOPE placement=$ROTATION_PLACEMENT" "$SESSION/server-ready.log"
