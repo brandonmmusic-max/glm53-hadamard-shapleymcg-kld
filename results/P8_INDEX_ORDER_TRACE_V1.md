@@ -1,7 +1,9 @@
 # P8 pooled-index ordering diagnostic, preregistered
 
-Status: implemented and CPU-tested; GPU evidence pending. This does not change
-the failed v3 closure gate or authorize the full conditional-fit panel.
+Status: v1 stopped at worker import before evaluation. See
+[the preserved failure and v2 amendment](P8_INDEX_TRACE_IMPORT_V2.md).
+This does not change the failed v3 closure gate or authorize the full
+conditional-fit panel. The text below preserves the predeclared v1 design.
 
 ## Decision before result
 

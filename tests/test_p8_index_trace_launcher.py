@@ -254,6 +254,8 @@ def test_plan_and_authentication_never_call_teacher_loader(tmp_path, monkeypatch
     monkeypatch.setattr(launch, 'ROOT', root)
     monkeypatch.setattr(launch, 'source_files', lambda: {'source.py'})
     monkeypatch.setattr(launch, 'preflight_receipt', lambda path: TRANSFORMATIONS)
+    monkeypatch.setattr(launch, 'import_preflight_receipt', lambda path, transformations: None)
+    monkeypatch.setattr(launch, 'prior_unit_terminal', lambda: None)
     window = {'id': launch.WINDOW}
     old = {'image_receipt': '/receipt.json', 'image_receipt_sha256': 'a' * 64}
     monkeypatch.setattr(launch, 'historical_inputs', lambda: (window, {}, old))
@@ -262,7 +264,7 @@ def test_plan_and_authentication_never_call_teacher_loader(tmp_path, monkeypatch
     monkeypatch.setattr(launch.base, 'approved_inputs', forbidden)
     monkeypatch.setattr(launch.protocol, 'load_role_inputs', forbidden)
     path, out = tmp_path / 'plan.json', root / 'index-trace-v1'
-    plan = launch.make_plan(path, out, preflight)
+    plan = launch.make_plan(path, out, preflight, preflight)
     assert launch.authenticate(path) == plan
     assert plan['windows'] == [window] and plan['teacher_logits_opened'] is False
     assert plan['raw_capture_bytes'] == 2 * 2047 * 154880 * 4
@@ -306,6 +308,8 @@ def test_two_same_n128_repeats_and_no_stop_for_logit_difference(tmp_path, monkey
             value = '\n'.join(f'{digest}  {path}' for path, digest in launch.UNMODIFIED_SOURCES.items())
         if argv[0] == 'systemctl':
             value = 'ActiveState=failed\nResult=exit-code\n'
+            if 'MainPID' in argv:
+                value += 'MainPID=0\n'
         return subprocess.CompletedProcess(argv, 0, value, '')
     monkeypatch.setattr(launch.pilot, 'command', command)
     monkeypatch.setattr(launch.pilot, 'active', lambda *a: False)
@@ -333,3 +337,106 @@ def test_two_same_n128_repeats_and_no_stop_for_logit_difference(tmp_path, monkey
         assert launch.run(path)['diagnostic_complete'] is True
     assert captured == [{'stage': 'canary', 'arm': 'n128'}] * (1 if failure else 2)
     assert len(compared) == (0 if failure else 1) and restored == [True]
+
+
+@pytest.mark.parametrize('state', ['ActiveState=active\nResult=success\nMainPID=0',
+                                  'ActiveState=failed\nResult=exit-code\nMainPID=99',
+                                  'ActiveState=failed\nResult=exit-code',
+                                  'ActiveState=inactive\nResult=exit-code\nMainPID=0'])
+def test_v1_unit_must_be_terminal_failed(monkeypatch, state):
+    monkeypatch.setattr(launch.pilot, 'command', lambda argv: subprocess.CompletedProcess(argv, 0, state, ''))
+    with pytest.raises(ValueError, match='terminal failed'):
+        launch.prior_unit_terminal()
+
+
+def test_import_preflight_requires_exact_source_and_schema(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    for name in launch.IMPORT_SOURCES:
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('# pinned source')
+    # core_transformations depends on actual patches; isolate it in this focused receipt test.
+    monkeypatch.setattr(launch, 'REPO', repo)
+    monkeypatch.setattr(launch, 'core_transformations', lambda value: value)
+    payload = {'schema': 'glm53-p8.index-import-preflight.v2', 'status': 'passed', 'image_id': launch.IMAGE,
+               'schemas_equal': True, 'annotation_mode_preserved': True, 'breakable_cudagraph': True,
+               'gpu_used': False, 'model_loaded': False, 'teacher_logits_opened': False,
+               'speed_measurement_valid': False,
+               'source_sha256': {name: launch.pilot.sha(repo / name) for name in launch.IMPORT_SOURCES},
+               'source_transformations': TRANSFORMATIONS}
+    receipt = tmp_path / 'import.json'
+    receipt.write_text(json.dumps(payload))
+    launch.import_preflight_receipt(receipt, TRANSFORMATIONS)
+    for key, value in [('schemas_equal', False), ('annotation_mode_preserved', False), ('status', 'failed'),
+                       ('breakable_cudagraph', False),
+                       ('gpu_used', True), ('model_loaded', True), ('teacher_logits_opened', True),
+                       ('image_id', 'foreign'), ('schema', 'v1'), ('source_sha256', {}),
+                       ('source_transformations', {})]:
+        receipt.write_text(json.dumps({**payload, key: value}))
+        with pytest.raises(ValueError):
+            launch.import_preflight_receipt(receipt, TRANSFORMATIONS)
+    receipt.write_text(json.dumps(payload))
+    (repo / sorted(launch.IMPORT_SOURCES)[0]).write_text('# changed')
+    with pytest.raises(ValueError, match='source identity'):
+        launch.import_preflight_receipt(receipt, TRANSFORMATIONS)
+
+
+@pytest.fixture
+def prior_failure(tmp_path, monkeypatch):
+    repo, raw = tmp_path / 'v1repo', tmp_path / 'raw'
+    repo.mkdir(); raw.mkdir()
+    stage = raw / 'repeat-01-n128'
+    stage.mkdir()
+    for name in ('requests', 'captures', 'index-traces'):
+        (stage / name).mkdir()
+    sources = {}
+    for index in range(38):
+        path = repo / f'source{index}.py'
+        path.write_text('# original')
+        sources[path.name] = launch.pilot.sha(path)
+    plan_path = repo / 'plan.json'
+    plan = {'schema': 'glm53-p8.index-trace-plan.v1', 'output': str(raw),
+            'capture_image': launch.IMAGE, 'source_sha256': sources}
+    plan_path.write_text(json.dumps(plan))
+    plan_sha = launch.pilot.sha(plan_path)
+    plan_path.with_suffix('.sha256').write_text(plan_sha + '  plan.json\n')
+    container = {'Id': 'a' * 64, 'Image': launch.IMAGE, 'State': {'Status': 'exited', 'Running': False}}
+    (stage / 'container-final.private.json').write_text(json.dumps(container))
+    for index in range(9):
+        (stage / f'file{index}.txt').write_text('preserved')
+    files = {path.name: {'sha256': launch.pilot.sha(path), 'bytes': path.stat().st_size}
+             for path in stage.iterdir() if path.is_file()}
+    execution = {'exit_code': 1, 'plan_sha256': plan_sha, 'windows': [], 'files': files,
+                 'cleanup': {'ok': True, 'errors': []}, 'protected_roles_opened': [], 'container_id': 'a' * 64}
+    (stage / 'execution.json').write_text(json.dumps(execution))
+    stage_sha = launch.pilot.sha(stage / 'execution.json')
+    root = {'exit_code': 1, 'plan_sha256': plan_sha, 'repeats': [{'index': 1, 'execution_sha256': stage_sha}],
+            'restoration': {'backend': True, 'timer': False, 'errors': []},
+            'restoration_safety': {'ok': True, 'errors': [], 'containers': []},
+            'final_identity_audit': {'ok': True}, 'teacher_logits_opened': False, 'protected_roles_opened': []}
+    (raw / 'execution.json').write_text(json.dumps(root))
+    for key, value in [('V1_REPO', repo), ('V1_OUTPUT', raw), ('V1_PLAN', plan_path),
+                       ('V1_PLAN_SHA', plan_sha), ('V1_STAGE_SHA', stage_sha),
+                       ('V1_EXEC_SHA', launch.pilot.sha(raw / 'execution.json'))]:
+        monkeypatch.setattr(launch, key, value)
+    return repo, raw, stage
+
+
+def test_v1_failure_authentication_checks_38_original_sources_and_ten_files(prior_failure):
+    launch.verify_v1_failure()
+    assert launch.PREFIX == 'glm53-p8-index-trace-v2'
+    assert launch.FIXED['schema'] == 'glm53-p8.index-trace-plan.v2'
+    assert launch.FIXED['amends_execution_sha256'] == '43f91db06306435eaacf4e0969349983bc3ee2b5bb23f26673495b5c2a4d1024'
+
+
+@pytest.mark.parametrize('kind', ['source', 'file', 'request', 'capture', 'trace', 'second', 'comparison', 'seal', 'root'])
+def test_v1_failure_authentication_rejects_drift_or_any_evaluation(prior_failure, kind):
+    repo, raw, stage = prior_failure
+    path = {'source': repo / 'source0.py', 'file': stage / 'file0.txt',
+            'request': stage / 'requests/request.json', 'capture': stage / 'captures/logits.bin',
+            'trace': stage / 'index-traces/rank-0.json', 'second': raw / 'repeat-02-n128',
+            'comparison': raw / 'comparison.json', 'seal': repo / 'plan.sha256',
+            'root': raw / 'execution.json'}[kind]
+    path.write_text('drift')
+    with pytest.raises(ValueError):
+        launch.verify_v1_failure()

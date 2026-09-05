@@ -1354,6 +1354,22 @@ confirmation, and final roles remained unopened for this redesign branch.
   row.122tests pass. Only that last plan is authorized; both prior manifests
   remain unlaunched. No GPU target result preceded these amendments.
 
+## 2026-09-05: Decision 60 — preserve import failure and repair compiler semantics
+
+- Index-trace-v1 ended before evaluation: root43f91db06306435eaacf4e0969349983bc3ee2b5bb23f26673495b5c2a4d1024,
+  stage77b496198a9bf591ab999f656f8a8bf277f677d641cd997d4feb47e1de69d451.
+  Zero requests/captures/traces; second repeat unstarted; prior services restored.
+- The observer loader inherited its own future-annotations flag into vLLM.
+  With actual worker breakable-graph mode, this reproduces the recorded
+  LayerNameType schema error on CPU. `dont_inherit=True` restores the original
+  annotation objects; final exact-image worker-mode schema/import test passes.
+- Explicitly amend to a fresh v2 plan/namespace/output, preserving v1 unchanged.
+  Require the original failure receipts and the new import/schema gate before
+  launching the same diagnostic.146focusedCPUtests pass. No codec math,
+  selection/attention rule or success threshold changes; no protected opening.
+- See `results/P8_INDEX_TRACE_IMPORT_V2.md`; original full KLD and allocation
+  remain pending, not waived by infrastructure repair.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
