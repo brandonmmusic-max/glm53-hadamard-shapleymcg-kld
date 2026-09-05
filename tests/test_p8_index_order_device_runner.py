@@ -26,11 +26,11 @@ def sample():
     return {'schema': 'glm53-p8.index-order-device.v1', 'status': 'passed',
             'image_id': runner.IMAGE, 'model_loaded': False,
             'teacher_logits_opened': False, 'speed_measurement_valid': False,
-            'gpu': {'uuid': 'GPU-test', 'compute_capability': [12,0], 'multiprocessors': 188},
+            'gpu': {'uuid': '4d808f8d-88c8-8d7d-cb31-d077a6fd28ac', 'compute_capability': [12,0], 'multiprocessors': 188},
             'prefix_gate_points': list(runner.LENGTHS), 'dynamic_length_transitions': list(runner.TRANSITIONS),
             'eager_repeats': 5, 'graph_repeats': 5, 'cases': rows(cases), 'state_transitions': rows(transitions),
             'determinism_sha256': 'a' * 64, 'source_sha256': sources}, {
-                'source_sha256': sources, 'gpu_inventory': ['0, GPU-test, 00:00, 300']}
+                'source_sha256': sources, 'gpu_inventory': ['0, GPU-4d808f8d-88c8-8d7d-cb31-d077a6fd28ac, 00:00, 300']}
 
 
 def test_valid_result():
@@ -81,3 +81,20 @@ def test_daemon_failure_withholds_restore_and_records_errors(monkeypatch):
     assert result['backend'] is None and result['timer'] is None
     assert result['errors']
     assert not any('start' in args for args in calls)
+
+
+def test_uuid_prefix_only_normalization():
+    raw = '4d808f8d-88c8-8d7d-cb31-d077a6fd28ac'
+    assert runner.canonical_gpu_uuid(raw) == runner.canonical_gpu_uuid('GPU-' + raw)
+    assert runner.canonical_gpu_uuid(raw.upper()) == raw
+
+
+@pytest.mark.parametrize('value', ['', 'GPU-test', 'gpu-4d808f8d-88c8-8d7d-cb31-d077a6fd28ac',
+                                   '4d808f8d88c88d7dcb31d077a6fd28ac', None])
+def test_rejects_malformed_uuid(value):
+    with pytest.raises(ValueError):
+        runner.canonical_gpu_uuid(value)
+
+
+def test_receipted_stopped_v1_replays_without_changing_it():
+    runner.verify_v1()

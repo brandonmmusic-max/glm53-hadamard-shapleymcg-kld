@@ -13,12 +13,13 @@ import shutil
 import signal
 import subprocess
 import time
+import uuid
 from datetime import datetime, timezone
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT = Path('/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-smallm-scheduler-v1')
 IMAGE = 'sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9'
-PREFIX = 'glm53-p8-index-order-device-v1'
+PREFIX = 'glm53-p8-index-order-device-v2'
 LABEL = 'org.klc.p8-index-order-plan'
 SOURCE_FILES = (
     'glm53_nvfp4/p8_index_order_device_runner.py',
@@ -33,13 +34,19 @@ SOURCE_FILES = (
 )
 PRIOR = ROOT / 'index-trace-v2/comparison.json'
 PRIOR_SHA = '29111348a0ac0b1d35c6c8613400bb55ac8a545e753c3e0adc4332f40ac3fdab'
+V1_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-index-fix-v1')
+V1_PLAN_SHA = '5ed0f8c3268dbdc05d039335b08884f033c6642f2c7f3781fc502bc83873e021'
+V1_ROOT_SHA = '23b973a5225823fd228941ae72200e52c67b1148ebc0885058879e17bf7339d3'
+V1_RESULT_SHA = 'fe6f56c73dc1d90fff28cc41535b8b4dfd3c4d7c390f017e9804ac8489104574'
 IMPORT_SOURCES = {'scripts/preflight_p8_index_order_import.py',
     'scripts/preflight_p8_index_order_device.py', 'runtime_patch/sitecustomize.py',
     'runtime_patch/p8_index_order/__init__.py', 'runtime_patch/p8_index_order/patches.py'}
 LENGTHS = (0, 1, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025)
 TRANSITIONS = (512, 513) * 5 + (513, 512) * 5
 FIXED = {
-    'schema': 'glm53-p8.index-order-device-plan.v1', 'image': IMAGE,
+    'schema': 'glm53-p8.index-order-device-plan.v2', 'image': IMAGE,
+    'amends_plan_sha256': V1_PLAN_SHA, 'amends_execution_sha256': V1_ROOT_SHA,
+    'amendment': 'Preserve first kernel pass and stopped v1 campaign; canonicalize NVIDIA optional GPU- UUID prefix only. New five-process campaign, unchanged kernel/probe/numerical gate.',
     'physical_gpu': 0, 'independent_processes': 5, 'seed': 20260905,
     'timeout_per_process_seconds': 2400, 'thermal_start_max_c': 75,
     'thermal_abort_c': 90, 'minimum_free_bytes': 5 * 2**30,
@@ -97,7 +104,7 @@ def validate(plan):
     if any(plan.get(key) != value for key, value in FIXED.items()):
         raise ValueError('fixed device protocol differs')
     output = Path(plan['output'])
-    if output.parent != ROOT or output != output.resolve() or output.name != 'index-order-device-v1':
+    if output.parent != ROOT or output != output.resolve() or output.name != 'index-order-device-v2':
         raise ValueError('unexpected output target')
     if set(plan['source_sha256']) != set(SOURCE_FILES):
         raise ValueError('sealed source inventory differs')
@@ -106,6 +113,7 @@ def validate(plan):
             raise ValueError(f'sealed source differs: {name}')
     if sha(PRIOR) != PRIOR_SHA:
         raise ValueError('prior diagnostic receipt differs')
+    verify_v1()
     preflight = Path(plan['import_preflight'])
     if (preflight != preflight.resolve() or not preflight.is_relative_to(REPO)
             or sha(preflight) != plan['import_preflight_sha256']):
@@ -131,7 +139,7 @@ def make_plan(path):
     if path.exists() or path.with_suffix('.sha256').exists():
         raise ValueError('no plan overwrite')
     preflight = REPO / 'evidence/opened/codec-v2/p8-index-order-import-v1/import.json'
-    plan = {**FIXED, 'created_at': now(), 'output': str(ROOT / 'index-order-device-v1'),
+    plan = {**FIXED, 'created_at': now(), 'output': str(ROOT / 'index-order-device-v2'),
             'import_preflight': str(preflight), 'import_preflight_sha256': sha(preflight),
             'gpu_inventory': inventory(), 'source_sha256': {name: sha(REPO / name) for name in SOURCE_FILES}}
     validate(plan)
@@ -199,7 +207,7 @@ def validate_result(result, plan):
         if result.get('source_sha256', {}).get(name) != plan['source_sha256'][name]:
             raise ValueError('probe source receipt differs')
     gpu = result.get('gpu', {})
-    if (gpu.get('uuid', '').lower() != plan['gpu_inventory'][0].split(',')[1].strip().lower()
+    if (canonical_gpu_uuid(gpu.get('uuid', '')) != canonical_gpu_uuid(plan['gpu_inventory'][0].split(',')[1].strip())
             or gpu.get('compute_capability') != [12, 0]):
         raise ValueError('actual probe GPU does not match authorized physical GPU0')
     if (result.get('prefix_gate_points') != list(LENGTHS)
@@ -221,6 +229,37 @@ def validate_result(result, plan):
             if row['policy'] == 'forced-boundary' and row.get('merge_threshold') != 1024:
                 raise ValueError('forced boundary differs')
     return result['determinism_sha256']
+
+
+def canonical_gpu_uuid(value):
+    """Accept only a canonical UUID with NVIDIA's optional literal GPU- prefix."""
+    if not isinstance(value, str):
+        raise ValueError('GPU UUID must be text')
+    raw = value[4:] if value.startswith('GPU-') else value
+    if not re.fullmatch('[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', raw):
+        raise ValueError('malformed GPU UUID')
+    return str(uuid.UUID(raw))
+
+
+def verify_v1():
+    plan_path = V1_REPO / 'experiments/p8-index-order-device-v1.json'
+    oldroot = ROOT / 'index-order-device-v1'
+    if (sha(plan_path) != V1_PLAN_SHA or sha(oldroot / 'execution.json') != V1_ROOT_SHA
+            or sha(oldroot / 'repeat-01/result.json') != V1_RESULT_SHA):
+        raise ValueError('stopped v1 identities changed')
+    plan = json.loads(plan_path.read_text())
+    for name, expected in plan['source_sha256'].items():
+        if sha(V1_REPO / name) != expected:
+            raise ValueError('frozen v1 source changed')
+    record = json.loads((oldroot / 'execution.json').read_text())
+    if (record['exit_code'] != 1 or record['repeats'] != []
+            or record['error'] != {'type': 'ValueError', 'message': 'actual probe GPU does not match authorized physical GPU0'}
+            or record['restoration'] != {'backend': True, 'timer': False, 'safe': True, 'errors': []}
+            or record['final_identity_audit'] is not True
+            or (oldroot / 'repeat-02').exists()):
+        raise ValueError('v1 terminal failure contract differs')
+    # Diagnostic replay with corrected UUID parsing; does not rewrite the old failure.
+    validate_result(json.loads((oldroot / 'repeat-01/result.json').read_text()), plan)
 
 
 def expected_case_inventory():
@@ -283,13 +322,17 @@ def run(path):
     terminal = command(['systemctl', '--user', 'show', 'glm53-p8-index-trace-v2.service', '-p', 'ActiveState', '-p', 'MainPID', '-p', 'Result']).stdout
     if set(terminal.splitlines()) != {'ActiveState=inactive', 'MainPID=0', 'Result=success'}:
         raise ValueError('preceding diagnostic not terminal successful')
+    stopped = command(['systemctl', '--user', 'show', 'glm53-p8-index-order-device-v1.service', '-p', 'ActiveState', '-p', 'MainPID', '-p', 'Result']).stdout
+    if set(stopped.splitlines()) != {'ActiveState=failed', 'MainPID=0', 'Result=exit-code'}:
+        raise ValueError('v1 attempt must remain terminal failed')
     with open('/run/lock/klc/model-stack.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         output.mkdir(mode=0o700)
         (output / 'cache').mkdir()
         prior = {'backend': active('klc-backend.service', True), 'timer': active('klc-model-stack.timer')}
-        record = {'schema': 'glm53-p8.index-order-device-execution.v1', 'started_at': now(),
+        record = {'schema': 'glm53-p8.index-order-device-execution.v2', 'started_at': now(),
                   'plan_sha256': digest, 'prior': prior, 'exit_code': 1, 'repeats': [],
+                  'amends_plan_sha256': V1_PLAN_SHA, 'amends_execution_sha256': V1_ROOT_SHA,
                   'teacher_logits_opened': False, 'protected_roles_opened': [], 'allocation_restart': False}
         handlers, safe = {}, True
         def interrupted(signum, frame):
