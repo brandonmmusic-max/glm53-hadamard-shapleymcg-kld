@@ -1,0 +1,85 @@
+{
+  "schema": "glm53-p8.k5-arm-design.v1",
+  "status": "prepared-not-launched",
+  "decision_before_result": true,
+  "game": "p8-k5-to-scalar-mxfp8",
+  "question": "Does a 5-bit procedural-MCG trellis stream close most of the residual P8 quality gap while preserving direct fused decode into native E4M3 Tensor Core operands?",
+  "layers": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
+  "encoder": {
+    "stored_bits_per_weight": 5,
+    "alphabet": "fully scaled finite E4M3",
+    "trellis_law": "procedural MCG alpha 2.0",
+    "scale": "one UE8M0 byte per 32 weights",
+    "physical_bpw": 5.25,
+    "objective": "output-aware Viterbi with full-Hessian GPTQ-style inter-group feedback",
+    "activation_order": "static within each native 16-column trellis group",
+    "scale_refit_iterations": 2,
+    "calibration": "domain-balanced REAP fit role, maximum 256 routed samples per expert",
+    "ldlq": false,
+    "blockldlq": false
+  },
+  "runtime": {
+    "decode": "per-element sliding 16-bit state window, procedural MCG, direct E4M3 emission in MMA warps",
+    "mma": "mxf8f6f4 m16n8k32 with E4M3 activations and weights",
+    "table_bytes": 0,
+    "prologue": "5-bit unpack fused into the existing P8 kernel prologue",
+    "small_m": "K4-only optimized small-M specialization is forbidden for K5 until separately implemented and closed",
+    "isa_cost": "mxf8f6f4 issues at twice the NVFP4 MMA instruction count; K5 is a quality arm"
+  },
+  "physical_scale_abi": {
+    "encoding": "one UE8M0 byte per 32 weights",
+    "identity_sfb_forbidden": true,
+    "mma_consumption": "physical non-unit UE8M0/32 SFB plane"
+  },
+  "encoder_contract": {
+    "activation_order": "static within each native 16-column trellis group",
+    "law": "checkpoint-family procedural MCG alpha 2.0",
+    "ldlq": false,
+    "objective": "output-aware Viterbi with full-Hessian GPTQ-style inter-group error feedback",
+    "sampling": "domain-balanced REAP fit role",
+    "scale_refit": "joint with trellis codes for two iterations"
+  },
+  "gates": [
+    "CPU pack/unpack and sliding-state closure for K5",
+    "device decoder bytes bit-exact to the encoder reference over random and adversarial streams",
+    "one-layer fused-kernel numerical closure to pseudoquant with five-run bitwise determinism and CUDA-graph parity",
+    "only after all prior gates pass, start one all-42-layer codec-only build",
+    "full-model KLD on the same FP8-compatible attention path; every row labels attention backend, KV dtype, MoE backend, activation precision, and bpw"
+  ],
+  "overnight_job": {
+    "status": "not_scheduled_not_started",
+    "rule": "tell the user before start; never start before device bit-exact closure",
+    "output": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-k5-all42-v1",
+    "maximum_new_nvme_bytes_without_new_permission": 30000000000,
+    "klcstore": "read-only inputs; no build or capture output"
+  },
+  "encoder_inputs": {
+    "capture_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/teacher/calibration/main-ep4-full/capture-manifest.json",
+      "sha256": "f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a"
+    },
+    "fit_roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-v3.json",
+      "sha256": "32c2f068c78ab54190ab930b84f984e22193321d150c5d87a1231332e6fbfae8"
+    },
+    "source_index": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16/model.safetensors.index.json",
+      "sha256": "e6007bd58fb7e07f9fe69544257ee2713f252ef5855bbf685b48c991d524ef0f"
+    }
+  },
+  "source_sha256": {
+    "glm53_nvfp4/quantize_hessian_trellis_layer.py": "e18a1e2a11d3b273572f26cabbac46898eb70a44a50528e64b69ccd131500bc5",
+    "glm53_nvfp4/build_p8_tp4_sidecars.py": "e7cefac9765f3f1b64a18325033da3ccf97f854d9f8d300dc77b4616e351a779",
+    "glm53_nvfp4/trellis_mxf.py": "bb4309ef2be5f008c8091c8be44e4596f367c50fffcdeac9d7ebe1f1a0bef07c",
+    "glm53_nvfp4/trellis_nvfp4.py": "16f00a7e46f4a2b5cc8a4f8a80a77a0060986558006442df8a3520a6420207e8",
+    "runtime_patch/p8_native_kernel.py": "083829f6e7d83ca18a6b6bb602e023bb894eca3a2c7cdb61f6c7c40aeb45a9d0",
+    "runtime_patch/p8_mcg/w4a8_mcg_decode.py": "baecc8e9f7ef8ea713b04fb5d3a6c80cc661552083756377b0ad380ebc570a9c",
+    "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py": "01b2a8a850598fd6b22bcd7d67b466a1d76cbd09b3e6e2be0b31a1fe1ff84727",
+    "runtime_patch/p8_mcg/patch_split_phases.py": "c03dcb9488b255d4e883dbdd2879f3560fcc51cc525567b3d130af6ff23ee287",
+    "tests/test_p8_k5_preparation.py": "5717e613ea9fa0d5e12ae35e90be8910cdc123e174d78bd70f211b21f261da78",
+    "tests/test_build_p8_tp4_sidecars.py": "66b77afc2f85a88bbf2f4ddda884899c34f3767ebdae7b18294d7781f453c88f"
+  },
+  "opened_roles": ["fit", "conditional-fit"],
+  "protected_roles_opened": [],
+  "protected_boundary": "selection, confirmation, final, and 28 reserved confirmation logits remain unopened"
+}

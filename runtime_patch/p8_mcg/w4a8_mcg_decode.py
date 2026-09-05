@@ -22,8 +22,8 @@ from b12x.moe._shared.kernels.w4a8_trellis_decode import (
 def packed_decode_mcg2_to_e4m3x8(win_a, win_b, bits: int, *, loc=None, ip=None):
     """Decode eight sliding-window states to two packed E4M3x4 words."""
     bits = int(bits)
-    if bits not in (3, 4):
-        raise ValueError(f"P8 MCG supports K3/K4 streams, got K{bits}")
+    if bits not in (3, 4, 5):
+        raise ValueError(f"P8 MCG supports K3/K4/K5 streams, got K{bits}")
     asm = """
         {
             .reg .b32 w0,w1,w2,w3,w4,w5,w6,w7, lo, hi, M;

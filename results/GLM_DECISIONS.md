@@ -1528,6 +1528,27 @@ confirmation, and final roles remained unopened for this redesign branch.
   Preserve the 5,072,629,760 raw bytes on NVMe and write nothing to klcstore.
   See results/P8_TAIL_OMISSION_REPAIR_V2.md.
 
+## 2026-09-05: Decision 69 — reprioritize tail shipping and prepare K5
+
+- The 08-29 ablation removed only the intra-tile LDLQ factor. It does not rule
+  out calibrated inter-block BlockLDLQ. Retain BlockLDLQ as an encoder-only,
+  P8-ABI-preserving three-layer fallback only if the fixed incoherence pilot
+  fails to close the tail-fixed P8 versus EXL3 quality gap.
+- Before incoherence encoding, run P8 and production EXL3 through the same
+  tail-V2 `B12X_MLA_SPARSE` plus `nvfp4_ds_mla` path on the balanced 32
+  conditional-fit windows. Add a determinism gate and matched speed check.
+  Every reported number must carry attention backend, KV dtype, MoE backend,
+  activation precision, and physical bpw.
+- FP8-NoPE rebase is low priority. The correct active NVFP4 NoPE record is 288
+  bytes and contains no RoPE payload. Treat the residual after tail V2 as an
+  NVFP4 scale-calibration target unless a subsequent matched test isolates a
+  reader or attention defect.
+- Prepare, but do not launch, K5: five trellis bits plus one UE8M0 byte per 32
+  weights, exact 5.25 bpw, procedural MCG to finite E4M3, direct fused decode.
+  Device bit-exact closure must precede an all-layer build. The overnight job
+  remains unscheduled and must be announced before start; its estimated full
+  checkpoint size exceeds the 30 GB unapproved storage cap.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

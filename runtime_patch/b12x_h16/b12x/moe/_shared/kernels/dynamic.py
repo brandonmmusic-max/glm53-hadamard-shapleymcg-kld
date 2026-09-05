@@ -187,8 +187,8 @@ def _packed_decode_trellis_mcg2_to_e4m3x8(
     B-register form consumed by ``mxf8f6f4.m16n8k32``.
     """
     bits = int(bits)
-    if bits not in (3, 4):
-        raise ValueError(f"P8 MCG supports K3/K4 trellis streams, got K{bits}")
+    if bits not in (3, 4, 5):
+        raise ValueError(f"P8 MCG supports K3/K4/K5 trellis streams, got K{bits}")
     asm = """
         {
             .reg .b32 w0,w1,w2,w3,w4,w5,w6,w7, lo, hi, M;
@@ -946,9 +946,9 @@ class MoEDynamicKernelBackend:
                     "w4a8_trellis codebook must be 'sqg-xor-cheb-t12' or "
                     f"'mcg', got {trellis_codebook!r}"
                 )
-            if trellis_bits not in (2, 3, 4):
+            if trellis_bits not in (2, 3, 4, 5):
                 raise ValueError(
-                    "w4a8_trellis requires trellis_bits in {2, 3, 4}, "
+                    "w4a8_trellis requires trellis_bits in {2, 3, 4, 5}, "
                     f"got {trellis_bits!r}"
                 )
             if not w4a8_repacked:
