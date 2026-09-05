@@ -143,6 +143,14 @@ def main() -> None:
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
     plan = json.loads(args.plan.read_text())
+    supplied = {
+        "source_index": args.source_index,
+        "capture_manifest": args.capture_root / "capture-manifest.json",
+        "roles": args.roles,
+    }
+    for name, path in supplied.items():
+        if sha256_file(path) != plan["inputs"][name]["sha256"]:
+            raise RuntimeError(f"{name} hash differs from sealed plan")
     experts = plan["experts"][args.expert_start_index : args.expert_end_index]
     if not experts:
         raise ValueError("empty expert slice")
@@ -217,7 +225,18 @@ def main() -> None:
         print(json.dumps({"expert": expert, "completed": True}), flush=True)
         del weights, arms, reference_middle, reference_output
         torch.cuda.empty_cache()
-    payload = {"schema": "glm53-blocklocal-signed-h16-screen-raw.v1", "plan": {"path": str(args.plan), "sha256": sha256_file(args.plan)}, "expert_slice": [args.expert_start_index, args.expert_end_index], "rows": rows, "elapsed_seconds": time.time() - started, "protected_roles_opened": []}
+    payload = {
+        "schema": "glm53-blocklocal-signed-h16-screen-raw.v1",
+        "plan": {"path": str(args.plan), "sha256": sha256_file(args.plan)},
+        "inputs": {
+            name: {"path": str(path.resolve()), "sha256": sha256_file(path)}
+            for name, path in supplied.items()
+        },
+        "expert_slice": [args.expert_start_index, args.expert_end_index],
+        "rows": rows,
+        "elapsed_seconds": time.time() - started,
+        "protected_roles_opened": [],
+    }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"output": str(args.output), "sha256": sha256_file(args.output)}, sort_keys=True))
