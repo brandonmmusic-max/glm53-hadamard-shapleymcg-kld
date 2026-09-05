@@ -94,3 +94,10 @@ M2/M3 fallback against the separately frozen image, and device speed remain
 open gates. Any measured gain belongs to the combined routing/decomposition/
 capacity candidate and must not be attributed to one mechanism without an
 additional ablation.
+
+The first device compile failed before launch because four Python `assert`
+statements tried to consume CuTe staged tensor extents. The host wrapper
+already rejects non-M1 and non-E288/H4096/I512 use before compilation, so the
+non-lowerable duplicate checks were removed rather than converted into silent
+runtime behavior. This is a preserved implementation failure, not a codec or
+performance result.

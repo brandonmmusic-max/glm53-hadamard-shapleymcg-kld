@@ -2493,11 +2493,9 @@ class MoEDynamicKernelBackend:
                 self.tile_shape_mnk[1]
             )
         launch_params = DynamicLaunchParams(row_counts, gate_tile_cnt)
-        if cutlass.const_expr(self.p8_small_m):
-            assert a_input.shape[0] == 1, "P8 small-M is M1-only"
-            assert a_input.shape[1] == 4096, "P8 small-M hidden ABI"
-            assert gate_tile_cnt == 4, "P8 small-M intermediate ABI"
-            assert row_counts.shape[0] == 288, "P8 small-M expert ABI"
+        # CuTe exposes these tensor extents as staged values here, so Python
+        # assertions do not lower. The host wrapper rejects every non-M1,
+        # non-E288/H4096/I512 use before this opt-in kernel is built.
         if cutlass.const_expr(self.is_w4a8):
             assert sfb_w13_mx is not None and sfb_down_mx is not None, (
                 "w4a8 recipes require sfb_w13_mx and sfb_down_mx"
