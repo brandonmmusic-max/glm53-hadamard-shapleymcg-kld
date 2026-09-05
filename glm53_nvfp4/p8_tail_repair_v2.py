@@ -18,9 +18,10 @@ ROOT = prior.ROOT
 PREFIX = "glm53-p8-tail-repair-v2"
 PORT = 8028
 PARENT_IMAGE = prior.PARENT_IMAGE
-IMAGE_RECEIPT = ROOT / "p8-tail-repair-image-v2/receipt.json"
-DEVICE_RECEIPT = ROOT / "p8-tail-repair-image-v2/device-row-closure.json"
+IMAGE_RECEIPT = ROOT / "p8-tail-repair-image-v2a/receipt.json"
+DEVICE_RECEIPT = ROOT / "p8-tail-repair-image-v2a/device-row-closure.json"
 PREREG = REPO / "experiments/p8-tail-omission-repair-v2-prereg.json"
+AMENDMENT = REPO / "experiments/p8-tail-omission-repair-v2a-build-amendment.json"
 PATCH = REPO / "runtime_patch/p8_tail_repair_v2/kpool-tail-after-valid-history-v2.patch"
 DOCKERFILE = REPO / "runtime_patch/p8_tail_repair_v2/Dockerfile"
 BUILDER = REPO / "scripts/build_p8_tail_repair_v2_image.py"
@@ -49,6 +50,7 @@ def source_files() -> set[str]:
         "runtime_patch/p8_tail_repair_v2/Dockerfile",
         "runtime_patch/p8_tail_repair_v2/kpool-tail-after-valid-history-v2.patch",
         "experiments/p8-tail-omission-repair-v2-prereg.json",
+        "experiments/p8-tail-omission-repair-v2a-build-amendment.json",
     }
 
 
@@ -110,6 +112,7 @@ def make_plan(path: Path, output: Path) -> dict:
         "device_row_closure": str(DEVICE_RECEIPT), "device_row_closure_sha256": sha(DEVICE_RECEIPT),
         "recipe": str(prior.RECIPE), "recipe_sha256": prior.RECIPE_SHA256,
         "prereg": str(PREREG), "prereg_sha256": sha(PREREG), "windows": windows,
+        "amendment": str(AMENDMENT), "amendment_sha256": sha(AMENDMENT),
         "roles": str(prior.ROLES), "roles_sha256": sha(prior.ROLES), "teacher_root": str(prior.TEACHER),
         "input_stats": prior.input_stats(windows), "source_sha256": {name: sha(REPO / name) for name in sorted(sources)},
         "baseline_window_kld": BASELINE, "baseline_mean_kld": BASELINE_MEAN,
@@ -153,6 +156,7 @@ def authenticate(path: Path) -> dict:
     if (plan["capture_image"] != image["image_id"] or plan["patched_kpool_sha256"] != image["patched_kpool_sha256"]
             or sha(IMAGE_RECEIPT) != plan["image_receipt_sha256"] or sha(DEVICE_RECEIPT) != plan["device_row_closure_sha256"]
             or sha(PREREG) != plan["prereg_sha256"] or sha(prior.RECIPE) != plan["recipe_sha256"]
+            or sha(AMENDMENT) != plan["amendment_sha256"]
             or sha(prior.ROLES) != plan["roles_sha256"] or plan.get("intervention_integrity", {}).get("status") != "pass"):
         raise ValueError("tail-repair V2 image, device closure, preregistration, recipe, or role changed")
     windows = prior.selected_windows()
