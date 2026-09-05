@@ -89,6 +89,53 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
         self.trellis_identity_boundary = True
         self.trellis_lut_offset = self.shared_bytes
 
+    @cute.jit
+    def _scale_fc1_after_h128(
+        self,
+        value: cutlass.Float32,
+        scale_component: cute.Tensor,
+        expert_idx: Int32,
+        local_col: Int32,
+        projection_slot: Int32,
+    ) -> cutlass.Float32:
+        """Apply private gate/up svh after the owning H128 transform.
+
+        Packed layout is ``gate_up_suh[H] | [E,gate_svh|up_svh|down_suh] |
+        down_svh[H]``.  This helper intentionally does not perform H128: the
+        N64 path needs an explicit cross-CTA owner for the adjacent half first.
+        """
+
+        hidden = Int32(4096)
+        intermediate = Int32(512)
+        scale_idx = (
+            hidden
+            + expert_idx * Int32(3 * 512)
+            + projection_slot * intermediate
+            + local_col
+        )
+        return value * scale_component[scale_idx].to(cutlass.Float32)
+
+    @cute.jit
+    def _scale_down_before_h128(
+        self,
+        value: cutlass.Float32,
+        scale_component: cute.Tensor,
+        expert_idx: Int32,
+        local_col: Int32,
+    ) -> cutlass.Float32:
+        """Apply private down suh with Luke's FP32-mul -> FP16-store order."""
+
+        scale_idx = (
+            Int32(4096)
+            + expert_idx * Int32(3 * 512)
+            + Int32(2 * 512)
+            + local_col
+        )
+        scaled = value * scale_component[scale_idx].to(cutlass.Float32)
+        # The following H128 owner must consume this rounded FP16 value.  The
+        # E4M3 block amax is computed only after that H128.
+        return cutlass.Float16(scaled).to(cutlass.Float32)
+
 
     @cute.jit
     def _stage_owned_trellis_b(

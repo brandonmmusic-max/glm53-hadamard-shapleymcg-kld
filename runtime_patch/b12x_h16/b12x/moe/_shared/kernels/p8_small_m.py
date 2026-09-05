@@ -60,6 +60,20 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         self.trellis_lut_offset = self.shared_bytes
 
     @cute.jit
+    def _scale_down_after_h128(
+        self,
+        value: cutlass.Float32,
+        scale_component: cute.Tensor,
+        output_col: Int32,
+    ) -> cutlass.Float32:
+        """Apply shared down svh after output H128 and before route sum."""
+
+        down_svh_base = Int32(4096 + 288 * 3 * 512)
+        return value * scale_component[down_svh_base + output_col].to(
+            cutlass.Float32
+        )
+
+    @cute.jit
     def _run_task(
         self,
         intermediate_u32: cute.Tensor,
@@ -71,6 +85,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         down_alpha: cute.Tensor,
         global_scale: cute.Tensor,
         trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
         smem_base: Int32,
         tid: Int32,
         warp_idx: Int32,
@@ -285,6 +300,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         task_expert: cute.Tensor, task_valid_rows: cute.Tensor,
         expert_tile_base: cute.Tensor, down_alpha: cute.Tensor,
         global_scale: cute.Tensor, trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
         intermediate_tiles: cutlass.Int32, packed_output_tiles: cutlass.Int32,
     ):
         # task_expert is the original topk_ids, not grouped metadata.
@@ -317,7 +333,8 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                     self._run_task(
                         intermediate_u32, down_rp, down_sfb_rp, scatter_output,
                         token_map, token_weights, down_alpha, global_scale,
-                        trellis_lut, smem_base, tid, warp_idx, route, Int32(0),
+                        trellis_lut, scale_component, smem_base, tid, warp_idx,
+                        route, Int32(0),
                         expert, output_pair * Int32(2) + Int32(half), Int32(1),
                         rows_capacity, intermediate_tiles, packed_output_tiles,
                     )

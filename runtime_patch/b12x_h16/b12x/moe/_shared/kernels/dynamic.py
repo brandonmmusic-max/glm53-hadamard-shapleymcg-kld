@@ -334,6 +334,24 @@ def _load_bf16x32_to_f32(
     return values, block_max
 
 
+@cute.jit
+def _p8_scale_input_before_h128(
+    value: cutlass.Float32,
+    scale_component: cute.Tensor,
+    input_col: Int32,
+) -> cutlass.Float32:
+    """Apply shared gate/up suh at Luke's exact pre-H128 FP16 boundary.
+
+    This helper must run before both ``_w4a8_had128_quad`` and the E4M3 K32
+    amax.  The scale component occupies the first H=4096 FP16 elements of the
+    packed transform operand.  H512, when enabled by the coupled owner, runs
+    before this helper and is not part of the scale component.
+    """
+
+    scaled = value * scale_component[input_col].to(cutlass.Float32)
+    return cutlass.Float16(scaled).to(cutlass.Float32)
+
+
 _W4A8_TMA_TILE_BYTES = 128 * 64  # one (128 n, 128 fp4-k) TMA box
 _W4A8_B_BUF_BYTES = 128 * _W4A8_B_ROW_PAD
 
@@ -2360,7 +2378,7 @@ class MoEDynamicKernelBackend:
         down_rp: cute.Tensor | None = None,  # flat repacked u32 B
         down_sfb_rp: cute.Tensor | None = None,  # flat repacked u32 SFB
         trellis_lut: cute.Tensor | None = None,  # 4 KiB T12 staircase (u8)
-        trellis_rotations: cute.Tensor | None = None,  # [E*3I] fp16
+        trellis_rotations: cute.Tensor | None = None,  # transform/scale fp16 carrier
     ):
         self.a_dtype = packed_a.element_type
         self.b_dtype = b_w13.element_type
@@ -2685,24 +2703,45 @@ class MoEDynamicKernelBackend:
             phase2_experts = task_expert
             if cutlass.const_expr(self.p8_small_m):
                 phase2_experts = topk_ids
-            self.materialized_phase2_kernel(
-                intermediate_u32,
-                down_rp,
-                down_sfb_rp,
-                scatter_output,
-                token_map,
-                token_weights,
-                phase2_experts,
-                task_valid_rows,
-                expert_tile_base,
-                down_alpha,
-                global_scale,
-                trellis_lut,
-                gate_tile_cnt,
-                Int32(b_down.shape[0]) // Int32(256),
-                max_active_clusters,
-                stream,
-            )
+            if cutlass.const_expr(self.p8_small_m):
+                self.materialized_phase2_kernel(
+                    intermediate_u32,
+                    down_rp,
+                    down_sfb_rp,
+                    scatter_output,
+                    token_map,
+                    token_weights,
+                    phase2_experts,
+                    task_valid_rows,
+                    expert_tile_base,
+                    down_alpha,
+                    global_scale,
+                    trellis_lut,
+                    trellis_rotations,
+                    gate_tile_cnt,
+                    Int32(b_down.shape[0]) // Int32(256),
+                    max_active_clusters,
+                    stream,
+                )
+            else:
+                self.materialized_phase2_kernel(
+                    intermediate_u32,
+                    down_rp,
+                    down_sfb_rp,
+                    scatter_output,
+                    token_map,
+                    token_weights,
+                    phase2_experts,
+                    task_valid_rows,
+                    expert_tile_base,
+                    down_alpha,
+                    global_scale,
+                    trellis_lut,
+                    gate_tile_cnt,
+                    Int32(b_down.shape[0]) // Int32(256),
+                    max_active_clusters,
+                    stream,
+                )
 
     @cute.kernel
     def kernel(

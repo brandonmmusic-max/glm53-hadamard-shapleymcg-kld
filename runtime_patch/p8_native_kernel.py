@@ -16,6 +16,11 @@ import torch
 from cutlass.base_dsl.compiler import OptLevel
 from cutlass.cute.runtime import make_ptr
 from safetensors import safe_open
+from p8_coupled_scales import (
+    SCALE_NAMES,
+    SCHEMA as P8_SCALE_COMPONENT_SCHEMA,
+    validate_scale_component,
+)
 from p8_smallm_schedule import P8SmallMGeometry, p8_small_m_scratch_layout, use_small_m
 
 from b12x._lib.compiler import KernelCompileSpec, compile as b12x_compile
@@ -121,7 +126,7 @@ class P8NativeTPMoE:
             if bits_text not in {"4", "5"}:
                 raise RuntimeError(f"invalid P8 trellis rate: {bits_text!r}")
             self.trellis_bits = int(bits_text)
-            required = {
+            base_required = {
                 "layer": str(self.layer),
                 "rank": str(self.tp_rank),
                 "world_size": "4",
@@ -129,18 +134,23 @@ class P8NativeTPMoE:
                 "alphabet": "e4m3",
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",
-                "boundary": "identity",
                 "ldlq": "false",
             }
-            if (
-                schema not in {
+            identity_schema = schema in {
                     "glm53-p8-identity-mcg-tp4-rank.v1",
                     "glm53-p8-mcg-tp4-rank.v2",
-                }
-                or any(metadata.get(key) != value for key, value in required.items())
+            }
+            scale_component_schema = schema == P8_SCALE_COMPONENT_SCHEMA
+            if (
+                not (identity_schema or scale_component_schema)
+                or any(metadata.get(key) != value for key, value in base_required.items())
+                or (identity_schema and metadata.get("boundary") != "identity")
             ):
                 raise RuntimeError(f"invalid P8 native sidecar metadata: {metadata}")
-            if schema == "glm53-p8-mcg-tp4-rank.v2":
+            if schema in {
+                "glm53-p8-mcg-tp4-rank.v2",
+                P8_SCALE_COMPONENT_SCHEMA,
+            }:
                 if (
                     not isinstance(source_design_sha256, str)
                     or len(source_design_sha256) != 64
@@ -158,6 +168,11 @@ class P8NativeTPMoE:
             w2 = src.get_tensor("w2_trellis")
             w13_scale = src.get_tensor("w13_scale_ue8m0")
             w2_scale = src.get_tensor("w2_scale_ue8m0")
+            scale_tensors = (
+                {name: src.get_tensor(name) for name in SCALE_NAMES}
+                if scale_component_schema
+                else None
+            )
         self.source_design_sha256 = source_design_sha256
         experts = int(w13.shape[1])
         stream_words = 16 * self.trellis_bits
@@ -174,6 +189,21 @@ class P8NativeTPMoE:
         if tuple(w2_scale.shape) != (experts, hidden, intermediate // 32):
             raise RuntimeError(f"unexpected W2 scale shape {tuple(w2_scale.shape)}")
         self.experts = experts
+        self.scale_component = None
+        if scale_tensors is not None:
+            self.scale_component = validate_scale_component(
+                metadata,
+                scale_tensors,
+                layer=self.layer,
+                rank=self.tp_rank,
+                experts=experts,
+                hidden=hidden,
+                intermediate=intermediate,
+            )
+            if not self.small_m_scheduler or self.fc1_tile_n != 64:
+                raise RuntimeError(
+                    "P8 scale component is prepared only for the M1 N64 path"
+                )
         # The trellis storage is byte-for-byte the same size as the packed
         # E2M1 descriptor carrier expected by the inherited W4A8 launch ABI.
         # Alias it for the descriptor-only arguments instead of allocating a
@@ -223,6 +253,11 @@ class P8NativeTPMoE:
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_rotation = torch.zeros(1, dtype=torch.float16, device=self.device)
+        self.scale_component_packed = (
+            self.scale_component.packed.to(device=self.device)
+            if self.scale_component is not None
+            else self.zero_rotation
+        )
         self.ones = torch.ones(experts, dtype=torch.float32, device=self.device)
         if self.small_m_scheduler and self.experts != 288:
             raise ValueError("P8 small-M requires 288 experts")
@@ -358,6 +393,16 @@ class P8NativeTPMoE:
         m = int(x.shape[0])
         if tuple(topk_ids.shape) != (m, self.topk) or tuple(topk_weights.shape) != (m, self.topk):
             raise RuntimeError("P8 native routing shape mismatch")
+        if self.scale_component is not None:
+            # The five scale operands are validated and plumbed, but N64's two
+            # independent CTAs do not yet have an owner for the cross-half
+            # FC1 H128.  Running the multipliers on raw accumulators would put
+            # svh on the wrong side of H128.  Fail closed until the coupled
+            # H512/H128/sign phase supplies that ownership.
+            raise RuntimeError(
+                "P8 scale component requires the coupled H512/H128/sign runtime; "
+                "the current N64 path cannot apply FC1 svh after H128"
+            )
         # Match the W4A8 planner's measured M16-to-M64 transition: sparse
         # decode and ordinary prefill stay monolithic; only dense routed
         # batches pay for the split materialized phase kernels.
@@ -500,7 +545,7 @@ class P8NativeTPMoE:
             arm.mac,
             current_cuda_stream(),
             _gptr(cutlass.Uint8, self.zero_lut),
-            _gptr(cutlass.Float16, self.zero_rotation),
+            _gptr(cutlass.Float16, self.scale_component_packed),
         )
         if self.deterministic_output:
             _launch_dynamic_topk_sum(
