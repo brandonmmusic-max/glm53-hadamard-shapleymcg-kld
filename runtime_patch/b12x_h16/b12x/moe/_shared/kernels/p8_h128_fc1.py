@@ -1,4 +1,4 @@
-"""Opt-in P8 M1 narrow FC1, derived from pinned B12X phase1.
+"""Opt-in P8 M1 N128 owner for the H128 scale-sandwich boundary.
 Donor image c9eddeca0d9dedf210eaaff918f1bf44d5338202902143f7d646d2325ad475ed.
 Donor w4a8_phase1.py sha256
 7222df68bb6ad7ec5ca69cf7c4ffd5c3d6b1ddc240e6375c4b1e77bcc151909c.
@@ -14,7 +14,8 @@ import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 
-from cutlass.cutlass_dsl import Int32, Int64, Uint32
+from cutlass.cutlass_dsl import Int32, Int64, T, Uint32, dsl_user_op
+from cutlass._mlir.dialects import llvm
 
 from b12x._lib.intrinsics import (
     cp_async4_shared_global,
@@ -23,6 +24,7 @@ from b12x._lib.intrinsics import (
     fabs_f32,
     get_ptr_as_int64,
     ld_shared_bf16_to_f32,
+    ld_shared_f32,
     ld_shared_u32,
     ld_shared_v2_u32,
     ld_shared_v4_u32,
@@ -32,6 +34,7 @@ from b12x._lib.intrinsics import (
     quantize_block_fp8_mx,
     shared_ptr_to_u32,
     st_shared_u32,
+    st_shared_f32,
 )
 from b12x.moe._shared.kernels.w4a8_trellis_decode import (
     _w4a8_had128_quad,
@@ -53,9 +56,51 @@ from b12x.moe._shared.kernels.w4a8_mcg_decode import (
 from b12x.moe._shared.kernels.w4a8_phase1 import W4A8MaterializedPhase1Kernel
 
 
+@dsl_user_op
+def _p8_pack_f32x2_to_half2(x0, x1, *, loc=None, ip=None):
+    """Pack FP32 to FP16x2 with the Luke reference's RN storage cast."""
+
+    return Uint32(
+        llvm.inline_asm(
+            T.i32(),
+            [
+                cutlass.Float32(x0).ir_value(loc=loc, ip=ip),
+                cutlass.Float32(x1).ir_value(loc=loc, ip=ip),
+            ],
+            "cvt.rn.f16x2.f32 $0, $2, $1;",
+            "=r,f,f",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def _p8_ld_shared_f16_to_f32(addr, *, loc=None, ip=None):
+    """Load one shared FP16 element and widen exactly to FP32."""
+
+    return cutlass.Float32(
+        llvm.inline_asm(
+            T.f32(),
+            [Int32(addr).ir_value(loc=loc, ip=ip)],
+            "{.reg .b16 tmp; ld.shared.b16 tmp, [$1]; cvt.f32.f16 $0, tmp;}",
+            "=f,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
 class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
     tile_m = 16
     source_tile_m = 16
+    scale_sandwich = False
 
     def __init__(self, tile_n: int):
         if tile_n not in (32, 64):
@@ -101,8 +146,8 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
         """Apply private gate/up svh after the owning H128 transform.
 
         Packed layout is ``gate_up_suh[H] | [E,gate_svh|up_svh|down_suh] |
-        down_svh[H]``.  This helper intentionally does not perform H128: the
-        N64 path needs an explicit cross-CTA owner for the adjacent half first.
+        down_svh[H]``.  The N128 kernel owns the adjacent halves and performs
+        H128 immediately before this helper.
         """
 
         hidden = Int32(4096)
@@ -690,8 +735,11 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
             expert_idx
         ].to(cutlass.Float32)
         epilogue_base = smem_base
+        up_epilogue_base = epilogue_base + Int32(self.tile_m * self.tile_n * 2)
         col_base = warp_idx * Int32(32) + (c << Int32(1))
-        # Keep gate/up FP32 through clipped SwiGLU. Round only its result.
+        # Identity keeps gate/up FP32 through clipped SwiGLU.  The scale
+        # sandwich instead persists both physical projections as FP16, then a
+        # single N128 CTA owns the complete post-MMA H128 boundary.
         for nt in cutlass.range_constexpr(4):
             col = col_base + Int32(nt * 8)
             for blk in cutlass.range_constexpr(1):
@@ -699,28 +747,248 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                 up_fragment = up_acc[blk][nt]
                 row_lo = Int32(blk * 16) + q
                 row_hi = row_lo + Int32(8)
-                act0 = self._activated_value(
-                    gate_fragment[0], up_fragment[0], alpha_value
-                )
-                act1 = self._activated_value(
-                    gate_fragment[1], up_fragment[1], alpha_value
-                )
-                act2 = self._activated_value(
-                    gate_fragment[2], up_fragment[2], alpha_value
-                )
-                act3 = self._activated_value(
-                    gate_fragment[3], up_fragment[3], alpha_value
-                )
-                st_shared_u32(
-                    epilogue_base + (row_lo * Int32(self.tile_n) + col) * Int32(2),
-                    pack_f32x2_to_bfloat2(act0, act1),
-                )
-                st_shared_u32(
-                    epilogue_base + (row_hi * Int32(self.tile_n) + col) * Int32(2),
-                    pack_f32x2_to_bfloat2(act2, act3),
-                )
+                if cutlass.const_expr(self.scale_sandwich):
+                    st_shared_u32(
+                        epilogue_base
+                        + (row_lo * Int32(self.tile_n) + col) * Int32(2),
+                        _p8_pack_f32x2_to_half2(
+                            alpha_value * gate_fragment[0],
+                            alpha_value * gate_fragment[1],
+                        ),
+                    )
+                    st_shared_u32(
+                        epilogue_base
+                        + (row_hi * Int32(self.tile_n) + col) * Int32(2),
+                        _p8_pack_f32x2_to_half2(
+                            alpha_value * gate_fragment[2],
+                            alpha_value * gate_fragment[3],
+                        ),
+                    )
+                    st_shared_u32(
+                        up_epilogue_base
+                        + (row_lo * Int32(self.tile_n) + col) * Int32(2),
+                        _p8_pack_f32x2_to_half2(
+                            alpha_value * up_fragment[0],
+                            alpha_value * up_fragment[1],
+                        ),
+                    )
+                    st_shared_u32(
+                        up_epilogue_base
+                        + (row_hi * Int32(self.tile_n) + col) * Int32(2),
+                        _p8_pack_f32x2_to_half2(
+                            alpha_value * up_fragment[2],
+                            alpha_value * up_fragment[3],
+                        ),
+                    )
+                else:
+                    act0 = self._activated_value(
+                        gate_fragment[0], up_fragment[0], alpha_value
+                    )
+                    act1 = self._activated_value(
+                        gate_fragment[1], up_fragment[1], alpha_value
+                    )
+                    act2 = self._activated_value(
+                        gate_fragment[2], up_fragment[2], alpha_value
+                    )
+                    act3 = self._activated_value(
+                        gate_fragment[3], up_fragment[3], alpha_value
+                    )
+                    st_shared_u32(
+                        epilogue_base
+                        + (row_lo * Int32(self.tile_n) + col) * Int32(2),
+                        pack_f32x2_to_bfloat2(act0, act1),
+                    )
+                    st_shared_u32(
+                        epilogue_base
+                        + (row_hi * Int32(self.tile_n) + col) * Int32(2),
+                        pack_f32x2_to_bfloat2(act2, act3),
+                    )
 
         cute.arch.sync_threads()
+
+        if cutlass.const_expr(self.full_coupled):
+            # Full joint FC1 owner. Physical atom order is
+            # gate32,up32,gate32,up32. Each warp owns one routed row; each
+            # segment below is one complete H128. The same CTA then owns the
+            # resulting 128 down-input values, so neither H128 crosses a CTA.
+            for row_group in cutlass.range_constexpr(4):
+                hrow = warp_idx + Int32(row_group * 4)
+                if hrow < valid_rows:
+                    activated = cute.make_rmem_tensor((4,), cutlass.Float32)
+                    for segment in cutlass.range_constexpr(2):
+                        raw_idx = lane * Int32(4)
+                        raw_values = cute.make_rmem_tensor((4,), cutlass.Float32)
+                        for component in cutlass.range_constexpr(4):
+                            index = raw_idx + Int32(component)
+                            atom = index >> Int32(5)
+                            within = index & Int32(31)
+                            source_col = Int32(segment * 64) + (atom >> Int32(1)) * Int32(32) + within
+                            source_addr = (
+                                epilogue_base
+                                + (hrow * Int32(128) + source_col) * Int32(2)
+                            )
+                            if (atom & Int32(1)) != Int32(0):
+                                source_addr = (
+                                    up_epilogue_base
+                                    + (hrow * Int32(128) + source_col) * Int32(2)
+                                )
+                            raw_values[component] = _p8_ld_shared_f16_to_f32(source_addr)
+                        p0, p1, p2, p3 = _w4a8_had128_quad(
+                            raw_values[0], raw_values[1], raw_values[2], raw_values[3], lane
+                        )
+                        first = (raw_idx >> Int32(5)) & Int32(1)
+                        second = ((raw_idx + Int32(1)) >> Int32(5)) & Int32(1)
+                        third = ((raw_idx + Int32(2)) >> Int32(5)) & Int32(1)
+                        fourth = ((raw_idx + Int32(3)) >> Int32(5)) & Int32(1)
+                        base_col = Int32(segment * 64) + ((raw_idx >> Int32(6)) * Int32(32)) + (raw_idx & Int32(31))
+                        p0 = self._scale_fc1_after_h128(p0, trellis_rotations, expert_idx, base_col, first)
+                        p1 = self._scale_fc1_after_h128(p1, trellis_rotations, expert_idx, base_col + Int32(1), second)
+                        p2 = self._scale_fc1_after_h128(p2, trellis_rotations, expert_idx, base_col + Int32(2), third)
+                        p3 = self._scale_fc1_after_h128(p3, trellis_rotations, expert_idx, base_col + Int32(3), fourth)
+                        p0, p1, p2, p3 = _w4a8_had128_quad(p0, p1, p2, p3, lane)
+                        pre_base = output_tile * Int32(256) + Int32(segment * 128) + raw_idx
+                        p0 *= self._coupled_sign(trellis_rotations, pre_base)
+                        p1 *= self._coupled_sign(trellis_rotations, pre_base + Int32(1))
+                        p2 *= self._coupled_sign(trellis_rotations, pre_base + Int32(2))
+                        p3 *= self._coupled_sign(trellis_rotations, pre_base + Int32(3))
+                        a0 = self._coupled_activation(p0, p1)
+                        a1 = self._coupled_activation(p2, p3)
+                        activation_col = Int32(segment * 64) + lane * Int32(2)
+                        post_base = Int32(2 * 512) + output_tile * Int32(128) + activation_col
+                        a0 *= self._coupled_sign(trellis_rotations, post_base)
+                        a1 *= self._coupled_sign(trellis_rotations, post_base + Int32(1))
+                        activated[segment * 2] = a0
+                        activated[segment * 2 + 1] = a1
+                    hcol = lane * Int32(4)
+                    contiguous = cute.make_rmem_tensor((4,), cutlass.Float32)
+                    for component in cutlass.range_constexpr(4):
+                        target = hcol + Int32(component)
+                        source_segment = target >> Int32(6)
+                        source_within = target & Int32(63)
+                        source_lane = source_within >> Int32(1)
+                        source_slot = source_segment * Int32(2) + (source_within & Int32(1))
+                        owned = activated[0]
+                        if source_slot == Int32(1):
+                            owned = activated[1]
+                        elif source_slot == Int32(2):
+                            owned = activated[2]
+                        elif source_slot == Int32(3):
+                            owned = activated[3]
+                        contiguous[component] = cute.arch.shuffle_sync(
+                            owned, source_lane
+                        )
+                    a0 = contiguous[0]
+                    a1 = contiguous[1]
+                    a2 = contiguous[2]
+                    a3 = contiguous[3]
+                    a0, a1, a2, a3 = _w4a8_had128_quad(a0, a1, a2, a3, lane)
+                    local_col = output_tile * Int32(128) + hcol
+                    a0 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col].to(cutlass.Float32)
+                    a1 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col + Int32(1)].to(cutlass.Float32)
+                    a2 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col + Int32(2)].to(cutlass.Float32)
+                    a3 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col + Int32(3)].to(cutlass.Float32)
+                    a0, a1, a2, a3 = _w4a8_had128_quad(a0, a1, a2, a3, lane)
+                    addr = epilogue_base + (hrow * Int32(128) + hcol) * Int32(4)
+                    st_shared_f32(addr, a0)
+                    st_shared_f32(addr + Int32(4), a1)
+                    st_shared_f32(addr + Int32(8), a2)
+                    st_shared_f32(addr + Int32(12), a3)
+            cute.arch.sync_threads()
+        elif cutlass.const_expr(self.scale_sandwich):
+            # Four warps own four rows at a time.  Each lane owns four adjacent
+            # elements, exactly the `_w4a8_had128_quad` contract.  This is the
+            # smallest legal owner: no H128 value crosses a CTA boundary.
+            for row_group in cutlass.range_constexpr(4):
+                hrow = warp_idx + Int32(row_group * 4)
+                if hrow < valid_rows:
+                    hcol = lane * Int32(4)
+                    goff = (
+                        epilogue_base
+                        + (hrow * Int32(128) + hcol) * Int32(2)
+                    )
+                    uoff = (
+                        up_epilogue_base
+                        + (hrow * Int32(128) + hcol) * Int32(2)
+                    )
+                    g0 = _p8_ld_shared_f16_to_f32(goff)
+                    g1 = _p8_ld_shared_f16_to_f32(goff + Int32(2))
+                    g2 = _p8_ld_shared_f16_to_f32(goff + Int32(4))
+                    g3 = _p8_ld_shared_f16_to_f32(goff + Int32(6))
+                    u0 = _p8_ld_shared_f16_to_f32(uoff)
+                    u1 = _p8_ld_shared_f16_to_f32(uoff + Int32(2))
+                    u2 = _p8_ld_shared_f16_to_f32(uoff + Int32(4))
+                    u3 = _p8_ld_shared_f16_to_f32(uoff + Int32(6))
+                    g0, g1, g2, g3 = _w4a8_had128_quad(
+                        g0, g1, g2, g3, lane
+                    )
+                    u0, u1, u2, u3 = _w4a8_had128_quad(
+                        u0, u1, u2, u3, lane
+                    )
+                    local_col = output_tile * Int32(128) + hcol
+                    g0 = self._scale_fc1_after_h128(
+                        g0, trellis_rotations, expert_idx, local_col, Int32(0)
+                    )
+                    g1 = self._scale_fc1_after_h128(
+                        g1, trellis_rotations, expert_idx, local_col + Int32(1), Int32(0)
+                    )
+                    g2 = self._scale_fc1_after_h128(
+                        g2, trellis_rotations, expert_idx, local_col + Int32(2), Int32(0)
+                    )
+                    g3 = self._scale_fc1_after_h128(
+                        g3, trellis_rotations, expert_idx, local_col + Int32(3), Int32(0)
+                    )
+                    u0 = self._scale_fc1_after_h128(
+                        u0, trellis_rotations, expert_idx, local_col, Int32(1)
+                    )
+                    u1 = self._scale_fc1_after_h128(
+                        u1, trellis_rotations, expert_idx, local_col + Int32(1), Int32(1)
+                    )
+                    u2 = self._scale_fc1_after_h128(
+                        u2, trellis_rotations, expert_idx, local_col + Int32(2), Int32(1)
+                    )
+                    u3 = self._scale_fc1_after_h128(
+                        u3, trellis_rotations, expert_idx, local_col + Int32(3), Int32(1)
+                    )
+                    # Luke stores the canonical gate/up boundaries as FP16
+                    # before the nonlinearity.
+                    g0 = cutlass.Float16(g0).to(cutlass.Float32)
+                    g1 = cutlass.Float16(g1).to(cutlass.Float32)
+                    g2 = cutlass.Float16(g2).to(cutlass.Float32)
+                    g3 = cutlass.Float16(g3).to(cutlass.Float32)
+                    u0 = cutlass.Float16(u0).to(cutlass.Float32)
+                    u1 = cutlass.Float16(u1).to(cutlass.Float32)
+                    u2 = cutlass.Float16(u2).to(cutlass.Float32)
+                    u3 = cutlass.Float16(u3).to(cutlass.Float32)
+                    one = cutlass.Float32(1.0)
+                    a0 = self._activated_value(g0, u0, one)
+                    a1 = self._activated_value(g1, u1, one)
+                    a2 = self._activated_value(g2, u2, one)
+                    a3 = self._activated_value(g3, u3, one)
+                    a0 = cutlass.Float16(a0).to(cutlass.Float32)
+                    a1 = cutlass.Float16(a1).to(cutlass.Float32)
+                    a2 = cutlass.Float16(a2).to(cutlass.Float32)
+                    a3 = cutlass.Float16(a3).to(cutlass.Float32)
+                    a0 = self._scale_down_before_h128(
+                        a0, trellis_rotations, expert_idx, local_col
+                    )
+                    a1 = self._scale_down_before_h128(
+                        a1, trellis_rotations, expert_idx, local_col + Int32(1)
+                    )
+                    a2 = self._scale_down_before_h128(
+                        a2, trellis_rotations, expert_idx, local_col + Int32(2)
+                    )
+                    a3 = self._scale_down_before_h128(
+                        a3, trellis_rotations, expert_idx, local_col + Int32(3)
+                    )
+                    a0, a1, a2, a3 = _w4a8_had128_quad(
+                        a0, a1, a2, a3, lane
+                    )
+                    st_shared_u32(goff, _p8_pack_f32x2_to_half2(a0, a1))
+                    st_shared_u32(
+                        goff + Int32(4), _p8_pack_f32x2_to_half2(a2, a3)
+                    )
+
+            cute.arch.sync_threads()
 
         physical_row_base = source_m_tile * Int32(self.source_tile_m) + m_half * Int32(
             self.tile_m
@@ -733,11 +1001,17 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                 values = cute.make_rmem_tensor((32,), cutlass.Float32)
                 block_max = cutlass.Float32(0.0)
                 for elem in cutlass.range_constexpr(32):
-                    value = ld_shared_bf16_to_f32(
-                        epilogue_base
-                        + (tid * Int32(self.tile_n) + Int32(block * 32 + elem))
-                        * Int32(2)
+                    element_index = (
+                        tid * Int32(self.tile_n) + Int32(block * 32 + elem)
                     )
+                    value_addr = epilogue_base + element_index * Int32(2)
+                    if cutlass.const_expr(self.full_coupled):
+                        value_addr = epilogue_base + element_index * Int32(4)
+                    value = ld_shared_bf16_to_f32(value_addr)
+                    if cutlass.const_expr(self.full_coupled):
+                        value = ld_shared_f32(value_addr)
+                    elif cutlass.const_expr(self.scale_sandwich):
+                        value = _p8_ld_shared_f16_to_f32(value_addr)
                     values[elem] = value
                     abs_value = fabs_f32(value)
                     if abs_value > block_max:
@@ -817,3 +1091,68 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                     packed_w13_tiles, subtile,
                 )
             task += Int32(gdimz)
+
+
+class P8H128FC1Kernel(P8NarrowFC1Kernel):
+    """One-CTA N128 owner for the H128 scale-sandwich boundary."""
+
+    def __init__(self, *, full_coupled: bool = False):
+        self.scale_sandwich = True
+        self.full_coupled = bool(full_coupled)
+        self.owned_n = 128
+        self.num_warps = 4
+        self.threads_per_cta = 128
+        self.subtiles = 1
+        self.a_payload_bytes = self.tile_m * 128
+        self.a_scale_bytes = self.tile_m * 4
+        self.sfa_offset = self.a_payload_bytes
+        self.gate_b_offset = self.sfa_offset + self.a_scale_bytes
+        self.up_b_offset = self.gate_b_offset + self.b_payload_bytes
+        self.gate_sfb_offset = self.up_b_offset + self.b_payload_bytes
+        self.up_sfb_offset = self.gate_sfb_offset + self.sfb_bytes
+        self.stage_bytes = self.up_sfb_offset + self.sfb_bytes
+        self.shared_bytes = max(
+            2 * self.stage_bytes,
+            2 * self.tile_m * 128 * 2,
+        )
+        self.shared_words = (self.shared_bytes + 3) // 4
+        self.fast_math = False
+        self.source_halves = 1
+        self.deterministic_output = True
+        self.num_topk = 8
+        self.is_situ = False
+        self.w4a8_trellis = True
+        self.trellis_bits = 4
+        self.trellis_coupled = False
+        self.trellis_direct_lut = False
+        self.trellis_codebook = "mcg"
+        self.trellis_scaled = True
+        self.trellis_identity_boundary = not self.full_coupled
+        self.trellis_lut_offset = self.shared_bytes
+
+    @cute.jit
+    def _coupled_sign(
+        self,
+        scale_component: cute.Tensor,
+        sign_idx: Int32,
+    ) -> cutlass.Float32:
+        # Packed scales occupy H + E*3I + H FP16 elements. Fixed signs are
+        # shared by every expert on this TP rank and occupy pre[2I]|post[I].
+        sign_base = Int32(4096 + 288 * 3 * 512 + 4096)
+        return scale_component[sign_base + sign_idx].to(cutlass.Float32)
+
+    @cute.jit
+    def _coupled_activation(self, gate, up):
+        # GLM-5.3 Flash target activation: capped SiLU, not the archived
+        # synthetic SiTU fixture. The draw-0 coupled candidate still owns the
+        # joint H128 boundary around this target nonlinearity.
+        if gate > cutlass.Float32(10.0):
+            gate = cutlass.Float32(10.0)
+        if up > cutlass.Float32(10.0):
+            up = cutlass.Float32(10.0)
+        if up < cutlass.Float32(-10.0):
+            up = cutlass.Float32(-10.0)
+        sigmoid = cute.arch.rcp_approx(
+            cutlass.Float32(1.0) + cute.math.exp(-gate, fastmath=False)
+        )
+        return gate * sigmoid * up
