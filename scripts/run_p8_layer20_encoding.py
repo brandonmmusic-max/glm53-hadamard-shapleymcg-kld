@@ -11,9 +11,9 @@ from run_p8_layer3_remainder import ROOT, OUT, paths, sha, validate_chunk, repla
 
 
 def main():
-    if sys.argv[1:] != ['--execute']:
-        raise SystemExit('Requires --execute under model-stack flock')
-    plan_path = ROOT / 'experiments/p8-coupled-layer20-encoding-v1.json'
+    if sys.argv[1:] != ['--execute', '--resume-at', '72']:
+        raise SystemExit('Requires --execute --resume-at 72 under model-stack flock')
+    plan_path = ROOT / 'experiments/p8-coupled-layer20-encoding-resume-v2.json'
     plan = json.loads(plan_path.read_text())
     pins = [
         ('evidence/preparation/p8-v9-graph-v2/result.json','graph_result_sha256'),
@@ -26,14 +26,22 @@ def main():
     for path,_ in pins[:2]:
         assert json.loads((ROOT / path).read_text())['decision'] == 'pass'
     launch = json.loads((OUT / 'first-chunk-launch.json').read_text())
-    previous = None
+    previous = (0,72)
     for start,end in plan['ranges']:
         prior = validate_chunk(*previous,layer=20) if previous else plan['layer3_loader_result_sha256']
         for service in ['klc-backend.service','klc-model-stack.timer']:
             assert subprocess.run(['systemctl','is-active','--quiet',service]).returncode != 0
-        gpu = subprocess.check_output(['nvidia-smi','-i','0','--query-gpu=memory.used,temperature.gpu','--format=csv,noheader,nounits'],text=True)
-        memory,temp = map(int,gpu.strip().split(','))
-        assert memory < 100 and temp <= 75, gpu
+        cooldown = []
+        for attempt in range(37):
+            gpu = subprocess.check_output(['nvidia-smi','-i','0','--query-gpu=memory.used,temperature.gpu','--format=csv,noheader,nounits'],text=True)
+            memory,temp = map(int,gpu.strip().split(','))
+            cooldown.append(dict(time=time.time(),snapshot=gpu))
+            assert memory < 100, gpu
+            if temp <= 75:
+                break
+            if attempt < 36:
+                time.sleep(5)
+        assert temp <= 75, gpu
         before = sum(p.stat().st_size for p in OUT.rglob('*') if p.is_file())
         assert before + 1100000000 <= plan['existing_artifact_bytes'] + plan['new_chunk_and_log_reserve_bytes']
         assert shutil.disk_usage(OUT).free >= 1100000000
@@ -44,7 +52,7 @@ def main():
             replace_arg(command,name,value)
         replace_arg(command,'--capture-root','/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/fit-capture-l20-l22-v1')
         prefix = OUT / f'layer20-{start:03d}-{end:03d}-capture-relocation-v2'
-        record = dict(command=command,start=time.time(),plan_sha256=sha(plan_path),prior_receipt_sha256=prior,gpu_snapshot=gpu,artifact_bytes_before=before)
+        record = dict(command=command,start=time.time(),plan_sha256=sha(plan_path),prior_receipt_sha256=prior,gpu_snapshot=gpu,cooldown_snapshots=cooldown,artifact_bytes_before=before)
         with Path(str(prefix)+'.launch.json').open('x') as f:
             json.dump(record,f,indent=2)
         with Path(str(prefix)+'.stdout.log').open('x') as out,Path(str(prefix)+'.stderr.log').open('x') as err:
