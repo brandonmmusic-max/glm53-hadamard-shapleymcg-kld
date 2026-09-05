@@ -74,6 +74,8 @@ class P8NativeTPMoE:
         mac_override: int | None = None,
         deterministic_output: bool = True,
         small_m_scheduler: bool = False,
+        fc1_tile_n: int = 128,
+        debug_capture: bool = False,
     ) -> None:
         self.device = torch.device(device)
         self.tp_rank = int(tp_rank)
@@ -90,6 +92,15 @@ class P8NativeTPMoE:
         # Explicit developmental opt-in. M2/M3 and prefill retain baseline
         # selection; this is not enabled through a serving environment flag.
         self.small_m_scheduler = bool(small_m_scheduler)
+        self.fc1_tile_n = int(fc1_tile_n)
+        self.debug_capture = bool(debug_capture)
+        self.debug_tensors = {}
+        if self.fc1_tile_n not in (32, 64, 128):
+            raise ValueError("FC1 tile N must be 32, 64, or 128")
+        if self.fc1_tile_n != 128 and (
+            not self.small_m_scheduler or self.swiglu_limit != 10.0
+        ):
+            raise ValueError("Narrow FC1 requires small-M and SwiGLU limit 10")
         if self.small_m_scheduler and (
             not self.deterministic_output or force_materialized is not None
             or (topk, hidden, intermediate) != (8, 4096, 512)
@@ -222,6 +233,7 @@ class P8NativeTPMoE:
             direct_routing=small_m,
             materialize_intermediate=materialized,
             p8_small_m=small_m,
+            p8_fc1_tile_n=self.fc1_tile_n if small_m else 128,
             share_input_across_experts=materialized,
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
@@ -295,6 +307,7 @@ class P8NativeTPMoE:
                 1,
                 ("materialized", int(materialized)),
                 ("small_m_scheduler", int(small_m)),
+                ("fc1_tile_n", self.fc1_tile_n if small_m else 128),
                 ("experts", self.experts),
                 ("hidden", self.hidden),
                 ("intermediate", self.intermediate),
@@ -440,4 +453,10 @@ class P8NativeTPMoE:
                 k=self.hidden,
                 stream=current_cuda_stream(),
             )
+        if self.debug_capture:
+            self.debug_tensors = {
+                "packed_a": packed_a, "scale_flat": scale_flat,
+                "intermediate_u32": intermediate_u32,
+                "route_output": kernel_output,
+            }
         return output

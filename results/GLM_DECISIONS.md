@@ -989,6 +989,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   measured 75.5962 versus EXL3 91.2645 tokens/s. P8 remains twice NVFP4's MMA
   issue count. See `results/P8_SMALLM_PROFILE_V1.md` and immutable raw trace.
 
+## 2026-09-05: Decision 44 — test narrower FC1 output ownership
+
+- Compare N128/N64/N32 FC1 on identical synthetic activations, expert routes,
+  weights and scales. Each output retains its full K4096 reduction; FC2 comes
+  unchanged from the measured c9edde image. Narrow candidates retain N128
+  carrier staging initially, an explicit rival to task-parallelism gains.
+- Require exact eager/graph intermediate and output hashes, including high
+  amplitude clipping stress, sparse input boundaries and M2/M3 fallback.
+  Five executions/replays are subsamples, not full-model numerical proof.
+- Only after closure measure five cyclic-order rounds of 100 graph samples.
+  Require at least 35% lower total block median on all four GPUs before an
+  integrated serving run. Preserve failures; no timing after closure failure.
+- Plan: `experiments/p8-fc1-tiles-device-v1.json`. No protected role opens,
+  no LDLQ, no allocation restart. P8 remains twice NVFP4 MMA issue count.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
