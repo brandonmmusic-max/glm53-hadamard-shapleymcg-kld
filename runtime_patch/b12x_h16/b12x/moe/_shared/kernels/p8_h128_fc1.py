@@ -845,7 +845,12 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                         second = ((raw_idx + Int32(1)) >> Int32(5)) & Int32(1)
                         third = ((raw_idx + Int32(2)) >> Int32(5)) & Int32(1)
                         fourth = ((raw_idx + Int32(3)) >> Int32(5)) & Int32(1)
-                        base_col = Int32(segment * 64) + ((raw_idx >> Int32(6)) * Int32(32)) + (raw_idx & Int32(31))
+                        base_col = (
+                            output_tile * Int32(128)
+                            + Int32(segment * 64)
+                            + ((raw_idx >> Int32(6)) * Int32(32))
+                            + (raw_idx & Int32(31))
+                        )
                         p0 = self._scale_fc1_after_h128(p0, trellis_rotations, expert_idx, base_col, first)
                         p1 = self._scale_fc1_after_h128(p1, trellis_rotations, expert_idx, base_col + Int32(1), second)
                         p2 = self._scale_fc1_after_h128(p2, trellis_rotations, expert_idx, base_col + Int32(2), third)
@@ -865,27 +870,31 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
                         activated[segment * 2] = a0
                         activated[segment * 2 + 1] = a1
                     hcol = lane * Int32(4)
-                    contiguous = cute.make_rmem_tensor((4,), cutlass.Float32)
-                    for component in cutlass.range_constexpr(4):
-                        target = hcol + Int32(component)
-                        source_segment = target >> Int32(6)
-                        source_within = target & Int32(63)
-                        source_lane = source_within >> Int32(1)
-                        source_slot = source_segment * Int32(2) + (source_within & Int32(1))
-                        owned = activated[0]
-                        if source_slot == Int32(1):
-                            owned = activated[1]
-                        elif source_slot == Int32(2):
-                            owned = activated[2]
-                        elif source_slot == Int32(3):
-                            owned = activated[3]
-                        contiguous[component] = cute.arch.shuffle_sync(
-                            owned, source_lane
-                        )
-                    a0 = contiguous[0]
-                    a1 = contiguous[1]
-                    a2 = contiguous[2]
-                    a3 = contiguous[3]
+                    # Every source lane must publish the same register slot to
+                    # a shuffle. Selecting ``owned`` from the destination
+                    # lane's slot before shuffling makes the remote lane select
+                    # its *own* slot instead, duplicating [0:32]/[96:128] and
+                    # dropping [32:96]. Gather two adjacent producer lanes from
+                    # one fixed segment, then select that segment locally.
+                    src0 = (lane & Int32(15)) << Int32(1)
+                    src1 = src0 + Int32(1)
+                    first0 = cute.arch.shuffle_sync(activated[0], src0)
+                    first1 = cute.arch.shuffle_sync(activated[1], src0)
+                    first2 = cute.arch.shuffle_sync(activated[0], src1)
+                    first3 = cute.arch.shuffle_sync(activated[1], src1)
+                    second0 = cute.arch.shuffle_sync(activated[2], src0)
+                    second1 = cute.arch.shuffle_sync(activated[3], src0)
+                    second2 = cute.arch.shuffle_sync(activated[2], src1)
+                    second3 = cute.arch.shuffle_sync(activated[3], src1)
+                    a0 = first0
+                    a1 = first1
+                    a2 = first2
+                    a3 = first3
+                    if lane >= Int32(16):
+                        a0 = second0
+                        a1 = second1
+                        a2 = second2
+                        a3 = second3
                     a0, a1, a2, a3 = _w4a8_had128_quad(a0, a1, a2, a3, lane)
                     local_col = output_tile * Int32(128) + hcol
                     a0 *= trellis_rotations[Int32(4096) + expert_idx * Int32(3 * 512) + Int32(2 * 512) + local_col].to(cutlass.Float32)
