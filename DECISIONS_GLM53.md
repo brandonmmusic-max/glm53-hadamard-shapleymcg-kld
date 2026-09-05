@@ -105,3 +105,26 @@ V6 forced block-local H16 and V7 identity-selective block H16 both improved thei
 On the sealed domain-balanced fit/train32 split, stock measured `0.0364503459`. The matched zero-angle full-GPTQ down control measured `0.0375109066`, a `2.9096%` regression. The best nonzero arm, `+pi/16`, measured `0.0356555443`: `2.1805%` better than stock, `4.9462%` better than the matched zero control, and better than stock on 20/32 windows. The paired BCa interval versus stock was `[-0.00306204,+0.00105526]`; it is a nonblocking post-selection development control, not a quality claim. Fixed Hadamard endpoints failed to lead: `-pi/4` was `1.3875%` worse than stock and `+pi/4` was `0.3395%` worse. The fitted reconstruction objective preferred approximately `abs(angle)=pi/8`, confirming that local Hessian error can construct candidates but cannot rank causal KLD reliably.
 
 Advance only `+pi/16`, the matched learned-identity control, and stock to the already declared disjoint tune32 split. The tune gate remains: candidate mean below both controls, delta versus stock at most `-0.0004`, and no domain mean delta above `+0.0005`; paired BCa is reported but nonblocking. This is adaptive fit evidence for a 4.5-bpw native-NVFP4 rotation, not the separate 4.25-bpw P8 product. It does not establish a fused prologue, speed, all-layer allocation, or qualification. Protected roles and reserved confirmation logits remain unopened; no LDLQ or BlockLDLQ was used.
+
+## 21. 2026-09-05: freeze one rotation-by-codec interaction before tune closes
+
+Regardless of the still-running tune32 outcome, give the already selected
+`+pi/16` shared middle butterfly exactly one developmental layer-3 interaction
+test in the physical 4.25-bpw TrellisMX-P8 codec.  Do not substitute a new
+angle or rerun this interaction based on tune.  Gate/up use the ordinary K4
+procedural-MCG/E4M3/UE8M0-K32 encoder; W2 is encoded as `W2 @ R` with the same
+full-Hessian GPTQ-style inter-group feedback and no LDLQ.  The pseudoquant
+runtime must round post-SwiGLU to BF16, execute the four scalar-angle Givens
+stages in FP32 registers, round the final rotated vector to BF16, quantize it
+to E4M3/UE8M0-K32, and consume the decoded rotated-basis W2.
+
+The standalone tune result controls only claims about the 4.5-bpw ModelOpt
+rotation.  The combined test asks a different causal question and will report
+its result even if tune fails.  Compare it once against fresh stock and the
+unrotated physical-P8 pseudoquant control on the same already opened tune32
+windows.  Advancement into the fused device prologue requires the combined
+candidate mean to be below unrotated P8 and not worse than stock; the paired
+BCa interval is a nonblocking development control.  The kernel must then close
+to this exact staged pseudoquant arithmetic before any speed claim.  This does
+not open selection, confirmation, final, or the 28 reserved confirmation
+logits, and it does not yet qualify an all-42-layer product.

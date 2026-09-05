@@ -4,6 +4,7 @@ import torch
 from glm53_nvfp4.block_gptq import block_hessian
 from glm53_nvfp4.block_rotation import (
     apply_activation_rotation,
+    apply_shared_butterfly16_staged,
     apply_output_rotation,
     apply_weight_rotation,
     butterfly16,
@@ -54,6 +55,27 @@ def test_butterfly16_identity_quarter_turn_and_linear_closure():
 def test_butterfly16_rejects_invalid_angle_count():
     with pytest.raises(ValueError, match="1, 4, or 32"):
         butterfly16(torch.zeros(3))
+
+
+def test_shared_butterfly_staged_matches_dense_rotation_in_float32():
+    generator = torch.Generator().manual_seed(5305)
+    x = torch.randn(7, 64, generator=generator)
+    angle = torch.pi / 16
+    staged = apply_shared_butterfly16_staged(x, angle)
+    dense = apply_activation_rotation(x, butterfly16(angle))
+    torch.testing.assert_close(staged, dense, atol=5e-7, rtol=5e-7)
+
+
+def test_shared_butterfly_staged_rounds_only_final_result():
+    generator = torch.Generator().manual_seed(5306)
+    x = torch.randn(3, 32, generator=generator).to(torch.bfloat16)
+    actual = apply_shared_butterfly16_staged(
+        x, torch.pi / 16, output_dtype=torch.bfloat16
+    )
+    assert actual.dtype == torch.bfloat16
+    assert actual.shape == x.shape
+    with pytest.raises(ValueError, match="divisible by 16"):
+        apply_shared_butterfly16_staged(torch.zeros(2, 17), 0.1)
 
 
 def test_hadamard32_and_hadamard64_preserve_linear_map():
