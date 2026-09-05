@@ -14,8 +14,9 @@ searches, or other side projects before this measurement.
 
 The earlier full 42-layer P8 model is **identity/unrotated P8**, not this new
 coupled encoding. Only layers 3,20,22 have the new encoding. All are completely
-encoded, packed, and real-TP4-loader checked. There is not yet a complete
-32-window coupled KLD result. Do not describe packing/loader or synthetic-kernel tests
+encoded, packed, and real-TP4-loader checked. The complete candidate's
+32-window true-decode KLD is now **0.05499088068580576**; matched identity is
+running. Do not describe packing/loader or synthetic-kernel tests
 as end-to-end quality proof.
 
 ## Active run — attach, do not duplicate
@@ -39,15 +40,18 @@ PYTHONPATH=. python3 -m glm53_nvfp4.p8_coupled_cf32_executor execute --seal /med
 
 Snapshot host PID: **2766432**. Codex PTY session: **26404** (Fable may not
 have this handle; inspect the exact PID/command and Docker state instead).
-Container: `glm53-p8-three-layer-cf32-coupled_p8`, port **8032**.
+Current container: `glm53-p8-three-layer-cf32-identity_p8`, port **8032**.
+The coupled container completed and was cleaned up by the owned executor.
 The container is past the shell-launch error. At23:27:19 UTC its log reported
 application startup complete, followed by a successful GET /v1/models.
-The first candidate window `conditional-fit-0056` is captured and scored:
-true-decode KLD **0.04350057679709212**, 2046 true-decode rows. This is only
-1/32, not the panel mean or a matched improvement claim. The next window was
-running at the latest check. First-window runtime audit passed coupled
-H512/H128+suh/svh dispatch and full CUDA-graph capture on all four ranks;
-conditions are the B12X/nvfp4_ds_mla/E4M3/~4.25398bpw configuration below.
+All32 candidate windows completed: true-decode mean **0.05499088068580576**,
+including-prefill mean **0.05601149974746436**. Root replayed all32 score NPZ
+hashes/means and retirement hashes; arm execution exit0, cleanup PASS, final
+runtime audit PASS with all32 IDs in order. This is not yet a matched
+improvement claim. Conditions: B12X/nvfp4_ds_mla/native coupled P8/E4M3/
+~4.25398bpw, TP4/DCP1/noEP/graphs/MTPoff, layers3/20/22 coupled, reststock.
+Read `results/P8_COUPLED_CF32_CANDIDATE_RESULT_V3.json`. Let the active
+matched identity arm finish, then obtain paired delta and BCa from analysis.
 
 Seal SHA256:
 `41af897c4f52237a74af8eca7f1d6c8ef1f274edf10c1697f942a4a7d0f000d6`
@@ -69,7 +73,7 @@ Safe initial commands:
 ```bash
 ps -p 2766432 -o pid,etime,stat,args
 docker ps --format '{{.Names}} {{.Status}}'
-docker logs --tail 50 glm53-p8-three-layer-cf32-coupled_p8
+docker logs --tail 50 glm53-p8-three-layer-cf32-identity_p8
 ```
 
 A missing final receipt does not mean a live process stopped. A polling timeout
@@ -237,5 +241,6 @@ for chronology. Source change27805aa (integrated86ceac2) passed33 focused tests
 and independent review. Audit agent's latest report commit643957c exists in
 the shared Git object store; it may not yet be integrated at snapshot time.
 
-**First action: inspect the live executor and candidate container, then obtain
-the32-window coupled KLD. Do not stop or duplicate a healthy measurement.**
+**First action: inspect the live executor and identity container, then obtain
+the matched comparison. The32-window coupled KLD is complete. Do not stop or
+duplicate a healthy measurement.**
