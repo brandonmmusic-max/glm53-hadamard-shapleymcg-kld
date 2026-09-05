@@ -123,7 +123,8 @@ def test_capture_receipt_checks_raw_bytes_and_causal_range(tmp_path, monkeypatch
     metadata = {
         "schema": "glm53-p8.forced-decode-logits.v1", "status": "complete",
         "window_id": window_id, "dtype": "<f4", "shape": [3, 5], "real_vocab_size": 5,
-        "original_logit_width": 8, "rows_completed": 3, "capture_start_output_len": 0,
+        "original_logit_width": 8, "original_logit_dtype": "torch.bfloat16",
+        "rows_completed": 3, "capture_start_output_len": 0,
         "captured_output_len_range": [0, 2], "causal_teacher_row_range": [0, 2],
         "one_token_prefill_row_range": [0, 0], "true_decode_row_range": [1, 2],
         "prompt_token_count": 1, "forced_token_count": 3,
@@ -140,7 +141,8 @@ def test_capture_receipt_checks_raw_bytes_and_causal_range(tmp_path, monkeypatch
     assert np.array_equal(array, values)
     assert not array.flags.writeable
     for key, value in (("causal_teacher_row_range", [1, 3]), ("pre_mask_raw_fp32", False),
-                       ("tp_rank", 1), ("raw_sha256", "0" * 64)):
+                       ("tp_rank", 1), ("raw_sha256", "0" * 64),
+                       ("original_logit_dtype", None), ("original_logit_dtype", "torch.float64")):
         altered = {**metadata, key: value}
         path.write_text(json.dumps(altered))
         with pytest.raises(ValueError):

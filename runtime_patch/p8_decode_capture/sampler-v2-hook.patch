@@ -1,0 +1,36 @@
+diff --git a/vllm/v1/worker/gpu/sample/sampler.py b/vllm/v1/worker/gpu/sample/sampler.py
+--- a/vllm/v1/worker/gpu/sample/sampler.py
++++ b/vllm/v1/worker/gpu/sample/sampler.py
+@@ -13,5 +13,6 @@ from vllm.v1.sample.ops.topk_topp_sampler import (
+     flashinfer_sampler_supported,
+ )
++from p8_decode_capture.v2_hook import V2ForcedDecodeCapture
+ from vllm.v1.worker.gpu.input_batch import InputBatch, get_num_sampled_and_rejected
+ from vllm.v1.worker.gpu.metrics.logits import get_num_nans
+ from vllm.v1.worker.gpu.sample.bad_words import BadWordsState
+@@ -56,10 +57,17 @@ class Sampler:
+         self.needs_logits_processing = np.zeros(max_num_reqs, dtype=bool)
+         self.num_speculative_tokens = num_speculative_tokens
+         self.use_flashinfer = flashinfer_sampler_supported()
++        self.p8_decode_capture = V2ForcedDecodeCapture(
++            max_num_reqs=max_num_reqs,
++            vocab_size=vocab_size,
++            num_speculative_tokens=num_speculative_tokens,
++            req_states=req_states,
++        )
+ 
+     def add_request(
+         self, req_idx: int, prompt_len: int, sampling_params: SamplingParams
+     ) -> None:
++        self.p8_decode_capture.add_request(req_idx, prompt_len, sampling_params)
+         self.sampling_states.add_request(req_idx, sampling_params)
+         self.penalties_state.add_request(req_idx, sampling_params)
+         self.logit_bias_state.add_request(req_idx, prompt_len, sampling_params)
+@@ -96,6 +104,7 @@ class Sampler:
+         logits: torch.Tensor,
+         input_batch: InputBatch,
+     ) -> SamplerOutput:
++        logits = self.p8_decode_capture.capture_and_force(logits, input_batch)
+         expanded_idx_mapping = input_batch.expanded_idx_mapping
+         idx_mapping = input_batch.idx_mapping
+         idx_mapping_np = input_batch.idx_mapping_np

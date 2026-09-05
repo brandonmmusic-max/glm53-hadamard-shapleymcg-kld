@@ -55,6 +55,20 @@ to FC1 versus 0.52 ms to FC2**, with a 12.97 ms distributed graph span. FC1 is
 the next optimization target. See the [integrated result](results/P8_SMALLM_INTEGRATED_V1.md)
 and [trace with preserved exclusions](results/P8_SMALLM_PROFILE_V1.md).
 
+The subsequent B12X-derived N64 FC1 / consolidated scratch-clear pilot reached
+**100.5667 C1 tokens/s**, with 7,244 tok/s server-validated 32K prefill.
+This is a single-run diagnostic, 33.03% above the preceding P8 pilot and
+10.19% above the historical EXL3 decode median, not a completed product gate.
+The separate fresh five-cold-run-per-arm comparison is in progress; historical
+samples do not enter its medians. The earlier failed comparison remains valid
+for its older runtime. See the [N64 pilot receipts](results/P8_FC1_INTEGRATED_V1.md).
+Allocation remains stopped pending speed and full-model M1 numerical closure.
+Ordinary prompt-prefill KLD exercises the unchanged M>1 fallback, so the closure
+endpoint is being built to replay every conditional-fit causal row with M1
+under the same Model Runner V2/FULL-graph configuration. Its capture overhead
+must never be used for throughput claims. P8 remains the E4M3 compute product
+with twice NVFP4's MMA issue count, not the P4/NVFP4 speed-class endpoint.
+
 ### Earlier codec redesign results (2026-09-04)
 
 The no-LDLQ P8 redesign now has a matched-path numerical gate. Its encoder

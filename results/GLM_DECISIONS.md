@@ -1120,8 +1120,9 @@ confirmation, and final roles remained unopened for this redesign branch.
 - Plan numerical closure for all 65,504 causal rows of the same fixed
   conditional-fit32 panel, not just a favorable tail subset. One-token
   prompts followed by 2,047 forced original token IDs produce one
-  one-token-prefill row and 2,046 true decode rows per window. Raw pre-mask
-  FP32 logits must align to teacher rows 0 through 2,046 without shifting.
+  one-token-prefill row and 2,046 true decode rows per window. Pre-mask logits
+  stored as FP32, with original dtype recorded, must align to teacher rows
+  0 through 2,046 without shifting.
 - Compare N128/no-fused-scratch and N64/fused-scratch in the same current
   image and Model Runner V2/FULL-graph topology. First require exact logits
   across the complete inventory, then report teacher KLD. Preserve a failed
@@ -1131,6 +1132,29 @@ confirmation, and final roles remained unopened for this redesign branch.
   current-path closure endpoint. Develop an isolated V2 capture/force hook
   and validate it before launching the full replay. The V1 component may
   provide tested capture-storage logic, but is not serving-path proof.
+
+## 2026-09-05: Decision 53 — isolated V2 capture image and fail-closed archive
+
+- Build the correctness-only image as a child of the measured N64-capable
+  image `sha256:6c08dffb4184c2704173a12909f4bbfaaa866351e55cbf03a2182741baf81141`.
+  Authenticate and patch both editable and installed copies of the pinned V2
+  sampler. Leave the benchmark image and every cold-plan source unchanged.
+  Preserve the inherited FC2 kernel, rather than copying a different local donor.
+- The hook captures model logits before sampler mutation, outside the model
+  graph. FP32 storage may be an exact upcast of lower-precision head output;
+  record the original dtype without changing the head computation. Verify
+  consumed token IDs, causal positions, request mappings and nonpadding M1
+  geometry, and reject settings that could override the forced token.
+- A separately sealed full-2,047-row canary on the first conditional-fit
+  manifest window must pass exact N128/N64 closure before the full 32-window
+  replay. It is an implementation smoke test, not balanced-domain evidence.
+  The full panel remains eight windows per domain. No quality GPU launch is
+  authorized while the fresh cold comparison owns the model-stack lock.
+- Independent review of the terminal snapshot helper found and fixed a
+  packaging hazard: analysis from a failed/unreplayed attempt is retained
+  under `raw-unverified-analysis.json`, explicitly excluded from claims.
+  Normal `analysis.json` requires successful raw-analyzer replay. Do not run
+  this archiver against a still-active comparison.
 
 ## 2026-09-03: uniform rotation
 
