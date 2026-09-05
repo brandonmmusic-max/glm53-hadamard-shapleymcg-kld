@@ -81,7 +81,11 @@ pending real-device canary, full-panel capture and paired KLD analysis.
 The first capture attempt failed during registered synthetic startup warmup,
 before any evaluation request. Its failure is preserved; the narrowly scoped
 [v2 warmup amendment](results/P8_FORCED_M1_WARMUP_V2.md) keeps the numerical
-rule and data role unchanged. No optimized decode-path KLD is available yet.
+rule and data role unchanged. That repair passed real GPU warmup and completed
+the N128 canary's 2,047 rows, but v2 stopped before N64 at a TCP port preflight.
+The [v3 port-probe amendment](results/P8_FORCED_M1_PORT_V3.md) preserves that
+partial result and changes no numerical gate. No optimized decode-path KLD
+or paired full-model closure is available yet.
 
 ### Earlier codec redesign results (2026-09-04)
 

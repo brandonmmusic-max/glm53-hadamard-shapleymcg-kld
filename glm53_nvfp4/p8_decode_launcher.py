@@ -29,8 +29,8 @@ from scripts import build_p8_decode_capture_image as builder
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT = cold.ROOT
-PREFIX = 'glm53-p8-forced-m1-v2-v2'
-PRIOR_PLAN_SHA = 'e3332469bc2ed9aec86eabb86b8dc57f76123542e1de309b9136893e4014725a'
+PREFIX = 'glm53-p8-forced-m1-v2-v3'
+PRIOR_PLAN_SHA = '0faf9049d5f565e887570a6eff6ceac431ad4b6d767f2a72ab4b324b348d29c3'
 PRIOR_RUNTIME_MOUNT = '/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-smallm-v1/runtime_patch:/runtime-patch:ro'
 PRIOR_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-smallm-v1')
 COLD_PLAN = PRIOR_REPO / 'experiments/p8-fc1-cold-comparison-v1.json'
@@ -52,9 +52,10 @@ SOURCE_FILES = cold.SOURCES | {
     'tests/test_build_p8_decode_capture_image.py', 'tests/test_p8_decode_capture_v2.py',
     *(f'runtime_patch/p8_decode_capture/{name}' for name in builder.SOURCE_NAMES),
 }
-FIXED = {'schema': 'glm53-p8.forced-m1-v2-plan.v2', 'port': PORT, 'order': ORDER, 'arms': ARMS,
+FIXED = {'schema': 'glm53-p8.forced-m1-v2-plan.v3', 'port': PORT, 'order': ORDER, 'arms': ARMS,
          'amends_plan_sha256': PRIOR_PLAN_SHA,
-         'amendment': 'startup-only lexical warmup scope; same numerical decision and conditional-fit role',
+         'amendment': 'port probe allows closed TIME_WAIT sockets, never active listeners; same image, numerical decision and role',
+         'port_probe': 'non-listening localhost bind with SO_REUSEADDR only, never SO_REUSEPORT',
          'warmup_gate': 'four rank-tagged lexical scope closures; one registration and two samples per rank',
          'topology': {'tp': 4, 'ep': False, 'dcp': 1}, 'kv_cache_dtype': 'nvfp4_ds_mla',
          'max_num_seqs': 1, 'rows_per_window': 2047, 'full_windows': 32,
@@ -375,6 +376,17 @@ def normalize_capture_ownership(root, windows, cid, image, name, owner, target, 
             'operation': 'chown -h explicit regular capture files; no bytes modified'}
 
 
+def check_port_available():
+    """Reject a live listener without rejecting the previous server's TIME_WAIT.
+
+    This socket never listens, enables no SO_REUSEPORT, and is closed before
+    launch. It cannot take ownership from an existing listening service.
+    """
+    with socket.socket() as port:
+        port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        port.bind(('127.0.0.1', PORT))
+
+
 def capture_stage(plan, entry, container, out, plan_hash, hardware):
     windows = stage_windows(plan, entry['stage'])
     out.mkdir(mode=0o700)
@@ -389,8 +401,7 @@ def capture_stage(plan, entry, container, out, plan_hash, hardware):
         verify_stage_identities(plan)
         if pilot.command(['docker', 'ps', '-a', '--filter', f'name=^/{name}$', '--format', '{{.ID}}']).stdout.strip():
             raise ValueError('capture container name already exists')
-        with socket.socket() as port:
-            port.bind(('127.0.0.1', PORT))
+        check_port_available()
         deadline = time.monotonic() + 1800
         with (out / 'cooldown.jsonl').open('x') as cooldown:
             while True:
