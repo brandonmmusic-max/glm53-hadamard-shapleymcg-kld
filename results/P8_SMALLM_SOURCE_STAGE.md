@@ -70,3 +70,22 @@ CPU import/construction against the actual editable B12X source path also
 passed: `P8SmallMPhase2Kernel True False True` for the selected class,
 M1-materialized flag, external-FC1 flag and external-FC2 flag respectively.
 This constructor check does not compile a CUDA kernel.
+
+## Independent source review
+
+An adversarial CPU-only review found no demonstrated source-level blocker to
+device compilation and numerical closure. It verified the exact baseline
+parent hash, suppression of the inherited E2M1/atomic FC2, disjoint 32-task
+FC1 and 128-task FC2 ownership, structural producer/consumer scale layout,
+ordered BF16 slice boundaries, and the absence of decoded-weight global
+materialization. It also confirmed that two compute launches still satisfy the
+native-decoder requirement because each launch decodes compressed weights in
+registers immediately into E4M3 `mxf8f6f4`; only quantized intermediate
+activations and scales cross the launch boundary.
+
+This review is not numerical approval. CuTe lowering/resource limits, poison
+coverage of inactive M16 rows, captured-buffer address stability, unchanged
+M2/M3 fallback against the separately frozen image, and device speed remain
+open gates. Any measured gain belongs to the combined routing/decomposition/
+capacity candidate and must not be attributed to one mechanism without an
+additional ablation.
