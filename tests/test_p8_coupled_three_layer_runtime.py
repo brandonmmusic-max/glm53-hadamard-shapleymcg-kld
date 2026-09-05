@@ -162,6 +162,7 @@ def test_launch_removes_stale_runtime_and_uses_exact_coupled_flat_path(tmp_path)
     assert command.startswith("set -e; mkdir /tmp/p8-three-layer-sidecars;")
     assert command.count("ln -s /p8-coupled-sidecars/layer-") == 12
     assert env["GLM53_P8_NATIVE_SIDECAR_DIR"] == "/tmp/p8-three-layer-sidecars"
+    assert f"{tmp_path / 'captures' / 'captures'}:/p8-captures:rw" in argv
 
 
 def test_production_guard_uses_user_backend_and_system_timer(monkeypatch):

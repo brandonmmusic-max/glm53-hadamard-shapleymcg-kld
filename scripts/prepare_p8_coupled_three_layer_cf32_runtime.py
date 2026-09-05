@@ -69,7 +69,7 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
         if destination in {"/runtime-patch", "/model", "/p8-sidecars", "/p8-design", "/p8-captures"}:
             continue
         argv += ["--volume", bind]
-    argv += ["--volume", f"{model_root}:/model:ro", "--volume", f"{output}:/p8-captures:rw"]
+    argv += ["--volume", f"{model_root}:/model:ro", "--volume", f"{output / 'captures'}:/p8-captures:rw"]
     prelude = ""
     if arm == "identity_p8":
         argv += ["--volume", f"{identity_root}:/p8-sidecars:ro",
@@ -144,11 +144,20 @@ def main() -> None:
             "runtime_log_gate": "verify_runtime_log; exactly layers 3,20,22 x ranks 0..3; no fallback"}
     manifest = {"schema": "glm53.p8-coupled-three-layer-cf32-runtime.v1",
         "status": "sealed-before-execution", "execution_authority": False,
-        "production": production, "image": image, "source_recipe": {"path": str(args.source_recipe), "sha256": runtime.sha(args.source_recipe)},
+        "production": production, "image": image,
+        "capture_attestation": {"path": str(args.capture_image_receipt),
+                                "sha256": runtime.sha(args.capture_image_receipt)},
+        "source_recipe": {"path": str(args.source_recipe), "sha256": runtime.sha(args.source_recipe)},
         "stock_carrier": {"path": str(args.model_root), "config_sha256": runtime.sha(args.model_root / "config.json"),
                           "index_sha256": runtime.sha(args.model_root / "model.safetensors.index.json")},
         "roles": {"path": str(args.roles), "sha256": runtime.ROLE_SHA256, "window_ids": ids,
                   "teacher_root": str(args.teacher_root), "teacher_bytes_verified": True},
+        "identity_inputs": {"root": str(args.identity_root),
+                            "manifest": {"path": str(args.identity_manifest), "sha256": runtime.sha(args.identity_manifest)},
+                            "design": {"path": str(args.identity_design), "sha256": runtime.sha(args.identity_design)}},
+        "coupled_inputs": {"root": str(args.coupled_root),
+                           "design": {"path": str(args.coupled_design), "sha256": runtime.sha(args.coupled_design)},
+                           "transform": {"path": str(args.transform), "sha256": runtime.sha(args.transform)}},
         "identity_sidecars": identity, "coupled_sidecars": coupled,
         "coupled_evidence": {str(layer): {
             "postwrite": {"path": str(postwrites[layer]), "sha256": runtime.sha(postwrites[layer])},
