@@ -971,6 +971,24 @@ confirmation, and final roles remained unopened for this redesign branch.
 - Use only synthetic inputs, preserve the failed product gate and stopped
   allocation, and restore prior service states after the capture.
 
+## 2026-09-05: Decision 43 — preserve failed count gate; localize complete-prefix costs
+
+- The integrated small-M trace completed and restored service states, but the
+  frozen exact16 count gate failed: one corrupt NVTX range and two trailing
+  partial graph captures remain in the raw receipt. Preserve the strict error.
+- Separately label the 16-complete-replay subset as diagnostic, not a pass.
+  Require same-thread generation/launch containment, four distinct GPUs,
+  stable node/symbol/geometry inventories and explicit trailing exclusions.
+  This interpretation was selected after inspecting capture metadata; it is
+  not a pre-registered replacement gate or independent throughput replicate.
+- Independent complete-prefix analysis localizes critical-rank FC1 at about
+  4.96 ms versus FC2 about 0.52 ms. Focus the next design on increasing FC1
+  output-tile parallelism without splitting its K reduction. Gate/up already
+  share A; the generic M1 kernel already bypasses histogram/prefix work.
+- No allocation restart, new KLD claim or product qualification. P8 still
+  measured 75.5962 versus EXL3 91.2645 tokens/s. P8 remains twice NVFP4's MMA
+  issue count. See `results/P8_SMALLM_PROFILE_V1.md` and immutable raw trace.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

@@ -42,8 +42,18 @@ On a single-GPU identical-workload layer call, 20 warmups plus 100 CUDA-event
 samples measured 1.134288 ms baseline versus 0.313248 ms candidate: **72.38%
 lower device time (3.62x)**. M2/M3 fallback hashes also match exactly. This is
 developmental eager kernel evidence, not CUDA-graph serving tokens/s; captured
-four-rank integration remains open. See the
+four-rank integration is recorded separately below. See the
 [first device report](results/P8_SMALLM_DEVICE_V1.md).
+
+The subsequent integrated small-M diagnostic reached **75.5962 C1 tokens/s**,
+up from 20.6937, with all 42 layers on the native P8 path and FULL graphs.
+It still trails the fixed EXL3 serving reference of 91.2645 tokens/s; allocation
+remains stopped. No new full-model KLD is claimed for this schedule change.
+The follow-on trace's strict count gate failed on trailing capture records;
+its separately labeled 16-complete-replay diagnostic localizes about **5.0 ms
+to FC1 versus 0.52 ms to FC2**, with a 12.97 ms distributed graph span. FC1 is
+the next optimization target. See the [integrated result](results/P8_SMALLM_INTEGRATED_V1.md)
+and [trace with preserved exclusions](results/P8_SMALLM_PROFILE_V1.md).
 
 ### Earlier codec redesign results (2026-09-04)
 
