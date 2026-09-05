@@ -34,7 +34,7 @@ def image_id(name: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--tag", default="klc/glm53-p8-tail-repair:v1")
+    parser.add_argument("--tag", default="klc/glm53-p8-tail-repair:v1a")
     args = parser.parse_args()
     if args.output != args.output.resolve() or args.output.exists():
         raise ValueError("fresh canonical output directory required")
