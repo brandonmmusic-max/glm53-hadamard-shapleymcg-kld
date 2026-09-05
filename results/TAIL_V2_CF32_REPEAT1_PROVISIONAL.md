@@ -48,3 +48,15 @@ included in the paired v1b estimates.
 
 P8 uses mxf8f6f4, with twice the MMA issue count of NVFP4. No throughput
 or coupled-scale improvement is established by this result.
+
+## Cold-repeat checkpoint
+
+P8 repeat 2 completed all 32 windows with exit code 0. Every raw-logit SHA
+matches its repeat-1 counterpart. Conditions are the P8 identity row above:
+B12X_MLA_SPARSE / nvfp4_ds_mla / native P8 mxf8f6f4 N64 / E4M3 activation /
+4.25 bpw, TP4/noEP/DCP1, graphs on, MTP off, tail V2.
+
+`round-02-p8/execution.json` SHA-256:
+`aa9d7fe6227f0104a7cbd23f69ce4ac389489869018cba4a1569e6b53c03821e`.
+This establishes a full-panel two-start match for P8. The remaining three
+P8 repeats and EXL3 repeats are still needed for the five-start gate.
