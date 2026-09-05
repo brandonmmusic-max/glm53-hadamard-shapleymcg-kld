@@ -23,6 +23,39 @@ CASES = (
     ('fallback_m2', 2, 0.01), ('fallback_m3', 3, 0.01),
 )
 DEBUG_KEYS = {'packed_a', 'scale_flat', 'intermediate_u32', 'route_output'}
+MAP_KEYS = {'token_map','row_counts','expert_tile_base'}
+
+
+def canonical_rows(counts, bases, mapping, pairs):
+    if len(counts) != 288 or len(bases) != 289:
+        raise ValueError('wrong expert metadata dimensions')
+    logical = {}
+    used = set()
+    tile_cursor = 0
+    for expert,count in enumerate(counts):
+        if count < 0 or count > pairs or bases[expert] < 0:
+            raise ValueError('invalid physical row count/base')
+        if bases[expert] != tile_cursor:
+            raise ValueError('expert tile prefix does not match row counts')
+        tile_cursor += (count+15)//16
+        for offset in range(count):
+            physical = bases[expert]*16 + offset
+            if physical in used or not 0 <= physical < len(mapping):
+                raise ValueError('invalid or overlapping physical row')
+            pair = mapping[physical]
+            if pair in logical or not 0 <= pair < pairs:
+                raise ValueError('invalid or duplicate logical route')
+            logical[pair] = physical
+            used.add(physical)
+    if set(logical) != set(range(pairs)):
+        raise ValueError('logical route inventory is incomplete')
+    if bases[-1] != tile_cursor or tile_cursor*16 > len(mapping):
+        raise ValueError('terminal expert tile count exceeds capacity or differs')
+    return [logical[pair] for pair in range(pairs)]
+
+
+def comparison_state(state):
+    return {key:state[key] for key in DEBUG_KEYS | {'output'}}
 
 
 def sha(path):
@@ -87,10 +120,29 @@ def run(args):
                               .numpy().tobytes()).hexdigest()
 
     def state(runtime, output):
-        if set(runtime.debug_tensors) != DEBUG_KEYS:
+        if set(runtime.debug_tensors) != DEBUG_KEYS | MAP_KEYS:
             raise ValueError('missing or unexpected intermediate buffers')
-        return {'output': tensor_hash(output),
-                **{key:tensor_hash(value) for key,value in runtime.debug_tensors.items()}}
+        buffers = runtime.debug_tensors
+        result = {'output':tensor_hash(output),
+                  **{key:tensor_hash(buffers[key]) for key in DEBUG_KEYS}}
+        result['raw_physical_inputs'] = {key:result[key] for key in ('packed_a','scale_flat')}
+        dispatch = runtime.debug_dispatch
+        m = output.shape[0]
+        if m > 1:
+            if dispatch != {'small_m':False,'materialized':False,'fc1_tile_n':128,'tile_m':16}:
+                raise ValueError('fallback did not resolve to unchanged N128 monolithic path')
+            counts = buffers['row_counts'].cpu().tolist()
+            bases = buffers['expert_tile_base'].cpu().tolist()
+            mapping = buffers['token_map'].cpu().tolist()
+            order = canonical_rows(counts,bases,mapping,m*8)
+            selected = torch.tensor(order,dtype=torch.long)
+            result['packed_a'] = tensor_hash(buffers['packed_a'].cpu().reshape(-1,4096).index_select(0,selected))
+            result['scale_flat'] = tensor_hash(buffers['scale_flat'].cpu()[:len(mapping)*128].reshape(-1,128).index_select(0,selected))
+            result['canonical_physical_row_order'] = order
+        elif dispatch != {'small_m':True,'materialized':True,'fc1_tile_n':runtime.fc1_tile_n,'tile_m':16}:
+            raise ValueError('M1 did not resolve to requested FC1 tile')
+        result['resolved_dispatch'] = dispatch
+        return result
 
     cells, payloads, benchmark_payload = [], [], None
     for name,m,scale in CASES:
@@ -142,9 +194,9 @@ def run(args):
                 graph_states.append(state(runtime,graph_output))
             cell = {'case':name,'tokens':m,'tile_n':tile,
                     'eager_states':eager,'graph_states':graph_states,
-                    'matches_control':all(value == control_state for value in eager+graph_states),
-                    'deterministic':all(value == eager[0] for value in eager),
-                    'graph_matches_eager':all(value == eager[0] for value in graph_states),
+                    'matches_control':all(comparison_state(value) == comparison_state(control_state) for value in eager+graph_states),
+                    'deterministic':all(comparison_state(value) == comparison_state(eager[0]) for value in eager),
+                    'graph_matches_eager':all(comparison_state(value) == comparison_state(eager[0]) for value in graph_states),
                     'finite':finite}
             cells.append(cell)
             print(json.dumps({key:cell[key] for key in ('case','tile_n','matches_control','finite')}),flush=True)
@@ -191,7 +243,8 @@ def run(args):
         decision = {'correctness_pass':False,'speed_pass_by_tile':{},
                     'reason':'timing skipped after numerical closure failure'}
     result = {
-        'schema':'glm53-p8-fc1-tiles-probe.v1', 'decision':decision,
+        'schema':'glm53-p8-fc1-tiles-probe.v2', 'decision':decision,
+        'fallback_input_comparison':'canonical logical route order from token_map, row_counts and expert_tile_base; raw physical hashes retained',
         'image_id':args.image_id,'executed_sources':sources,
         'sidecar_sha256':sha(args.sidecar), 'design_sha256':sha(args.design),
         'probe_sha256':sha(__file__), 'rank':args.rank, 'seed':args.seed,

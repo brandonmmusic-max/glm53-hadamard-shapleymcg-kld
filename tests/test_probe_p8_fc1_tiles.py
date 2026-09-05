@@ -1,6 +1,6 @@
 import pytest
 
-from glm53_nvfp4.probe_p8_fc1_tiles import decide
+from glm53_nvfp4.probe_p8_fc1_tiles import decide, canonical_rows
 
 
 def cell(**kw):
@@ -25,3 +25,29 @@ def test_requires_correctness_before_speed():
 def test_invalid_samples_fail_closed(values):
     with pytest.raises(ValueError):
         decide([cell()],values,.35)
+
+
+def metadata():
+    counts=[2]+[0]*286+[1]
+    bases=[0]+[1]*287+[2]
+    mapping=[0]*32
+    mapping[0],mapping[1],mapping[16]=1,0,2
+    return counts,bases,mapping
+
+
+def test_canonicalization_preserves_logical_inputs_despite_row_permutation():
+    counts,bases,mapping=metadata()
+    assert canonical_rows(counts,bases,mapping,3)==[1,0,16]
+    mapping[0],mapping[1]=0,1
+    assert canonical_rows(counts,bases,mapping,3)==[0,1,16]
+
+
+@pytest.mark.parametrize('fault',['duplicate','prefix','terminal','missing'])
+def test_invalid_canonical_mapping_fails(fault):
+    counts,bases,mapping=metadata()
+    if fault=='duplicate': mapping[1]=1
+    if fault=='prefix': bases[3]=2
+    if fault=='terminal': bases[-1]=3
+    if fault=='missing': counts[-1]=0
+    with pytest.raises(ValueError):
+        canonical_rows(counts,bases,mapping,3)
