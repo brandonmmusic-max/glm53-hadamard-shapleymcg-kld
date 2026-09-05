@@ -6,6 +6,7 @@ from safetensors.torch import save_file
 
 from glm53_nvfp4.block_rotation import butterfly16
 from glm53_nvfp4.quantize_rotated_hessian_trellis_layer import (
+    _linear_float,
     _load_rotation,
     _prequant_middle,
     rotated_runtime_middle,
@@ -55,3 +56,11 @@ def test_rotation_loader_requires_canonical_selected_payload(tmp_path):
     assert torch.equal(loaded, matrix)
     with pytest.raises(RuntimeError, match="differs"):
         _load_rotation(path, 3, "0" * 64)
+
+
+def test_encoder_metric_linear_accepts_bf16_activation_and_float_weight():
+    activation = torch.arange(32, dtype=torch.bfloat16).reshape(1, 32)
+    weight = torch.eye(32, dtype=torch.float32)
+    actual = _linear_float(activation, weight)
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual, activation.float())
