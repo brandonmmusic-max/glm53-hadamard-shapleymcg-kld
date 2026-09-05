@@ -27,7 +27,7 @@ def _sha(path: Path) -> str:
 
 def test_manifest_hashes_every_declared_source() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text())
-    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v3"
+    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v4"
     for relative, expected in manifest["source_sha256"].items():
         assert _sha(ROOT / relative) == expected
 
@@ -39,6 +39,7 @@ def test_dockerfile_pins_parent_tail_and_actual_import_copies() -> None:
     assert manifest["tail_v2"]["sha256"] in dockerfile
     assert "research-only-not-device-qualified" in dockerfile
     assert "decode-m1-prefill-m64-n128-unqualified" in dockerfile
+    assert 'org.klc.experiment="glm53-p8-coupled-h512-h128-suh-svh-v4"' in dockerfile
     assert "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels" in dockerfile
     assert "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels" in dockerfile
     for destinations in manifest["install"].values():
@@ -164,8 +165,9 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert "--pull=false" in command
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
-    assert builder.TAG == "klc/glm53-p8-coupled:v3"
-    assert builder.INTEGRATION_BASE == "53e0b45c57b9946ae3a7ef5dbdc376400d9a1a96"
+    assert builder.TAG == "klc/glm53-p8-coupled:v4"
+    assert builder.INTEGRATION_BASE == "b1745f44c72fdd607733d892c6cbe58a1b61e8cb"
+    assert builder.load_manifest()["runtime_commit"] == builder.INTEGRATION_BASE
 
 
 def test_manifest_declares_source_tree_import_precedence() -> None:
