@@ -5,10 +5,11 @@ REPO=${GLM53_REPO:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53}
 RUNTIME_REPO=${GLM53_P8_RUNTIME_REPO:-/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-all42-runtime}
 CAMPAIGN=/media/brandonmusic/klcstore/bmxfp4-glm53
 ROOT=/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1
-KLD_SERVICE=${GLM53_P8_KLD_SERVICE:-glm53-uniform-p8-all42-kld-v1a1.service}
+KLD_SERVICE=${GLM53_P8_KLD_SERVICE:-glm53-uniform-p8-all42-kld-v1a2.service}
 KLD_ANALYSIS=$ROOT/fullmodel-kld-vs-decoded-gptq-context.json
 PLAN=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json
 PLAN_SEAL=$REPO/experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.sha256
+IMAGE_AMENDMENT=$REPO/experiments/p8-all42-runtime-image-amendment-2.json
 ANALYZER=$REPO/glm53_nvfp4/analyze_p8_vs_exl3_speed.py
 RUNTIME_PATCH=$RUNTIME_REPO/runtime_patch
 RUNTIME_MANIFEST=$ROOT/runtime-patch-manifest-efd250b.json
@@ -27,7 +28,7 @@ LOG=$OUT/followon.log
 CONTAINER=glm53-p8-exl3-speed-v1
 PORT=8017
 LOCK=/run/lock/klc/model-stack.lock
-P8_IMAGE=klc/glm53-flash-nvfp4@sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe
+P8_IMAGE=sha256:5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8
 EXL3_IMAGE=verdictai/glm53-flash-exl3-k4@sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf
 P8_NAME=glm53-p8-uniform-all42-native
 EXL3_NAME=GLM-5.3-Flash-EXL3-4bpw
@@ -64,6 +65,9 @@ if not values or not all(math.isfinite(v) for v in values):
 PY
 
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
+(cd "$REPO/experiments" && sha256sum --check --strict p8-all42-runtime-image-amendment-2.sha256) | tee -a "$LOG"
+PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_runtime_image --amendment "$IMAGE_AMENDMENT" | tee -a "$LOG"
+[ "$P8_IMAGE" = "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_id"])' "$IMAGE_AMENDMENT")" ]
 PYTHONPATH="$REPO" python3 -m glm53_nvfp4.audit_p8_fullmodel_completion \
   --plan "$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.json" \
   --roles "$CAMPAIGN/roles/roles-codec-conditional-fit32-v1.json" \
@@ -82,7 +86,7 @@ PYTHONPATH="$REPO" python3 -m glm53_nvfp4.audit_p8_fullmodel_completion \
 [ "$(sha "$EXL3_MODEL/model.safetensors.index.json")" = 2f64d21c67c90bbafeb36c4e9b2f06f54063ed439e9f7cf95962d425a1d8515d ]
 [ "$(sha "$EXL3_RECEIPT")" = afe588284702c0676b7af5df48bc0e0568bb42b1821808ab71c6dfa1f0c48b61 ]
 [ "$(sha "$EXL3_COMPOSE")" = 5558cb276b964e78571e71ffad82c9830c3a602b559c9472bbe92e1f050860d7 ]
-[ "$(docker image inspect "$P8_IMAGE" --format '{{.Id}}')" = sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe ]
+[ "$(docker image inspect "$P8_IMAGE" --format '{{.Id}}')" = "$P8_IMAGE" ]
 [ "$(docker image inspect "$EXL3_IMAGE" --format '{{.Id}}')" = sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf ]
 PYTHONPATH="$REPO" python3 -m glm53_nvfp4.hash_tree --root "$RUNTIME_PATCH" --output "$RUNTIME_MANIFEST" --verify | tee -a "$LOG"
 
@@ -99,6 +103,8 @@ def sha(p):
 static={
   'schema':'glm53-p8-uniform-all42-vs-exl3-speed-execution.v1',
   'plan_sha256':sha(plan), 'kld_analysis_sha256':sha(kld),
+  'image_amendment_sha256':sha(plan.parent/'p8-all42-runtime-image-amendment-2.json'),
+  'p8_image_id':json.loads((plan.parent/'p8-all42-runtime-image-amendment-2.json').read_text())['image_id'],
   'runtime_manifest_sha256':sha(runtime), 'exl3_receipt_sha256':sha(exl3),
   'benchmark_tool_sha256':sha(bench), 'started_at':datetime.now(timezone.utc).isoformat(),
   'protected_roles_opened':[],
