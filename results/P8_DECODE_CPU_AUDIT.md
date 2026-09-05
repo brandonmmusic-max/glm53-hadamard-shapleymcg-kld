@@ -103,3 +103,20 @@ expected chunked-prefill P=16 and CUDA profiler delay=33/max=16. The pinned
 worker advances its profiler before model work; actual recorded iterations
 and rank coverage still require trace verification. Client success alone
 explicitly reports `client-completed-trace-unverified`, not a valid profile.
+
+The launch-spec generator clones the receipt-verified P8 serving configuration
+and changes only the declared profiler, dedicated port/name and output mount.
+It refuses an incomplete speed series. The follow-on waits for authoritative
+terminal success before taking the model-stack lock, then rechecks that state.
+Cleanup uses Docker's exclusive CID file, not the reusable container name;
+invalid/missing temperature telemetry aborts the owned diagnostic. Failed
+shutdown prevents an overlapping production restart. Prior service states are
+checked after restoration and included in the execution receipt.
+
+A read-only critical review prompted those ownership/telemetry/cleanup fixes.
+Pinned-image documentation confirms CUDA child-process tracing and vLLM's
+spawn default, but actual four-rank coverage remains unverified. Report
+finalization gets a bounded shutdown interval and same-version SQLite export
+validation; a nonempty file alone is insufficient. Seventy-nine focused CPU
+tests and shell syntax validation pass. No diagnostic GPU run has occurred
+at this preparation stage.
