@@ -43,6 +43,29 @@ permutation are checked first. Raw physical hashes remain in the receipts.
 The resolved fallback dispatch must be the unchanged N128 monolithic path.
 V1 remains a failed gate; V2 is an explicitly amended developmental test.
 
+## V3 cropped-copy result
+
+The cropped-copy image also passed all 30 exact-closure cells on all four GPUs.
+It did not clear the unchanged speed gate:
+
+| GPU | N128 ms | Cropped N64 ms | Reduction | Cropped N32 ms | Reduction |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0.144192 | 0.095008 | 34.11% | 0.096960 | 32.76% |
+| 1 | 0.117584 | 0.076896 | 34.60% | 0.078368 | 33.35% |
+| 2 | 0.144384 | 0.095200 | 34.06% | 0.096896 | 32.89% |
+| 3 | 0.117888 | 0.076960 | 34.72% | 0.079008 | 32.98% |
+
+Removing the duplicate copies did not materially help N64 in this screen;
+N32 improved but remained slower than N64. This does not isolate all memory
+or decoder costs. V3 image is
+`sha256:6c08dffb4184c2704173a12909f4bbfaaa866351e55cbf03a2182741baf81141`;
+plan and raw evidence are versioned alongside V1/V2.
+
+The next bounded candidate combines the existing zero-initialized scratch
+buffers into one aligned arena. It must preserve every initialized byte and
+all typed view shapes. The integrated trace's approximately 0.55 ms/token in
+fills motivates testing fewer clear nodes; it does not predict the gain.
+
 ## Implementation and next test
 
 The B12X-derived standalone FC1 gives N64 64 useful tasks and N32 128 useful
@@ -58,7 +81,7 @@ inherits FC2 unchanged from the measured control, verified by SHA-256.
 The initial candidates still copy an N128 weight carrier for each narrower
 owner. The next hypothesis is to copy only the owned B/SFB ranges, retaining
 absolute shared-memory addresses, grid geometry, decoder and arithmetic.
-That proposed optimization is not a measured gain in this report.
+Its measured outcome is recorded in the V3 section above.
 
 ## Receipts and scope
 
