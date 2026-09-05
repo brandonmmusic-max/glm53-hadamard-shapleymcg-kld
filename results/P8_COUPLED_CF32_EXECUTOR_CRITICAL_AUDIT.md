@@ -76,3 +76,29 @@ root. The measured tree-apparent charge at audit time was 57,056 bytes including
 directory inode sizes. Combined runtime/executor tests passed 24/24. The repair
 requires a regenerated runtime manifest, ledger, seal, and fresh output root;
 the v1 evidence must not be reused or overwritten.
+
+## Candidate-first two-arm amendment
+
+At the user's direction, protocol amendment
+`experiments/p8-coupled-three-layer-cf32-candidate-first-v3.json`
+(`fc896a8300ecd40c5b7fe1c2bc49c95634e17cf43810af0dd35d826ef7597ae1`)
+was preregistered before any candidate window completed. Executor commit
+`27805aae28f8fab7cbdc80b2e3d729e1c734d577` implements exactly
+`coupled_p8 -> identity_p8`; there is no stock serving, scoring, comparison, or
+inferred stock metric. Full stock-file authentication remains necessary because
+the stock checkpoint is the common carrier beneath both P8 overlays.
+
+The 32-window role/order, rows 1..2046 primary mask, paired BCa method
+(20,000 replicates, seed 20260902), image/runtime topology, teacher hashes,
+score-before-retirement lifecycle, and production-off rule are unchanged. The
+amendment is validated, embedded in the runtime manifest, and included in the
+execution seal's source hash set. The retained v1 output plus six actual v2
+metadata files are fixed historical ledger inputs; their tree-apparent total at
+audit time was 175,419 bytes. The nonexistent v2 capture directory is not
+invented or used to reset accounting.
+
+Independent focused analysis/executor/runtime tests passed 33/33, with
+`py_compile` and `git diff --check` also passing. Verdict: **PASS for a fresh v3
+manifest, ledger, seal, and candidate-first device run**, subject to all normal
+runtime gates. The result can compare the whole coupled candidate only against
+the existing identity P8 artifact; stock remains historical context.
