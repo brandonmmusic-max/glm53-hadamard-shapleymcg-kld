@@ -70,7 +70,77 @@ def require_c1(grids):
     return active_m
 
 
-def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
+def select_complete_prefix(rows, launches, ranges, n):
+    """Validate a bounded diagnostic prefix without changing the strict gate."""
+    if not n <= len(launches) <= n + 1:
+        raise ValueError('diagnostic requires exactly n complete launches and at most one tail')
+    ids = [launch['correlationId'] for launch in launches]
+    if len(set(ids)) != len(ids):
+        raise ValueError('duplicate graph-launch correlation ID')
+    if any(row['correlationId'] not in ids for row in rows):
+        raise ValueError('graph kernel is not assigned to a recorded graph launch')
+    prefix_ids = ids[:n]
+    prefix = [row for row in rows if row['correlationId'] in prefix_ids]
+    chunks = group_replays(prefix, prefix_ids)
+    signature_fields = ('graphNodeId', 'demangledName', 'gridX', 'gridY', 'gridZ',
+                        'blockX', 'blockY', 'blockZ')
+    inventory = Counter(tuple(row[key] for key in signature_fields) for row in chunks[0])
+    if any(Counter(tuple(row[key] for key in signature_fields) for row in chunk) != inventory
+           for chunk in chunks[1:]):
+        raise ValueError('complete-prefix symbol/geometry inventory changes')
+    if any(row['end'] <= row['start'] for row in prefix):
+        raise ValueError('invalid complete-prefix kernel interval')
+    prefix_end = max(row['end'] for row in prefix)
+    tail_rows = [row for row in rows if row['correlationId'] not in prefix_ids]
+    tail_launches = launches[n:]
+    if any(launch['start'] <= prefix_end or launch['end'] < launch['start']
+           for launch in tail_launches):
+        raise ValueError('excluded launch is not strictly after complete-prefix GPU end')
+    if any(row['start'] <= prefix_end or row['end'] <= row['start'] for row in tail_rows):
+        raise ValueError('excluded kernel is not strictly after complete-prefix GPU end')
+    tail_inventory = Counter(tuple(row[key] for key in signature_fields) for row in tail_rows)
+    if tail_launches and not tail_inventory < inventory:
+        raise ValueError('trailing group must be a proper subset of the complete inventory')
+    matched = set()
+    for launch in launches[:n]:
+        if launch['end'] < launch['start']:
+            raise ValueError('invalid complete-prefix graph launch interval')
+        matches = [i for i, event in enumerate(ranges)
+                   if event['end'] is not None and event['end'] > event['start']
+                   and event['globalTid'] == launch['globalTid']
+                   and event['start'] <= launch['start'] <= launch['end'] <= event['end']]
+        if len(matches) != 1 or matches[0] in matched:
+            raise ValueError('complete launch must have one unique same-thread generation range')
+        matched.add(matches[0])
+    extra_ranges = [dict(event) for i, event in enumerate(ranges) if i not in matched]
+    if len(extra_ranges) > 1:
+        raise ValueError('at most one excluded generation range per worker')
+    for event in extra_ranges:
+        if event['start'] <= prefix_end or (event['end'] is not None and event['end'] <= prefix_end):
+            raise ValueError('excluded generation range is not strictly after complete-prefix GPU end')
+        event['exclusion_reason'] = ('invalid-or-incomplete-NVTX-range'
+                                     if event['end'] is None or event['end'] <= event['start']
+                                     else 'generation-range-enclosing-trailing-partial-graph')
+        if event['exclusion_reason'] == 'generation-range-enclosing-trailing-partial-graph':
+            if len(tail_launches) != 1 or not (
+                event['globalTid'] == tail_launches[0]['globalTid']
+                and event['start'] <= tail_launches[0]['start'] <= tail_launches[0]['end'] <= event['end']
+            ):
+                raise ValueError('extra valid generation range must enclose the trailing launch')
+    exclusions = {
+        'complete_prefix_gpu_end_ns': prefix_end,
+        'raw_graph_launch_count': len(launches), 'raw_generation_range_count': len(ranges),
+        'raw_graph_kernel_count': len(rows), 'included_graph_kernel_count': len(prefix),
+        'excluded_graph_launches': [dict(launch) for launch in tail_launches],
+        'excluded_graph_kernel_count': len(tail_rows),
+        'excluded_graph_kernels': [dict(row) for row in tail_rows],
+        'excluded_generation_ranges': extra_ranges,
+    }
+    return chunks, exclusions
+
+
+def analyze(trace: Path, client: Path, report: Path | None = None,
+            allow_trailing_capture_artifacts: bool = False) -> dict:
     receipt = json.loads(client.read_text())
     if receipt['status'] != 'client-completed-trace-unverified':
         raise ValueError('client did not complete')
@@ -88,21 +158,26 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
             raise ValueError('trace must contain four TP workers')
         for worker in workers:
             gpid, pid = worker['globalPid'], worker['pid']
-            count = db.execute(
-                'select count(*) from NVTX_EVENTS n left join StringIds s on n.textId=s.id '
+            ranges = [dict(row) for row in db.execute(
+                'select n.start,n.end,n.globalTid,n.eventType from NVTX_EVENTS n left join StringIds s on n.textId=s.id '
                 'where (n.globalTid & ?) = ? and coalesce(n.text,s.value)=?',
-                (GLOBAL_PID_MASK, gpid, GENERATION_RANGE)).fetchone()[0]
-            launches = list(db.execute(
-                "select r.start,r.end,r.correlationId from CUPTI_ACTIVITY_KIND_RUNTIME r join StringIds s "
+                (GLOBAL_PID_MASK, gpid, GENERATION_RANGE))]
+            count = len(ranges)
+            launches = [dict(row) for row in db.execute(
+                "select r.start,r.end,r.correlationId,r.globalTid from CUPTI_ACTIVITY_KIND_RUNTIME r join StringIds s "
                 "on r.nameId=s.id where (r.globalTid & ?) = ? and s.value like 'cudaGraphLaunch%' order by r.start",
-                (GLOBAL_PID_MASK, gpid)))
-            if count != n or len(launches) != n:
+                (GLOBAL_PID_MASK, gpid))]
+            if not allow_trailing_capture_artifacts and (count != n or len(launches) != n):
                 raise ValueError(f'worker {pid} has wrong generation/launch inventory: {count}/{len(launches)}')
             rows = [dict(row) for row in db.execute(
                 'select start,end,demangledName,shortName,deviceId,gridX,gridY,gridZ,blockX,blockY,blockZ,'
                 'graphNodeId,correlationId from CUPTI_ACTIVITY_KIND_KERNEL '
                 'where globalPid=? and graphNodeId is not null order by start', (gpid,))]
-            chunks = group_replays(rows, [row['correlationId'] for row in launches])
+            exclusions = None
+            if allow_trailing_capture_artifacts:
+                chunks, exclusions = select_complete_prefix(rows, launches, ranges, n)
+            else:
+                chunks = group_replays(rows, [row['correlationId'] for row in launches])
             device_ids = {row['deviceId'] for row in rows}
             if len(device_ids) != 1:
                 raise ValueError('worker uses multiple CUDA devices')
@@ -168,12 +243,24 @@ def analyze(trace: Path, client: Path, report: Path | None = None) -> dict:
                 'sms':device['numMultiprocessors'], 'generation_ranges':count, 'graph_launches':len(launches),
                 'nodes_per_replay':len(chunks[0]), 'graph_span':ms_summary(spans),
                 'categories':summaries, 'top_kernels':top, 'replays':per_replay,
+                'capture_artifact_exclusions': exclusions,
             })
     if len({worker['uuid'] for worker in workers_result}) != 4:
         raise ValueError('expected four distinct physical GPUs')
+    if allow_trailing_capture_artifacts:
+        global_prefix_end = max(end for bounds in bounds_by_worker for _, end in bounds)
+        for worker in workers_result:
+            exclusions = worker['capture_artifact_exclusions']
+            for key in ('excluded_graph_launches', 'excluded_graph_kernels', 'excluded_generation_ranges'):
+                if any(event['start'] <= global_prefix_end or
+                       (event['end'] is not None and event['end'] <= global_prefix_end)
+                       for event in exclusions[key]):
+                    raise ValueError('excluded event precedes distributed complete-prefix GPU end')
     distributed = [max(bounds[i][1] for bounds in bounds_by_worker)-min(bounds[i][0] for bounds in bounds_by_worker) for i in range(n)]
     return {
-        'schema':'glm53-p8-smallm-nsys-analysis.v1', 'status':'pass',
+        'schema':'glm53-p8-smallm-nsys-analysis.v1',
+        'status': 'diagnostic-complete-prefix' if allow_trailing_capture_artifacts else 'pass',
+        'original_trace_gate_passed': not allow_trailing_capture_artifacts,
         'trace_sha256':sha256(trace), 'report_sha256':sha256(report) if report else None,
         'client_receipt_sha256':sha256(client), 'graph_replay_proven':True,
         'grouping':'per-worker cudaGraphLaunch correlationId and repeated node inventory',
@@ -193,8 +280,10 @@ if __name__ == '__main__':
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--allow-trailing-capture-artifacts', action='store_true',
+                        help='Explicit diagnostic prefix only; never reports the original trace gate as passed.')
     args=parser.parse_args()
-    result=analyze(args.trace,args.client,args.report)
+    result=analyze(args.trace,args.client,args.report,args.allow_trailing_capture_artifacts)
     with args.output.open('x') as handle:
         json.dump(result,handle,indent=2,sort_keys=True)
         handle.write('\n')
