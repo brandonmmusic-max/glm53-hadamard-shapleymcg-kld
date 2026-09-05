@@ -130,6 +130,15 @@ quant-config builder after releasing carrier scales. The original plan remains
 preserved; the separately sealed amendment changes only the runtime commit and
 patch manifest, before the checkpoint or target KLD result existed.
 
+The required follow-on speed gate is also frozen before the checkpoint and KLD
+result at `experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json`. It waits for
+a complete finite full-model KLD run, then alternates five cold process starts
+per arm in a matched target-only TP4/no-EP/DCP1 regime with B12X sparse
+attention, NVFP4 MLA KV, CUDA graphs, and identical 32K/64K requests. P8 must
+strictly beat the exact local EXL3 K4 checkpoint/runtime on the five-run median
+of both 32K prefill and C1 32K decode. A tie or regression stops allocation;
+64K cells are reported without redefining the decision.
+
 ![Matched-path codec-v2 KLD effects](figures/codec-v2-matched-kld.png)
 
 P8 device arithmetic closure now passes for the procedural-MCG K3/K4 decoder

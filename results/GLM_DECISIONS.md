@@ -691,6 +691,28 @@ confirmation, and final roles remained unopened for this redesign branch.
   only after that critical path releases the GPUs. Exact reconciliation:
   `docs/P4_V2_INTEGRATION_RECONCILIATION.md`.
 
+## 2026-09-04: Decision 27 — freeze the post-KLD P8 versus EXL3 speed gate
+
+- Before checkpoint or KLD completion, freeze a target-only serving comparison
+  using the exact local P8 and EXL3 images/checkpoints: TP4, EP off, DCP1,
+  B12X sparse attention, calibrated NVFP4 MLA KV, speculation off, prefix cache
+  off, CUDA graphs on, one sequence, and matched 32K/64K requests.
+- Run five new server containers and worker-process sets per arm, alternating
+  order by round. Compiled caches remain warm and outside the cold-process
+  definition; image, runtime, model, tool, request, and cache-path identities
+  are recorded. Do not mutate power limits or clocks, start each arm at or
+  below 75 C, and reject a measured cell reaching 94 C.
+- **Decision before result:** P8 must be strictly faster than EXL3 on both the
+  five-run median 32K Prometheus-validated prefill throughput and the five-run
+  median C1 32K continuous-usage decode throughput. Any tie, regression,
+  incomplete arm, graph/backend mismatch, or non-finite result stops the
+  native6 allocation game. Report 64K cells as secondary evidence.
+- The two codec products require different exact local images. This answers
+  the end-product serving question and is not a causal kernel-only attribution.
+  The sealed plan is
+  `experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json` (SHA-256
+  `907882659d687043c52549ae39490c0b935982d2dc3c0f81681ee70d1ed313d8`).
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
