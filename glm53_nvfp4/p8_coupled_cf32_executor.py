@@ -46,6 +46,7 @@ LEDGER_COMPONENTS = {
     "fixture": "tree-apparent",
     "three_layer_outputs": "tree-apparent",
     "quality_root": "tree-apparent",
+    "historical_capture_attempts": "tree-apparent",
     "capture_output": "tree-apparent",
 }
 WORKSPACE = Path("/home/brandonmusic/KLC_SANDBOXES")
@@ -66,6 +67,7 @@ FIXED_LEDGER_PATHS = {
     "fixture": (CAMPAIGN_ROOT / "p8-coupled-fixture-v1",),
     "three_layer_outputs": (CAMPAIGN_ROOT / "p8-coupled-three-layer-v1",),
     "quality_root": (CAMPAIGN_ROOT / "tail-v2-p8-exl3-cf32-product-validation-v1b",),
+    "historical_capture_attempts": (CAMPAIGN_ROOT / "p8-coupled-three-layer-cf32-v1-captures",),
 }
 CAPTURE_SUFFIXES = (".logits.f32", ".logits.f32.partial", ".capture.json.partial",
                     ".capture.inprogress.json", ".capture.failed.json")

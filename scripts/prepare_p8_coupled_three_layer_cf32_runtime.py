@@ -40,7 +40,15 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
                 model_root: Path, identity_root: Path, coupled_root: Path,
                 identity_design: Path, coupled_design: Path, transform: Path) -> list[str]:
     config, host = recipe["Config"], recipe["HostConfig"]
-    tokens = shlex.split(config["Cmd"][1])
+    raw_command = config.get("Cmd", [])
+    if len(raw_command) != 2 or raw_command[0] != "-lc":
+        raise ValueError("source recipe shell command shape differs")
+    tokens = shlex.split(raw_command[1])
+    if tokens[:1] == ["exec"]:
+        tokens = tokens[1:]
+    if ("exec" in tokens or tokens[:4] !=
+            ["/opt/venv/bin/python", "-m", "vllm.entrypoints.cli.main", "serve"]):
+        raise ValueError("source recipe serving prefix differs")
     required = {"--tensor-parallel-size": "4", "--decode-context-parallel-size": "1",
                 "--attention-backend": "B12X_MLA_SPARSE", "--kv-cache-dtype": "nvfp4_ds_mla",
                 "--max-num-seqs": "1", "--quantization": "modelopt"}

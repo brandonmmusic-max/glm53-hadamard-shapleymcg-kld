@@ -165,6 +165,34 @@ def test_launch_removes_stale_runtime_and_uses_exact_coupled_flat_path(tmp_path)
     assert f"{tmp_path / 'captures' / 'captures'}:/p8-captures:rw" in argv
 
 
+def test_launch_normalizes_real_source_leading_exec_to_exactly_one(tmp_path):
+    module = _preparer()
+    command = "exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /old --port 1 --served-model-name old --tensor-parallel-size 4 --decode-context-parallel-size 1 --attention-backend B12X_MLA_SPARSE --kv-cache-dtype nvfp4_ds_mla --max-num-seqs 1 --quantization modelopt"
+    recipe = {"Config": {"Cmd": ["-lc", command], "Env": []},
+              "HostConfig": {"ShmSize": 64, "Runtime": "runc", "Binds": []}}
+    env = runtime.arm_environment("stock", ["conditional-fit-0001"])
+    argv = module.launch_argv(
+        recipe, "sha256:" + "1" * 64, "stock", env, tmp_path / "stock",
+        tmp_path / "model", tmp_path / "identity", tmp_path / "coupled",
+        tmp_path / "identity.json", tmp_path / "coupled.json", tmp_path / "transform.json")
+    emitted = argv[-1]
+    assert emitted.startswith("exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model")
+    assert emitted.split().count("exec") == 1
+
+
+def test_launch_rejects_nonleading_or_duplicate_exec(tmp_path):
+    module = _preparer()
+    command = "/opt/venv/bin/python -m vllm.entrypoints.cli.main exec serve /old --port 1 --served-model-name old --tensor-parallel-size 4 --decode-context-parallel-size 1 --attention-backend B12X_MLA_SPARSE --kv-cache-dtype nvfp4_ds_mla --max-num-seqs 1 --quantization modelopt"
+    recipe = {"Config": {"Cmd": ["-lc", command], "Env": []},
+              "HostConfig": {"ShmSize": 64, "Runtime": "runc", "Binds": []}}
+    with pytest.raises(ValueError, match="serving prefix"):
+        module.launch_argv(
+            recipe, "sha256:" + "1" * 64, "stock",
+            runtime.arm_environment("stock", ["conditional-fit-0001"]), tmp_path / "stock",
+            tmp_path / "model", tmp_path / "identity", tmp_path / "coupled",
+            tmp_path / "identity.json", tmp_path / "coupled.json", tmp_path / "transform.json")
+
+
 def test_production_guard_uses_user_backend_and_system_timer(monkeypatch):
     module, calls = _preparer(), []
     def run(argv, **_kwargs):
