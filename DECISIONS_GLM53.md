@@ -234,6 +234,18 @@ NVMe and require their exact 10,145,259,520-byte budget plus 20 GiB headroom.
 
 Receipt: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v1-prereg.json`.
 
+The sealed v1 P8 arm failed during startup, before any raw capture, because
+`B12X_MLA_SPARSE` explicitly rejects GLM's NoPE head size 512 with
+`fp8_ds_mla`. V2 changes the attention backend to the already-used
+`FLASHINFER_MLA_SPARSE_SM120` FP8 path for both products and changes nothing
+else. This compatibility change is unavoidable and narrows the causal claim:
+the comparison is now the FP8-compatible attention-plus-KV path versus the
+B12X/NVFP4 production path, not KV dtype alone. The original gates still
+answer whether the approximately `0.11` endpoint persists. V1 and its clean
+restoration receipt remain preserved.
+
+Amendment: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v2-amendment.json`.
+
 ## Decision 26: freeze the only remaining proxy-selected rotation inside physical P8 (2026-09-05)
 
 Before encoding layers 20 or 22 or opening their target KLD, freeze exactly

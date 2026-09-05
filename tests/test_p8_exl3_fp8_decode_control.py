@@ -40,6 +40,7 @@ def test_replace_option_changes_exactly_one_cli_value():
 
 
 def test_runtime_contract_is_product_specific_and_mtp_off():
+    assert control.ATTENTION_BACKEND == "FLASHINFER_MLA_SPARSE_SM120"
     assert control.model_name("stock").endswith("-p8")
     assert control.model_name("n64").endswith("-p8")
     assert control.model_name("exl3").endswith("-exl3")

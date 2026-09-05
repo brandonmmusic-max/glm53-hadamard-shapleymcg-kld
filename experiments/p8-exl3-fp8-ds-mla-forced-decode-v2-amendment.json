@@ -1,0 +1,30 @@
+{
+  "schema": "glm53.p8-exl3-fp8-ds-mla-control-amendment.v2",
+  "status": "predeclared-after-v1-startup-failure-before-v2-plan-or-gpu-run",
+  "created_at": "2026-09-05T13:23:00-04:00",
+  "v1_failure": {
+    "stage": "p8-startup-before-capture",
+    "cause": "B12X_MLA_SPARSE rejects GLM NoPE head_size=512 with fp8_ds_mla and accepts that geometry only with nvfp4_ds_mla",
+    "raw_capture_files": 0,
+    "overall_execution_sha256": "06b10c111b65c797eb5d581db7762f2ab13151e06e0df0b9616929a3ae9b163a",
+    "p8_execution_sha256": "3284823db5f519d4fa851e81dbd954a1ab28ad7ddd492b0ea76d92ea445bb2e6",
+    "p8_log_sha256": "9832999e99b363c1d1154f2f6c2b066de966663864a5040096693711bd361e15",
+    "restoration_complete": true
+  },
+  "single_compatibility_change": {
+    "attention_backend": {
+      "from": "B12X_MLA_SPARSE",
+      "to": "FLASHINFER_MLA_SPARSE_SM120"
+    },
+    "reason": "The selected SM120 FlashInfer sparse-MLA backend is the already-used GLM fp8_ds_mla path and explicitly requires the packed fp8_ds_mla layout."
+  },
+  "unchanged": [
+    "P8 and EXL3 model, quantization, capture-image parent, MoE backend, topology, and caches",
+    "four windows, forced-token sequences, teacher logits, V2 pre-mask FP32 capture, and KLD implementation",
+    "CUDA graphs on, max_num_seqs=1, and MTP off",
+    "decision thresholds, storage budget, role boundary, and no-retry policy"
+  ],
+  "causal_boundary": "Because the original B12X backend cannot instantiate the requested FP8 layout for GLM NoPE, v2 is necessarily an FP8-compatible attention-plus-KV-path intervention. It can test whether the approximately 0.11 endpoint persists on the established FP8 serving path, but cannot attribute a change to KV dtype alone.",
+  "retry_policy": "One fresh v2 execution only; preserve v1 and do not relabel it.",
+  "ldlq": false
+}
