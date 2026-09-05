@@ -71,6 +71,11 @@ passed: `P8SmallMPhase2Kernel True False True` for the selected class,
 M1-materialized flag, external-FC1 flag and external-FC2 flag respectively.
 This constructor check does not compile a CUDA kernel.
 
+The first BuildKit invocation using the local repository digest attempted
+remote Docker Hub resolution and failed before executing any layer. The
+Dockerfile therefore names the local `p8-mcg-identity-v14` tag; every build
+must first verify that tag resolves exactly to the pinned image ID above.
+
 ## Independent source review
 
 An adversarial CPU-only review found no demonstrated source-level blocker to
