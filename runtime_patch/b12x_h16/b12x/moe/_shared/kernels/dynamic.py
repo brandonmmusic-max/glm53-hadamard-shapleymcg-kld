@@ -87,6 +87,7 @@ from b12x._lib.intrinsics import (
     quantize_block_fp4,
     quantize_block_fp4_fast,
     quantize_block_fp8_mx,
+    ue8m0_to_output_scale,
     get_ptr_as_int64,
     st_global_f32,
     st_global_i32,
@@ -1106,6 +1107,11 @@ class MoEDynamicKernelBackend:
         self.p8_fc1_tile_n = int(p8_fc1_tile_n)
         self.p8_scale_sandwich = bool(p8_scale_sandwich)
         self.p8_full_coupled = bool(p8_full_coupled)
+        # Opt-in closure diagnostic only. The P8 wrapper may enable this on a
+        # dedicated compiled arm and provide a 512-byte carrier through the
+        # otherwise compile-time-dead MCG trellis_lut operand. The ordinary
+        # serving specialization leaves it false and emits no trace stores.
+        self.p8_input_prequant_diagnostic = False
         if self.p8_full_coupled and not self.p8_scale_sandwich:
             raise ValueError("full-coupled P8 requires the scale sandwich")
         if self.p8_full_coupled and trellis_identity_boundary:
@@ -3561,6 +3567,46 @@ class MoEDynamicKernelBackend:
                             )
                             if (m1_lane_id & Int32(7)) == Int32(0):
                                 m1_blk_idx = m1_h512 * Int32(16) + Int32(quarter * 4) + m1_group
+                                if cutlass.const_expr(self.p8_input_prequant_diagnostic):
+                                    # Exact diagnostic contract, logical order:
+                                    #   f32[0:32]   raw K32 block 40
+                                    #   f32[32:64]  block 40 * quantizer inv_scale
+                                    #   f32[64:96]  raw K32 block 62
+                                    #   f32[96:128] block 62 * quantizer inv_scale
+                                    # Capture happens after quantization so the
+                                    # observed payload arithmetic is not changed.
+                                    assert trellis_lut is not None
+                                    if (
+                                        m1_blk_idx == Int32(40)
+                                        or m1_blk_idx == Int32(62)
+                                    ):
+                                        trace_base = Int32(0)
+                                        if m1_blk_idx == Int32(62):
+                                            trace_base = Int32(64)
+                                        trace_inv_scale = ue8m0_to_output_scale(
+                                            m1_scale_byte
+                                        )
+                                        for trace_elem in cutlass.range_constexpr(32):
+                                            st_global_f32(
+                                                get_ptr_as_int64(
+                                                    trellis_lut,
+                                                    (trace_base + Int32(trace_elem))
+                                                    * Int32(4),
+                                                ),
+                                                m1_values[trace_elem],
+                                            )
+                                            st_global_f32(
+                                                get_ptr_as_int64(
+                                                    trellis_lut,
+                                                    (
+                                                        trace_base
+                                                        + Int32(32 + trace_elem)
+                                                    )
+                                                    * Int32(4),
+                                                ),
+                                                m1_values[trace_elem]
+                                                * trace_inv_scale,
+                                            )
                                 m1_block_start = m1_blk_idx * Int32(32)
                                 for pair in cutlass.range_constexpr(4):
                                     packed64 = (
