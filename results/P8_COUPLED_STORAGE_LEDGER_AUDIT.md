@@ -236,5 +236,23 @@ not relax the user's 30 GB aggregate-new-data ceiling.
    964,546,858 bytes remains below 30,000,000,000.
 5. Do not launch the three-layer writer until its actual header/chunk geometry,
    temporary-file peak, and encoder/cache growth fit inside the remaining
-   allowance. The current enumerated remainder of 2,375,282,979 bytes is not a
+   allowance. The refreshed simultaneous remainder of 2,217,146,059 bytes is not a
    sufficient evidence-backed bound for those unknowns.
+
+### Future bounded three-layer alternative (proposal only)
+
+Do not hold both representations of all three layers simultaneously. Process
+the frozen layer order 3, 20, 22 one layer at a time. One layer's two-copy
+forecast is 7,707,963,392 bytes. After all four TP sidecars for a layer are
+durable, hash/schema verified, and covered by an explicit closure receipt,
+retire only that layer's redundant chunk before starting the next layer. Never
+create dense BF16 output and never retain two source chunks concurrently.
+
+Charging one retained final representation at 3,853,987,840 bytes, the maximum
+forecast occurs while processing layer 22: two earlier verified final layers
+plus layer 22's two-copy working set equal **15,415,939,072 bytes**. With the
+current external bound and fixture this projects **20,074,902,837 bytes**,
+leaving **9,925,097,163 bytes** for headers, bounded temporaries, and refreshed
+external growth. This is a viable plan to preflight, not authority to delete or
+encode: exact writer peak geometry and the external receipt must be refreshed
+immediately before each layer.
