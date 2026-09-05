@@ -31,3 +31,12 @@
    normalize the leading shell builtin, test it, and use fresh v2 manifests,
    ledger and execution seal. All scientific factors and arm ordering remain
    unchanged. This is a disclosed launch-only protocol amendment.
+9. User reprioritized newest-layer KLD ahead of another stock baseline.
+   Root canceled v2 during prelaunch input authentication (PID 2651595,
+   SIGTERM, session 91337 terminal exit 143). No serving container or
+   windows had started. Preserve both v2 seals and all prior evidence.
+   Next amendment is coupled P8 first, then matched three-layer identity
+   P8; no fresh stock arm is required for this development comparison.
+   Historical stock results are contextual until runtime/model/mask
+   equivalence is verified. A prior all-42-layer identity P8 result cannot
+   substitute for identity on layers 3/20/22 with the rest at stock.
