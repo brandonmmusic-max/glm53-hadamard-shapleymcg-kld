@@ -1,43 +1,102 @@
 # P8 coupled campaign storage-ledger audit
 
-Audit snapshot: 2026-09-05 16:08:36-04:00. This was a CPU/read-only audit:
+Initial snapshot: 2026-09-05 16:08:36-04:00. Conservative upper-bound
+refresh: 2026-09-05 16:15:28-04:00. This was a CPU/read-only audit:
 no fixture, model layer, capture, image, cache, or service was created or
 removed by the audit.
 
 ## Verdict
 
-**Strict 30,000,000,000-byte gate: UNKNOWN/BLOCKED.** The original storage
-receipt is an arithmetic preflight, explicitly not an observed baseline
+**Fixture-only gate: PASS under the conservative cutoff ledger, with a
+time-bounded external-budget receipt. Three-layer simultaneous gate: NOT
+CLEARED.** The original storage receipt is an arithmetic preflight, explicitly
+not an observed baseline
 (`results/P8_COUPLED_PILOT_STORAGE_PREFLIGHT.md:3-5,22-30`). No repository or
 campaign receipt records filesystem-used bytes, Docker image/cache bytes, and
 campaign-root bytes at the instant the ceiling began. A current total cannot be
 subtracted from a missing baseline to prove incremental use.
 
-The upcoming synthetic fixture is **not authorized merely by pointing its
+The missing baseline does not prevent a safe fixture decision. The refreshed
+audit uses 2026-09-05 14:16:00-04:00 (`1788632160`) as a conservative cutoff:
+it is 36 seconds before the earliest coupled artifact mtime at 14:16:36 and 11
+minutes before the first coupled commit at 14:27:19. Instead of assuming reuse,
+it charges every current coupled worktree in full, every shared Git object
+modified after the cutoff, the observed maximum simultaneous quality-output
+footprint, and every Docker/containerd file modified after the cutoff. It also
+adds an unclassified 64 MiB short-lag reserve.
+
+The upcoming synthetic fixture is still **not authorized merely by pointing its
 generator at a fresh empty budget root**. The generator counts only regular
 files below the caller-provided `--budget-root`
 (`scripts/generate_p8_coupled_m1_synthetic_fixture.py:371-407`), while the
 campaign rule includes existing growth, image/cache growth, and artifacts on
 other NVMe mounts. A locally passing empty-root check would therefore reset the
-ledger incorrectly.
+ledger incorrectly. The generator must consume a receipt-bound external charge
+of at least **3,694,416,907 bytes** from the companion machine-readable audit.
 
 The conservative, enumerated arithmetic below is still useful:
 
 - fixture alone: 964,546,858 forecast bytes including its exact 963,497,568-byte
   sidecar, 714-byte design, and 1,048,576-byte receipt allowance;
 - three-layer chunk-plus-TP4-sidecar forecast: 23,123,890,176 bytes;
-- listed current coupled worktrees, campaign output directories, active quality
-  peak, and incremental v2/v3 image layers: 3,536,279,987 bytes;
+- refreshed external upper bound, including the Docker/containerd physical-file
+  bound, Git objects, and 64 MiB reserve: **3,694,416,907 bytes**;
+- external bound + fixture forecast: **4,658,963,765 bytes**, leaving
+  **25,341,036,235 bytes**;
 - listed current artifacts + fixture + three-layer forecast:
-  **27,624,717,021 bytes**, leaving only **2,375,282,979 bytes**.
+  **27,782,853,941 bytes**, leaving only **2,217,146,059 bytes**.
 
-That 2.375 GB is not a safe allowance for the unmeasured shared Git-object
-growth, Docker build-cache/container physical growth, safetensors headers,
-encoder temporaries, and any simultaneous capture. The three-layer encode is
-therefore **not storage-cleared**. The fixture by itself would fit the
-enumerated ledger (4,500,826,845 bytes after generation), but strict approval
-still requires reconciling the missing campaign baseline and Docker/cache
-delta.
+That 2.217 GB is not a safe allowance for safetensors headers, encoder
+temporaries, and future cache growth. The three-layer encode is therefore **not
+storage-cleared as one simultaneous two-copy allocation**. Fixture-only is
+cleared by the conservative bound, subject to the external receipt and expiry
+described below.
+
+## Conservative cutoff closure for fixture-only
+
+The machine-readable companion is
+`results/P8_COUPLED_STORAGE_LEDGER_AUDIT.json`. Its external upper bound is:
+
+| charged outside the future fixture root | bytes |
+|---|---:|
+| five coupled worktrees, full apparent size | 2,222,578,137 |
+| shared Git objects modified since cutoff | 1,904,809 |
+| coupled files in older non-coupled worktrees | 33,225 |
+| preparation/v2-build/v3-build directories | 2,364,443 |
+| maximum observed quality-root simultaneous footprint | 1,310,510,246 |
+| all Docker/containerd files modified since cutoff | 89,917,183 |
+| post-audit/unclassified short-lag reserve (64 MiB) | 67,108,864 |
+| **external upper bound** | **3,694,416,907** |
+
+The Docker/containerd line is deliberately broad. A metadata-only filesystem
+walk found 953 files modified since the cutoff and charges their entire current
+apparent sizes, including unrelated growth: 10,701,275 bytes of content blobs,
+50,343,936 bytes of containerd metadata, 27,023,270 bytes of snapshots,
+275,838 bytes of Docker container metadata/logs, 1,048,576 bytes of Docker
+image metadata, and 524,288 other bytes. Buildx reported zero cache records
+created or last used after the cutoff. This physical-file bound already
+contains the v2/v3 layer and container costs; those must not be added again.
+
+The shared Git charge covers 359 loose objects totaling 1,904,809 apparent
+bytes; no pack file was created or modified after the cutoff. All five coupled
+worktrees share
+`/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/.git`.
+
+The fixture decision is:
+
+```text
+3,694,416,907 external upper bound
+  964,546,858 fixture forecast including receipt allowance
+----------------
+4,658,963,765 projected aggregate
+25,341,036,235 bytes below the 30,000,000,000-byte ceiling
+```
+
+This snapshot was measured at Unix `1788639328`. A generated external-budget
+receipt should expire no later than `1788639928` (ten minutes later), and must
+be refreshed if any image build, new worktree, large capture geometry, or other
+unbounded writer starts. The already charged 1,310,510,246-byte quality peak
+covers one simultaneous 1,268,157,440-byte raw capture.
 
 ## Original ceiling and missing baseline
 
@@ -179,4 +238,3 @@ not relax the user's 30 GB aggregate-new-data ceiling.
    temporary-file peak, and encoder/cache growth fit inside the remaining
    allowance. The current enumerated remainder of 2,375,282,979 bytes is not a
    sufficient evidence-backed bound for those unknowns.
-
