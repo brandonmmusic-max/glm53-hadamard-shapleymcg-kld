@@ -784,6 +784,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   repetitions, images, topology and serving environment. No speed pass or
   allocation authorization is inferred. See `results/P8_SPEED_ATTEMPTS.md`.
 
+## 2026-09-05: Decision 32 — profile P8 decode after the frozen speed series
+
+- The first completed v2a3 pair shows faster P8 prefill but substantially
+  slower C1 decode. It is not the five-run result. Keep all five pairs,
+  thresholds, topology and runtime unchanged; no concurrent GPU profiling.
+- A read-only Astra source audit identifies sparse deterministic scheduling,
+  scratch clearing and procedural decoder work as testable candidates, not
+  established causes. Pin its source references and first-pair hashes in
+  `results/P8_DECODE_CPU_AUDIT.md`.
+- After the series, retain the existing allocation stop rule and use a
+  separately identified synthetic/fit-only profile to choose any runtime
+  optimization. Preserve decoder bytes, BF16 accumulation order and graph
+  isolation. No LDLQ, no protected logits, no implied KLD transfer to a
+  changed serving path. P8 remains a 2x-MMA-issue E4M3 quality product.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
