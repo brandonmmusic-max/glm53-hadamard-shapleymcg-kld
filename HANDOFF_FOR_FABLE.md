@@ -14,8 +14,8 @@ searches, or other side projects before this measurement.
 
 The earlier full 42-layer P8 model is **identity/unrotated P8**, not this new
 coupled encoding. Only layers 3,20,22 have the new encoding. All are completely
-encoded, packed, and real-TP4-loader checked. There is no new coupled KLD score
-as of this snapshot. Do not describe packing/loader or synthetic-kernel tests
+encoded, packed, and real-TP4-loader checked. There is not yet a complete
+32-window coupled KLD result. Do not describe packing/loader or synthetic-kernel tests
 as end-to-end quality proof.
 
 ## Active run — attach, do not duplicate
@@ -42,7 +42,12 @@ have this handle; inspect the exact PID/command and Docker state instead).
 Container: `glm53-p8-three-layer-cf32-coupled_p8`, port **8032**.
 The container is past the shell-launch error. At23:27:19 UTC its log reported
 application startup complete, followed by a successful GET /v1/models.
-No completed candidate capture was proven at the latest handoff check.
+The first candidate window `conditional-fit-0056` is captured and scored:
+true-decode KLD **0.04350057679709212**, 2046 true-decode rows. This is only
+1/32, not the panel mean or a matched improvement claim. The next window was
+running at the latest check. First-window runtime audit passed coupled
+H512/H128+suh/svh dispatch and full CUDA-graph capture on all four ranks;
+conditions are the B12X/nvfp4_ds_mla/E4M3/~4.25398bpw configuration below.
 
 Seal SHA256:
 `41af897c4f52237a74af8eca7f1d6c8ef1f274edf10c1697f942a4a7d0f000d6`
@@ -189,7 +194,7 @@ Fixed by normalizing the real source's leading exec; actual-scoped tests added.
 v2 was canceled by user direction during prelaunch authentication, exit143,
 before any container/window, to remove stock-first scheduling.
 v3 implements the reviewed candidate-first order. All failures/cancellations
-are preserved. No negative or positive coupled KLD result exists yet.
+are preserved. No matched coupled improvement or regression result exists yet.
 
 Synthetic M1/M2/M64/M65 numerical checks, five eager repetitions, CUDA-graph
 checks and all3 real four-rank sidecar loader checks passed. These are narrow
