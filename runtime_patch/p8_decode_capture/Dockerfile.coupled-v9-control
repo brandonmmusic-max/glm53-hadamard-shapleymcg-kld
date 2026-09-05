@@ -1,0 +1,29 @@
+# Forced-decode capture is installed as a child of the immutable coupled-v9
+# runtime.  This keeps stock, identity and coupled arms on identical runtime
+# and Tail-V2 bytes; GLM53_P8_NATIVE selects the arm at launch.
+FROM sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3
+
+COPY __init__.py processor.py v2_hook.py /opt/venv/lib/python3.12/site-packages/p8_decode_capture/
+COPY sampler-v2-hook.patch warmup-v2-hook.patch /opt/p8-coupled-cf32-capture/
+
+RUN test "$(sha256sum /opt/p8-coupled-runtime/image-manifest.json | cut -d ' ' -f 1)" = "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1" \
+    && test "$(sha256sum /opt/infernal-invocation/vllm/vllm/v1/worker/gpu/sample/sampler.py | cut -d ' ' -f 1)" = "0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711" \
+    && test "$(sha256sum /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py | cut -d ' ' -f 1)" = "0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711" \
+    && test "$(sha256sum /opt/infernal-invocation/vllm/vllm/v1/worker/gpu/warmup.py | cut -d ' ' -f 1)" = "696cdd462f58908f3511e9983fe18aa3811acecdd6da1ff580bbab99aed08dcc" \
+    && test "$(sha256sum /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py | cut -d ' ' -f 1)" = "696cdd462f58908f3511e9983fe18aa3811acecdd6da1ff580bbab99aed08dcc" \
+    && cd /opt/infernal-invocation/vllm \
+    && git apply --check /opt/p8-coupled-cf32-capture/sampler-v2-hook.patch \
+    && git apply /opt/p8-coupled-cf32-capture/sampler-v2-hook.patch \
+    && git apply --check /opt/p8-coupled-cf32-capture/warmup-v2-hook.patch \
+    && git apply /opt/p8-coupled-cf32-capture/warmup-v2-hook.patch \
+    && cp vllm/v1/worker/gpu/sample/sampler.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py \
+    && cp vllm/v1/worker/gpu/warmup.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py \
+    && test "$(sha256sum vllm/v1/worker/gpu/sample/sampler.py | cut -d ' ' -f 1)" = "717bdd2203c8977205e16ca63385027f7e7ec8acd54afd962ada3e611cf7b958" \
+    && test "$(sha256sum vllm/v1/worker/gpu/warmup.py | cut -d ' ' -f 1)" = "de321498f305e2f61d5cfe4701d19a066ebfec83147f527b2ec82bfb653ea8c7" \
+    && cmp vllm/v1/worker/gpu/sample/sampler.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py \
+    && cmp vllm/v1/worker/gpu/warmup.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py \
+    && /opt/venv/bin/python -m py_compile /opt/venv/lib/python3.12/site-packages/p8_decode_capture/processor.py /opt/venv/lib/python3.12/site-packages/p8_decode_capture/v2_hook.py
+
+LABEL org.klc.experiment="glm53-p8-coupled-three-layer-cf32-capture-v1" \
+      org.klc.parent.digest="sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3" \
+      org.klc.qualification="numerical-capture-only-not-speed"
