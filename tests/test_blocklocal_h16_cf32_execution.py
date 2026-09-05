@@ -47,6 +47,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         model_aux_mount_root=tmp_path,
         runner=files["runner"], run_kld=files["run_kld"], role_eval=files["role_eval"],
         paired_analysis_code=files["analysis_code"], run_root=tmp_path / "runs",
+        analysis_python=files["runner"],
         execution_receipt=tmp_path / "execution.json", paired_analysis=tmp_path / "paired.json",
     )
 
@@ -54,6 +55,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
 def test_freezer_closes_all_expert_overlay(tmp_path):
     payload = build(_args(tmp_path))
     assert payload["run_order"] == ["stock", "candidate"]
+    assert payload["run_ids"]["stock"].endswith("-stock-cf32-v1")
     assert payload["runtime"]["mtp"] == "disabled"
     assert payload["protected_roles_opened"] == []
 

@@ -5,14 +5,16 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .shard_index import sha256_file
 
 
-SCHEMA = "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3"
+SCHEMAS = {
+    "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v3",
+    "glm53-rotation.blocklocal-h16-layer3-cf32-execution.v1",
+}
 
 
 def _verify_file(item: dict[str, object]) -> None:
@@ -28,7 +30,7 @@ def _verify_file(item: dict[str, object]) -> None:
 def verify_plan(plan_path: Path) -> dict[str, object]:
     plan = json.loads(plan_path.read_text())
     if (
-        plan.get("schema") != SCHEMA
+        plan.get("schema") not in SCHEMAS
         or plan.get("decision_before_result") is not True
         or plan.get("run_order") != ["stock", "candidate"]
         or plan.get("protected_roles_opened") != []
@@ -103,7 +105,7 @@ def main() -> None:
         subprocess.run(
             [
                 "bash", str(run_kld), "conditional-fit", run_id,
-                str(plan["models"][arm]), f"rotation-v6-{arm}", "identity", "3",
+                str(plan["models"][arm]), f"{plan['experiment_id']}-{arm}", "identity", "3",
                 "", "", "", "humming", "gate-up",
             ],
             check=True,
@@ -121,7 +123,8 @@ def main() -> None:
     analysis_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            sys.executable, "-m", "glm53_nvfp4.paired_role_analysis",
+            str(plan["inputs"]["analysis_python"]["path"]),
+            "-m", "glm53_nvfp4.paired_role_analysis",
             "--candidate-run", str(run_root / "records" / plan["run_ids"]["candidate"]),
             "--stock-run", str(run_root / "records" / plan["run_ids"]["stock"]),
             "--roles", str(roles_path), "--role", "conditional-fit",
@@ -133,7 +136,8 @@ def main() -> None:
     analysis = json.loads(analysis_path.read_text())
     advance = analysis["mean_delta_kld"] < 0.0
     receipt = {
-        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution-receipt.v1",
+        "schema": "glm53-rotation.blocklocal-h16-layer3-cf32-execution-receipt.v1",
+        "experiment_id": plan["experiment_id"],
         "status": "complete",
         "started_at": started,
         "finished_at": datetime.now(timezone.utc).isoformat(),
