@@ -1170,7 +1170,13 @@ class MoEDynamicKernelBackend:
         # union and is graph-safe: every grid is fixed from preplanned launch
         # capacity and no host value is read between launches.
         self.external_materialized_fc1 = (
-            self.w4a8_split_materialized or self.p8_fc1_tile_n != 128
+            self.w4a8_split_materialized
+            or self.p8_fc1_tile_n != 128
+            # The N128 M1 scale-sandwich/full-coupled boundary is implemented
+            # only by P8H128FC1Kernel.  Leaving it in the monolithic consumer
+            # silently skips H128/svh and makes that owner (and its diagnostic
+            # subclass) dead code.
+            or (self.p8_small_m and self.p8_scale_sandwich)
         )
         self.external_materialized_fc2 = self.w4a8_split_materialized or self.p8_small_m
         if int(num_topk) <= 0:
@@ -1252,6 +1258,16 @@ class MoEDynamicKernelBackend:
         elif self.p8_fc1_tile_n != 128:
             from b12x.moe._shared.kernels.p8_narrow_fc1 import P8NarrowFC1Kernel
             self.materialized_phase1_kernel = P8NarrowFC1Kernel(self.p8_fc1_tile_n)
+        if self.p8_small_m and self.p8_scale_sandwich:
+            # Constructor invariant for the exact M1 boundary.  Keep this
+            # fail-closed because falling back to the monolithic FC1 changes
+            # the quantization transform while still producing finite output.
+            if not self.external_materialized_fc1 or not isinstance(
+                self.materialized_phase1_kernel, P8H128FC1Kernel
+            ):
+                raise AssertionError(
+                    "P8 M1 scale sandwich requires external P8H128FC1Kernel"
+                )
         if self.w4a8_repacked and quant_recipe not in ("w4a8_mx", "w4a8_trellis"):
             raise ValueError(
                 "repacked W4A8 weights are only valid for w4a8_mx or w4a8_trellis"

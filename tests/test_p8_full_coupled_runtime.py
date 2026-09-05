@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -260,3 +262,90 @@ def test_runtime_source_has_n128_owner_and_replacement_reducer() -> None:
     )
     full_input = source["dynamic"][input_start:input_end]
     assert "_p8_scale_input_before_h128" not in full_input
+
+
+def _external_fc1_predicate_from_runtime(**fields: bool | int) -> bool:
+    """Evaluate the checked-in constructor predicate, not a copied formula."""
+    path = PATCH / "b12x_h16/b12x/moe/_shared/kernels/dynamic.py"
+    tree = ast.parse(path.read_text())
+    matches = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "self"
+            and target.attr == "external_materialized_fc1"
+            for target in node.targets
+        )
+    ]
+    assert len(matches) == 1
+    expression = ast.Expression(matches[0])
+    ast.fix_missing_locations(expression)
+    return bool(eval(compile(expression, str(path), "eval"), {}, {
+        "self": SimpleNamespace(**fields)
+    }))
+
+
+@pytest.mark.parametrize(
+    "name,fields,expected",
+    [
+        (
+            "identity_m1_n128_stays_monolithic",
+            dict(w4a8_split_materialized=False, p8_fc1_tile_n=128,
+                 p8_small_m=True, p8_scale_sandwich=False),
+            False,
+        ),
+        (
+            "scale_only_m1_n128_uses_h128_owner",
+            dict(w4a8_split_materialized=False, p8_fc1_tile_n=128,
+                 p8_small_m=True, p8_scale_sandwich=True),
+            True,
+        ),
+        (
+            "full_coupled_m1_n128_uses_h128_owner",
+            dict(w4a8_split_materialized=False, p8_fc1_tile_n=128,
+                 p8_small_m=True, p8_scale_sandwich=True),
+            True,
+        ),
+        (
+            "narrow_m1_remains_external",
+            dict(w4a8_split_materialized=False, p8_fc1_tile_n=64,
+                 p8_small_m=True, p8_scale_sandwich=False),
+            True,
+        ),
+        (
+            "dense_split_remains_external",
+            dict(w4a8_split_materialized=True, p8_fc1_tile_n=128,
+                 p8_small_m=False, p8_scale_sandwich=False),
+            True,
+        ),
+        (
+            "ordinary_non_split_n128_stays_monolithic",
+            dict(w4a8_split_materialized=False, p8_fc1_tile_n=128,
+                 p8_small_m=False, p8_scale_sandwich=False),
+            False,
+        ),
+    ],
+)
+def test_external_fc1_dispatch_truth_table(
+    name: str, fields: dict[str, bool | int], expected: bool
+) -> None:
+    assert _external_fc1_predicate_from_runtime(**fields) is expected, name
+
+
+def test_m1_scale_constructor_fails_closed_on_owner_and_dispatch() -> None:
+    source = (
+        PATCH / "b12x_h16/b12x/moe/_shared/kernels/dynamic.py"
+    ).read_text()
+    selection = source.index("elif self.p8_scale_sandwich:")
+    invariant = source.index("if self.p8_small_m and self.p8_scale_sandwich:")
+    assert selection < invariant
+    block = source[invariant : source.index(
+        'if self.w4a8_repacked and quant_recipe not in', invariant
+    )]
+    assert "self.external_materialized_fc1" in block
+    assert "isinstance(" in block
+    assert "P8H128FC1Kernel" in block
+    assert "raise AssertionError" in block
