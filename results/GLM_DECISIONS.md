@@ -1080,6 +1080,21 @@ confirmation, and final roles remained unopened for this redesign branch.
   qualification or a codec-only EXL3 comparison. Allocation remains stopped.
   No protected data is opened and no new KLD claim follows from this pilot.
 
+## 2026-09-05: Decision 50 — preserve the successful pilot without promoting it to qualification
+
+- Sealed N64/fused-scratch pilot measured 100.566716 tok/s C1 decode and
+  7,176 tok/s client prefill. All 168 native-forward and M1-dispatch pairs,
+  FULL captures, benchmark integrity, thermal and restoration gates passed.
+- Decode is descriptively 33.03% above the prior P8 pilot and 10.19% above
+  the historical EXL3 median. This authorizes designing the separate
+  five-cold-run comparison, not restarting allocation or claiming a product
+  win. The prior failed five-run gate remains historical evidence.
+- Preserve raw and sanitized portable receipts in
+  `evidence/opened/codec-v2/p8-fc1-integrated-v1/` and report exact topology,
+  context, rate source, repetition count and P8 ISA cost. A full-model M1
+  numerical-closure test is still needed; ordinary prefill KLD does not
+  exercise the changed M1 path. No protected roles are opened.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

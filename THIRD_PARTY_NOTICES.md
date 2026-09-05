@@ -38,6 +38,15 @@ and software. Those components are not relicensed by the ShapleyMCG License.
   prepass reuse and shape/stream workspace caching are new implementation;
   the underlying ExLlamaV3/KQuant/QSRT/B12X port attribution still applies.
 
+- The P8 narrow-FC1 implementation in
+  `runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_narrow_fc1.py`
+  is a port and modification of B12X's materialized phase-1 pipeline, not an
+  independently invented pipeline. It preserves this campaign's MCG decoder,
+  FP32 clipped SwiGLU and BF16 rounding boundary while changing output-tile
+  ownership and staging ranges. The aligned scratch-arena layout and serving
+  selector plumbing are new integration work; all underlying notices above
+  continue to apply.
+
 The `runtime_patch/b12x_h16` files are modifications of the pinned B12X
 runtime sources. Their upstream notices and the ShapleyMCG attribution must be
 retained when redistributed.
