@@ -52,7 +52,8 @@ def attempt(tmp_path, monkeypatch):
                 return builder.PARENT_ID
             return "sha256:" + "b" * 64
         assert argv[:2] == ["docker", "run"], "unexpected command"
-        hashes = {name: "a" * 64 for name in builder.SAMPLERS}
+        hashes = {name: builder.SAMPLER_PATCHED_SHA for name in builder.SAMPLERS}
+        hashes.update({name: builder.WARMUP_PATCHED_SHA for name in builder.WARMUPS})
         hashes.update({builder.PACKAGE + name: builder.sha(context / name)
                        for name in builder.SOURCE_NAMES if name.endswith(".py")})
         hashes[builder.INHERITED_FC2] = builder.INHERITED_FC2_SHA
@@ -88,6 +89,7 @@ def test_success_authenticates_sources_without_serving_or_gpu(attempt):
     assert runs[0][runs[0].index("--entrypoint") + 1] == "sha256sum"
     assert "--gpus" not in runs[0]
     assert set(builder.SAMPLERS).issubset(runs[0])
+    assert set(builder.WARMUPS).issubset(runs[0])
 
 
 @pytest.mark.parametrize("flag", ["existing", "parent_mismatch"])
@@ -113,7 +115,7 @@ def test_failed_build_preserves_failure_and_never_verifies_runtime(attempt, flag
     assert not any(argv[:2] == ["docker", "run"] for argv, _ in state["calls"])
 
 
-@pytest.mark.parametrize("kind", ["different_sampler", "unpatched_sampler", "helper", "fc2", "missing"])
+@pytest.mark.parametrize("kind", ["different_sampler", "unpatched_sampler", "different_warmup", "unpatched_warmup", "helper", "fc2", "missing"])
 def test_image_hash_failure_never_labels_complete(attempt, kind):
     output, state = attempt
     if kind == "unpatched_sampler":
@@ -122,13 +124,20 @@ def test_image_hash_failure_never_labels_complete(attempt, kind):
         previous = builder.command
         def originals(argv):
             value = previous(argv)
-            return value.replace("a" * 64, original) if argv[:2] == ["docker", "run"] else value
+            return value.replace(builder.SAMPLER_PATCHED_SHA, original) if argv[:2] == ["docker", "run"] else value
         # Fixture restores command after this test.
+        builder.command = originals
+    elif kind == "unpatched_warmup":
+        previous = builder.command
+        def originals(argv):
+            value = previous(argv)
+            return value.replace(builder.WARMUP_PATCHED_SHA, builder.WARMUP_ORIGINAL_SHA) if argv[:2] == ["docker", "run"] else value
         builder.command = originals
     elif kind == "missing":
         state["missing_hash"] = builder.SAMPLERS[0]
     else:
         path = {"different_sampler": builder.SAMPLERS[1],
+                "different_warmup": builder.WARMUPS[1],
                 "helper": builder.PACKAGE + "v2_hook.py", "fc2": builder.INHERITED_FC2}[kind]
         state["bad_hash"] = (path, "f" * 64)
     with pytest.raises((ValueError, KeyError)):
@@ -163,6 +172,9 @@ def test_dockerfile_uses_exact_parent_and_pins_both_samplers():
     assert [line for line in dockerfile.splitlines() if line.startswith("FROM ")] == [f"FROM {builder.PARENT_ID}"]
     for sampler in builder.SAMPLERS:
         assert f"sha256sum {sampler}" in dockerfile
+    for warmup in builder.WARMUPS:
+        assert f"sha256sum {warmup}" in dockerfile
+    assert dockerfile.count(builder.WARMUP_ORIGINAL_SHA) == 2
     assert dockerfile.count("0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711") == 2
     assert "git apply --check" in dockerfile
     assert builder.INHERITED_FC2_SHA in dockerfile

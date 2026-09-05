@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,6 +65,13 @@ class _V2ActiveRequest:
     complete: bool = False
 
 
+@dataclass
+class _PinnedWarmupState:
+    expected_prompt_len: int
+    registrations: int = 0
+    samples: int = 0
+
+
 class V2ForcedDecodeCapture:
     """Capture and force one real request while allowing only proven dummy runs."""
 
@@ -77,6 +86,8 @@ class V2ForcedDecodeCapture:
         self.enabled = _enabled()
         self.req_states = req_states
         self.states: dict[int, _V2ActiveRequest] = {}
+        self._pinned_warmup: _PinnedWarmupState | None = None
+        self._pinned_warmup_terminal: str | None = None
         if not self.enabled:
             return
         if max_num_reqs != 1:
@@ -100,10 +111,173 @@ class V2ForcedDecodeCapture:
             flush=True,
         )
 
+    @contextmanager
+    def pinned_startup_warmup_scope(
+        self, *, expected_prompt_len: int
+    ) -> Iterator[None]:
+        """Permit only the pinned scheduler-realistic startup warmup.
+
+        The scope is entered lexically by the patched ``warmup_kernels``
+        function. Request names cannot enable it, and every real-request guard
+        remains unchanged outside this context.
+        """
+
+        if not self.enabled:
+            yield
+            return
+        if self._pinned_warmup is not None:
+            raise RuntimeError("nested V2 pinned warmup scope")
+        if self._pinned_warmup_terminal is not None:
+            raise RuntimeError(
+                "V2 pinned warmup scope cannot be replayed after "
+                f"{self._pinned_warmup_terminal}"
+            )
+        if expected_prompt_len < 2:
+            raise RuntimeError("pinned V2 warmup prompt must contain at least two tokens")
+        if self.states:
+            raise RuntimeError("V2 pinned warmup started with capture state")
+        if (
+            getattr(self.req_states, "num_reqs", None) != 0
+            or getattr(self.req_states, "req_id_to_index", None) != {}
+            or getattr(self.req_states, "index_to_req_id", None) != {}
+        ):
+            raise RuntimeError("V2 pinned warmup started with nonempty request state")
+
+        state = _PinnedWarmupState(expected_prompt_len=expected_prompt_len)
+        self._pinned_warmup = state
+        try:
+            yield
+            if state.registrations != 1 or state.samples != 2:
+                raise RuntimeError(
+                    "pinned V2 warmup lifecycle mismatch: "
+                    f"registrations={state.registrations} samples={state.samples}"
+                )
+            if self.states:
+                raise RuntimeError("V2 pinned warmup created capture state")
+            if (
+                getattr(self.req_states, "num_reqs", None) != 0
+                or getattr(self.req_states, "req_id_to_index", None) != {}
+                or getattr(self.req_states, "index_to_req_id", None) != {}
+            ):
+                raise RuntimeError("V2 pinned warmup left request state registered")
+        except BaseException:
+            self._pinned_warmup_terminal = "failure"
+            raise
+        else:
+            self._pinned_warmup_terminal = "complete"
+            print(
+                "GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED "
+                f"tp_rank={self.tp_rank} registrations=1 samples=2",
+                flush=True,
+            )
+        finally:
+            self._pinned_warmup = None
+
+    @staticmethod
+    def _is_pinned_warmup_sampling_params(sampling_params: SamplingParams) -> bool:
+        expected = {
+            "temperature": 0.9,
+            "top_p": 0.9,
+            "top_k": 50,
+            "min_p": 0.1,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.5,
+            "repetition_penalty": 1.2,
+            "min_tokens": 2,
+            "logit_bias": {0: -1.0, 1: 0.5},
+            "_bad_words_token_ids": [[0], [1, 2]],
+            "logprobs": 5,
+            "prompt_logprobs": 1,
+        }
+        return getattr(sampling_params, "extra_args", None) is None and all(
+            getattr(sampling_params, name, None) == value
+            for name, value in expected.items()
+        )
+
+    def _register_pinned_warmup(
+        self, req_idx: int, prompt_len: int, sampling_params: SamplingParams
+    ) -> None:
+        state = self._pinned_warmup
+        if state is None:
+            raise AssertionError("pinned warmup registration outside scope")
+        if state.registrations != 0 or self.states:
+            raise RuntimeError("pinned V2 warmup registered more than one request")
+        if req_idx != 0 or prompt_len != state.expected_prompt_len:
+            raise RuntimeError(
+                "pinned V2 warmup request geometry mismatch: "
+                f"req_idx={req_idx} prompt_len={prompt_len}"
+            )
+        if (
+            getattr(self.req_states, "num_reqs", None) != 1
+            or getattr(self.req_states, "req_id_to_index", None)
+            != {"_warmup_0_": 0}
+            or getattr(self.req_states, "index_to_req_id", None)
+            != {0: "_warmup_0_"}
+        ):
+            raise RuntimeError("pinned V2 warmup request identity mismatch")
+        if not self._is_pinned_warmup_sampling_params(sampling_params):
+            raise RuntimeError("pinned V2 warmup sampling parameters changed")
+        state.registrations += 1
+
+    def _sample_pinned_warmup(
+        self, logits: torch.Tensor, input_batch: Any
+    ) -> torch.Tensor:
+        state = self._pinned_warmup
+        if state is None:
+            raise AssertionError("pinned warmup sample outside scope")
+        if state.registrations != 1 or state.samples >= 2 or self.states:
+            raise RuntimeError("pinned V2 warmup sampler lifecycle mismatch")
+        if (
+            getattr(self.req_states, "num_reqs", None) != 1
+            or getattr(self.req_states, "req_id_to_index", None)
+            != {"_warmup_0_": 0}
+            or getattr(self.req_states, "index_to_req_id", None)
+            != {0: "_warmup_0_"}
+            or getattr(input_batch, "req_ids", None) != ["_warmup_0_"]
+            or getattr(input_batch, "num_reqs", None) != 1
+            or getattr(input_batch, "num_draft_tokens", None) != 0
+            or logits.ndim != 2
+            or logits.shape[0] != 1
+            or int(logits.shape[1]) < REAL_VOCAB_SIZE
+        ):
+            raise RuntimeError("pinned V2 warmup sample identity/geometry mismatch")
+        mapping = np.asarray(input_batch.idx_mapping_np)
+        if mapping.shape != (1,) or int(mapping[0]) != 0:
+            raise RuntimeError("pinned V2 warmup sample mapping mismatch")
+        indices = input_batch.logits_indices
+        if indices.numel() != 1 or bool(input_batch.is_padding[indices][0].item()):
+            raise RuntimeError("pinned V2 warmup selected an invalid logit row")
+
+        expected_query_len = state.expected_prompt_len if state.samples == 0 else 1
+        expected_position = state.expected_prompt_len - 1 + state.samples
+        position = int(input_batch.positions[indices][0].item())
+        if (
+            getattr(input_batch, "max_query_len", None) != expected_query_len
+            or getattr(input_batch, "num_tokens", None) != expected_query_len
+            or position != expected_position
+        ):
+            raise RuntimeError(
+                "pinned V2 warmup sample sequence mismatch: "
+                f"max_query_len={getattr(input_batch, 'max_query_len', None)} "
+                f"num_tokens={getattr(input_batch, 'num_tokens', None)} "
+                f"position={position}"
+            )
+        if state.samples == 0:
+            input_token = int(input_batch.input_ids[indices][0].item())
+            if input_token != state.expected_prompt_len - 1:
+                raise RuntimeError("pinned V2 warmup prompt token sequence changed")
+        state.samples += 1
+        return logits
+
     def add_request(
         self, req_idx: int, prompt_len: int, sampling_params: SamplingParams
     ) -> None:
         if not self.enabled:
+            return
+        if self._pinned_warmup_terminal == "failure":
+            raise RuntimeError("V2 pinned warmup failure poisoned capture helper")
+        if self._pinned_warmup is not None:
+            self._register_pinned_warmup(req_idx, prompt_len, sampling_params)
             return
         if req_idx != 0 or prompt_len != 1:
             raise RuntimeError("V2 decode capture requires one prompt token at request row zero")
@@ -146,6 +320,10 @@ class V2ForcedDecodeCapture:
     def capture_and_force(self, logits: torch.Tensor, input_batch: Any) -> torch.Tensor:
         if not self.enabled:
             return logits
+        if self._pinned_warmup_terminal == "failure":
+            raise RuntimeError("V2 pinned warmup failure poisoned capture helper")
+        if self._pinned_warmup is not None:
+            return self._sample_pinned_warmup(logits, input_batch)
         if not self.states:
             if self._proven_dummy_batch(input_batch):
                 return logits

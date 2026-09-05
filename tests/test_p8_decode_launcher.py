@@ -33,7 +33,8 @@ def log(arm, complete=False):
             'Breakable CUDA graph enabled', 'Capturing CUDA graphs (FULL): 100%']
     for rank in range(4):
         rows += [f'(Worker_TP{rank}) Graph capturing finished',
-                 f'GLM53_P8_DECODE_CAPTURE_V2_READY tp_rank={rank} max_num_reqs=1 real_vocab=154880 expected_outputs=2047']
+                 f'GLM53_P8_DECODE_CAPTURE_V2_READY tp_rank={rank} max_num_reqs=1 real_vocab=154880 expected_outputs=2047',
+                 f'GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED tp_rank={rank} registrations=1 samples=2']
         for layer in range(3, 45):
             rows += [f'GLM53_P8_NATIVE_FORWARD layer={layer} rank={rank} small_m_scheduler=true',
                      f'GLM53_P8_M1_DISPATCH layer={layer} rank={rank} fc1_tile_n={cfg["tile_n"]} '
@@ -60,7 +61,8 @@ def test_same_capture_image_v2_env_no_v1_processor_explicit_maxseqs(tmp_path, ar
     assert tokens[tokens.index('--max-num-seqs') + 1] == '1'
     assert tokens[tokens.index('--decode-context-parallel-size') + 1] == '1'
     for bind in source['HostConfig']['Binds']:
-        assert bind in argv
+        expected = f'{REPO / "runtime_patch"}:/runtime-patch:ro' if bind == launcher.PRIOR_RUNTIME_MOUNT else bind
+        assert expected in argv
     assert f'{tmp_path / "captures"}:/p8-captures:rw' in argv
 
 
@@ -79,12 +81,54 @@ def test_runtime_four_v2_ready_and_actual_168_m1_receipts(arm):
         launcher.runtime_audit(log(arm), arm, [{'id': 'conditional-fit-0000'}])
 
 
-def test_authenticated_built_image_receipt_cpu_only():
-    path = REPO / 'evidence/opened/codec-v2/p8-decode-capture-image-v1/receipt.json'
+def test_authenticated_built_image_receipt_cpu_only(tmp_path):
+    builder = launcher.builder
+    sources = {name: launcher.pilot.sha(builder.CONTEXT / name) for name in builder.SOURCE_NAMES}
+    installed = {p: builder.SAMPLER_PATCHED_SHA for p in builder.SAMPLERS}
+    installed.update({p: builder.WARMUP_PATCHED_SHA for p in builder.WARMUPS})
+    installed.update({builder.PACKAGE + n: h for n, h in sources.items() if n.endswith('.py')})
+    installed[builder.INHERITED_FC2] = builder.INHERITED_FC2_SHA
+    value = {'schema': 'glm53-p8.decode-capture-image.v2', 'status': 'complete',
+             'image_id': IMAGE, 'parent_image_id': launcher.cold.IMAGES['p8'],
+             'gpu_used': False, 'speed_measurement_valid': False,
+             'builder_sha256': launcher.pilot.sha(REPO / 'scripts/build_p8_decode_capture_image.py'),
+             'source_sha256': sources, 'image_source_sha256': installed}
+    path = tmp_path / 'image.json'
+    path.write_text(json.dumps(value))
     receipt = launcher.verify_image_receipt(path, IMAGE)
     assert receipt['image_id'] == IMAGE and receipt['parent_image_id'] == launcher.cold.IMAGES['p8']
     with pytest.raises(ValueError):
         launcher.verify_image_receipt(path, launcher.cold.IMAGES['p8'])
+    with pytest.raises(ValueError):
+        launcher.verify_image_receipt(REPO / 'evidence/opened/codec-v2/p8-decode-capture-image-v1/receipt.json', IMAGE)
+    for invalid in (builder.WARMUP_ORIGINAL_SHA, 'b' * 64):
+        value['image_source_sha256'][builder.WARMUPS[0]] = invalid
+        path.write_text(json.dumps(value))
+        with pytest.raises(ValueError):
+            launcher.verify_image_receipt(path, IMAGE)
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'wrong_rank', 'wrong_count'])
+def test_warmup_closure_required_before_eval_and_in_final_audit(mutation):
+    marker = 'GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED tp_rank=0 registrations=1 samples=2'
+    source = log('n64', True)
+    changed = {'missing': '', 'duplicate': marker + '\n' + marker,
+               'wrong_rank': marker.replace('tp_rank=0', 'tp_rank=4'),
+               'wrong_count': marker.replace('samples=2', 'samples=3')}[mutation]
+    source = source.replace(marker, changed)
+    for windows in (None, [{'id': 'conditional-fit-0000'}]):
+        with pytest.raises(ValueError, match='warmup scopes'):
+            launcher.runtime_audit(source, 'n64', windows)
+
+
+def test_missing_or_duplicate_runtime_mount_rejected(tmp_path):
+    source = pilot_recipe()
+    source['HostConfig']['Binds'] = [b for b in source['HostConfig']['Binds'] if b != launcher.PRIOR_RUNTIME_MOUNT]
+    with pytest.raises(ValueError, match='runtime mount'):
+        launcher.clone_argv(source, IMAGE, {'stage': 'canary', 'arm': 'n64'}, tmp_path, [], 'owner')
+    source['HostConfig']['Binds'] += [launcher.PRIOR_RUNTIME_MOUNT] * 2
+    with pytest.raises(ValueError, match='runtime mount'):
+        launcher.clone_argv(source, IMAGE, {'stage': 'canary', 'arm': 'n64'}, tmp_path, [], 'owner')
 
 
 def test_request_loop_runs_thermal_ticks_and_preserves_exact_response(monkeypatch):
@@ -109,6 +153,47 @@ def test_canary_is_first_window_full_stage_is_all32():
     assert launcher.stage_windows(plan, 'full') == windows
     assert launcher.ORDER == [{'stage': s, 'arm': a} for s in ('canary', 'full') for a in ('n128', 'n64')]
     assert launcher.FIXED['rows_per_window'] == 2047
+
+
+def test_historical_cold_prerequisite_replays_original_worktree(tmp_path, monkeypatch):
+    repo = tmp_path / 'old-repo'
+    repo.mkdir()
+    source = repo / 'verifier.py'
+    source.write_text('# immutable original verifier')
+    raw = tmp_path / 'raw'
+    raw.mkdir()
+    plan_path = repo / 'cold.json'
+    plan_path.write_text(json.dumps({'output': str(raw), 'source_sha256': {'verifier.py': launcher.pilot.sha(source)}}))
+    analysis = {'speed_gate_pass': True}
+    (raw / 'analysis.json').write_text(json.dumps(analysis))
+    (raw / 'execution.json').write_text(json.dumps({'exit_code': 0, 'completed_slots': 10}))
+    monkeypatch.setattr(launcher, 'PRIOR_REPO', repo)
+    monkeypatch.setattr(launcher, 'COLD_PLAN', plan_path)
+    monkeypatch.setattr(launcher, 'COLD_PLAN_SHA', launcher.pilot.sha(plan_path))
+    calls = []
+    def command(args):
+        calls.append(args)
+        stdout = 'ActiveState=inactive\nResult=success\n' if args[0] == 'systemctl' else json.dumps(analysis)
+        return subprocess.CompletedProcess(args, 0, stdout, '')
+    monkeypatch.setattr(launcher.pilot, 'command', command)
+    assert launcher.cold_prerequisite(plan_path) == (raw, analysis)
+    assert calls[-1][:4] == [launcher.sys.executable, '-I', '-B', '-c']
+    assert str(repo) in calls[-1][-1]
+    assert 'analyze(' in calls[-1][-1] and 'run(' not in calls[-1][-1]
+    with pytest.raises(ValueError, match='path or identity'):
+        launcher.cold_prerequisite(tmp_path / 'foreign.json')
+    original = plan_path.read_text()
+    plan_path.write_text(original + '\n')
+    with pytest.raises(ValueError, match='path or identity'):
+        launcher.cold_prerequisite(plan_path)
+    plan_path.write_text(original)
+    (raw / 'analysis.json').write_text('{}')
+    with pytest.raises(ValueError, match='does not replay'):
+        launcher.cold_prerequisite(plan_path)
+    (raw / 'analysis.json').write_text(json.dumps(analysis))
+    source.write_text('# changed verifier')
+    with pytest.raises(ValueError, match='verifier source'):
+        launcher.cold_prerequisite(plan_path)
 
 
 def test_compare_uses_existing_protocol_and_rejects_native_dtype_mismatch(tmp_path, monkeypatch):

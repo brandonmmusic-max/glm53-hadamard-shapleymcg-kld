@@ -2,7 +2,7 @@
 
 Status: the v1 capture attempt failed during startup, before any evaluation
 request or logit capture. This is not a codec/KLD result. The v2 instrumentation
-amendment is being prepared; no new GPU correctness result is claimed.
+amendment is built and CPU-reviewed; no new GPU correctness result is claimed.
 
 ## Preserved v1 evidence
 
@@ -54,6 +54,31 @@ Because `/runtime-patch` precedes site-packages on PYTHONPATH, the new launch
 must bind the sealed v2 worktree instead of silently importing the old helper.
 All inherited P8 arithmetic sources remain frozen, including the executed
 FC2 source rather than an unexecuted local donor copy.
+
+## Built v2 image and CPU validation
+
+Dedicated image:
+`sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9`.
+[Build receipt](../evidence/opened/codec-v2/p8-decode-capture-image-v2/receipt.json)
+SHA-256 `fdd57fa758d33f81d88706487232e2f68b89a24f5c1e398e83516e212f14ffd6`.
+The build performed no GPU work, used the local digest-pinned speed image,
+and authenticated both sampler copies, both patched warmup copies, the three
+capture-package sources, and inherited FC2. Patched warmup SHA-256 is
+`de321498f305e2f61d5cfe4701d19a066ebfec83147f527b2ec82bfb653ea8c7`.
+
+The combined focused CPU suite passed 155 tests, including capture/forced-token
+semantics, warmup negative cases, launcher/image receipts, role/row protocol,
+paired analysis, historical cold replay and startup-failure preservation.
+The independently reviewed warmup implementation rejects nested/repeated
+scopes and retains a terminal failure latch. A CPU-only check inside the
+exact built image passed the real `SamplingParams.for_sampler_warmup()`
+signature check and patched-function import; it cannot instantiate the
+GPU-backed request state or establish runtime closure.
+
+The v2 launcher replays the historical speed verifier in its original,
+unchanged worktree using `python -I -B`, because that verifier authenticates
+absolute historical prerequisite paths. Original source hashes are checked
+before and after replay; its plan is not rewritten to fit the new worktree.
 
 ## Boundaries
 

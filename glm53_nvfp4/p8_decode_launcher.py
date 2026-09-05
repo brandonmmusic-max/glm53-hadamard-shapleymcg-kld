@@ -14,6 +14,7 @@ import shutil
 import signal
 import socket
 import stat
+import sys
 import threading
 import time
 from urllib.request import Request, urlopen
@@ -28,7 +29,12 @@ from scripts import build_p8_decode_capture_image as builder
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT = cold.ROOT
-PREFIX = 'glm53-p8-forced-m1-v2-v1'
+PREFIX = 'glm53-p8-forced-m1-v2-v2'
+PRIOR_PLAN_SHA = 'e3332469bc2ed9aec86eabb86b8dc57f76123542e1de309b9136893e4014725a'
+PRIOR_RUNTIME_MOUNT = '/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-smallm-v1/runtime_patch:/runtime-patch:ro'
+PRIOR_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-smallm-v1')
+COLD_PLAN = PRIOR_REPO / 'experiments/p8-fc1-cold-comparison-v1.json'
+COLD_PLAN_SHA = '77fd98c7af0c16a44101beb006a2fc26f0036e227ef1a89316e613ca26da1ec8'
 PORT = 8023
 INTERRUPT_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
 RAW_CAPTURE_BYTES = 2 * 33 * protocol.ROWS * protocol.VOCAB_LIMIT * 4
@@ -43,9 +49,13 @@ SOURCE_FILES = cold.SOURCES | {
     'tests/test_p8_decode_analysis_receipts.py',
     'glm53_nvfp4/paired_role_analysis.py',
     'scripts/build_p8_decode_capture_image.py',
+    'tests/test_build_p8_decode_capture_image.py', 'tests/test_p8_decode_capture_v2.py',
     *(f'runtime_patch/p8_decode_capture/{name}' for name in builder.SOURCE_NAMES),
 }
-FIXED = {'schema': 'glm53-p8.forced-m1-v2-plan.v1', 'port': PORT, 'order': ORDER, 'arms': ARMS,
+FIXED = {'schema': 'glm53-p8.forced-m1-v2-plan.v2', 'port': PORT, 'order': ORDER, 'arms': ARMS,
+         'amends_plan_sha256': PRIOR_PLAN_SHA,
+         'amendment': 'startup-only lexical warmup scope; same numerical decision and conditional-fit role',
+         'warmup_gate': 'four rank-tagged lexical scope closures; one registration and two samples per rank',
          'topology': {'tp': 4, 'ep': False, 'dcp': 1}, 'kv_cache_dtype': 'nvfp4_ds_mla',
          'max_num_seqs': 1, 'rows_per_window': 2047, 'full_windows': 32,
          'windows_per_domain': 8, 'canary_windows': 1, 'canary_selection': 'first role-manifest window',
@@ -70,7 +80,7 @@ def model_name(arm):
 def verify_image_receipt(path, image):
     value = json.loads(path.read_text())
     if (not re.fullmatch(r'sha256:[a-f0-9]{64}', image)
-            or value.get('schema') != 'glm53-p8.decode-capture-image.v1' or value.get('status') != 'complete'
+            or value.get('schema') != 'glm53-p8.decode-capture-image.v2' or value.get('status') != 'complete'
             or value.get('image_id') != image or value.get('parent_image_id') != cold.IMAGES['p8']
             or value.get('gpu_used') is not False or value.get('speed_measurement_valid') is not False
             or value.get('builder_sha256') != pilot.sha(REPO / 'scripts/build_p8_decode_capture_image.py')
@@ -80,8 +90,8 @@ def verify_image_receipt(path, image):
         if pilot.sha(builder.CONTEXT / name) != value['source_sha256'][name]:
             raise ValueError('capture package/build source differs')
     installed = value['image_source_sha256']
-    if (installed[builder.SAMPLERS[0]] != installed[builder.SAMPLERS[1]]
-            or installed[builder.SAMPLERS[0]] == '0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711'
+    if (any(installed[path] != builder.SAMPLER_PATCHED_SHA for path in builder.SAMPLERS)
+            or any(installed[path] != builder.WARMUP_PATCHED_SHA for path in builder.WARMUPS)
             or installed[builder.INHERITED_FC2] != builder.INHERITED_FC2_SHA):
         raise ValueError('sampler patch or unchanged FC2 identity differs')
     for name in builder.SOURCE_NAMES:
@@ -94,9 +104,29 @@ def cold_prerequisite(plan_path):
     state = pilot.command(['systemctl', '--user', 'show', COLD_UNIT, '-p', 'ActiveState', '-p', 'Result']).stdout
     if set(state.strip().splitlines()) != {'ActiveState=inactive', 'Result=success'}:
         raise ValueError('cold comparison must be observably terminal success')
+    if plan_path != COLD_PLAN or pilot.sha(plan_path) != COLD_PLAN_SHA:
+        raise ValueError('original cold plan path or identity differs')
     declared = json.loads(plan_path.read_text())
     root = Path(declared['output'])
-    analysis = cold.analyze(root, plan_path)
+    # The historical verifier authenticates absolute prerequisite paths. Run
+    # its unchanged, hash-verified source from the original worktree rather
+    # than rewriting its plan to fit this new capture checkout.
+    for relative, expected in declared['source_sha256'].items():
+        source = PRIOR_REPO / relative
+        if source != source.resolve() or not source.is_relative_to(PRIOR_REPO) or pilot.sha(source) != expected:
+            raise ValueError('historical cold verifier source differs')
+    replay = (
+        'import sys,json; from pathlib import Path; '
+        f'sys.path.insert(0, {str(PRIOR_REPO)!r}); '
+        'from glm53_nvfp4.p8_fc1_cold_compare import analyze; '
+        f'p=Path({str(plan_path)!r}); '
+        'print(json.dumps(analyze(Path(json.loads(p.read_text())["output"]),p)))'
+    )
+    analysis = json.loads(pilot.command([sys.executable, '-I', '-B', '-c', replay]).stdout)
+    if pilot.sha(plan_path) != COLD_PLAN_SHA:
+        raise ValueError('historical cold plan changed during replay')
+    if any(pilot.sha(PRIOR_REPO / relative) != expected for relative, expected in declared['source_sha256'].items()):
+        raise ValueError('historical cold verifier source changed during replay')
     if analysis != json.loads((root / 'analysis.json').read_text()):
         raise ValueError('terminal cold comparison analysis does not replay')
     execution = json.loads((root / 'execution.json').read_text())
@@ -233,10 +263,16 @@ def clone_argv(container, image, entry, out, windows, owner):
             '--restart', 'no', '--security-opt', 'label=disable', '--workdir', '/', '--entrypoint', '/bin/bash']
     for value in env:
         argv += ['--env', value]
+    runtime_mounts = [bind for bind in host['Binds'] if bind.split(':')[1] == '/runtime-patch']
+    if runtime_mounts != [PRIOR_RUNTIME_MOUNT]:
+        raise ValueError('expected exactly one authenticated prior runtime mount')
     for bind in host['Binds']:
         if bind.split(':')[1] == '/p8-captures':
             raise ValueError('capture mount collision')
-        argv += ['--volume', bind]
+        # PYTHONPATH prefers this mount to site-packages. Bind the sealed new
+        # worktree, otherwise the old helper masks the patched image package.
+        replacement = f'{REPO / "runtime_patch"}:/runtime-patch:ro' if bind == PRIOR_RUNTIME_MOUNT else bind
+        argv += ['--volume', replacement]
     return [*argv, '--volume', f'{out / "captures"}:/p8-captures:rw', image, '-lc', shlex.join(tokens)]
 
 
@@ -252,7 +288,12 @@ def runtime_audit(log, arm, completed_windows=None):
     ready = re.findall(r'GLM53_P8_DECODE_CAPTURE_V2_READY tp_rank=(\d+) max_num_reqs=(\d+) real_vocab=(\d+) expected_outputs=(\d+)', log)
     if len(ready) != 4 or set(ready) != {(str(rank), '1', str(protocol.VOCAB_LIMIT), '2047') for rank in range(4)}:
         raise ValueError('exactly four expected V2READY receipts required')
-    result = {**proof, 'v2_ready_ranks': list(range(4)), 'arm': arm, **configuration}
+    closed = re.findall(r'GLM53_P8_DECODE_CAPTURE_V2_WARMUP_SCOPE_CLOSED tp_rank=(\d+) registrations=(\d+) samples=(\d+)', log)
+    if len(closed) != 4 or set(closed) != {(str(rank), '1', '2') for rank in range(4)}:
+        raise ValueError('exactly four completed startup warmup scopes required before evaluation')
+    result = {**proof, 'v2_ready_ranks': list(range(4)), 'warmup_closed_ranks': list(range(4)),
+              'warmup_registrations_per_rank': 1, 'warmup_samples_per_rank': 2,
+              'arm': arm, **configuration}
     if completed_windows is not None:
         completed = re.findall(r'GLM53_P8_DECODE_CAPTURE_V2_COMPLETE window=(conditional-fit-\d{4}) rows=(\d+) tp_rank=(\d+)', log)
         if len(completed) != len(completed_windows) or set(completed) != {(w['id'], '2047', '0') for w in completed_windows}:
