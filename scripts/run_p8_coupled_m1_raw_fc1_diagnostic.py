@@ -567,6 +567,18 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
         observed_scale,
     )
     observed_gate, observed_up, _ = raw_reference(args.sidecar, observed_source)
+    # Preserve raw evidence before any completeness/finite gate can fail.
+    # These bounded diagnostic buffers contain no model or teacher tensors.
+    import numpy as np
+    capture_arrays = {
+        "scratch_u32": debug["intermediate_u32"].detach().cpu().numpy(),
+        "input_prequant_trace": debug["input_prequant_trace"].detach().cpu().numpy(),
+    }
+    if sum(value.nbytes for value in capture_arrays.values()) > 4 * 1024 * 1024:
+        raise RuntimeError("raw diagnostic evidence exceeds frozen 4 MiB limit")
+    capture_path = args.output.parent / "raw-capture.npz"
+    with capture_path.open("xb") as stream:
+        np.savez(stream, **capture_arrays)
     actual_gate, actual_up = unpack_raw_fc1(debug["intermediate_u32"])
     capture_audit = audit_raw_capture_bounds(debug["intermediate_u32"])
     if not bool(torch.isfinite(actual_gate).all() and torch.isfinite(actual_up).all()):
