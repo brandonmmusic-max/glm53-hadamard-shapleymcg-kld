@@ -85,6 +85,7 @@ class P8NativeTPMoE:
         small_m_scheduler: bool = False,
         fc1_tile_n: int = 128,
         debug_capture: bool = False,
+        diagnostic_raw_fc1: bool = False,
         fuse_scratch_zero: bool = False,
     ) -> None:
         self.device = torch.device(device)
@@ -104,6 +105,7 @@ class P8NativeTPMoE:
         self.small_m_scheduler = bool(small_m_scheduler)
         self.fc1_tile_n = int(fc1_tile_n)
         self.debug_capture = bool(debug_capture)
+        self.diagnostic_raw_fc1 = bool(diagnostic_raw_fc1)
         self.fuse_scratch_zero = bool(fuse_scratch_zero)
         self._scratch_layout = (
             p8_small_m_scratch_layout() if self.fuse_scratch_zero else None
@@ -120,6 +122,15 @@ class P8NativeTPMoE:
             or (topk, hidden, intermediate) != (8, 4096, 512)
         ):
             raise ValueError("P8 small-M requires deterministic GLM TP4 and automatic fallback")
+        if self.diagnostic_raw_fc1 and (
+            not self.debug_capture
+            or not self.small_m_scheduler
+            or self.fc1_tile_n != 128
+            or self.fuse_scratch_zero
+        ):
+            raise ValueError(
+                "raw FC1 diagnostic requires debug M1 small-M N128 capture"
+            )
         if self.mac_override is not None and self.mac_override <= 0:
             raise ValueError("mac_override must be positive")
         with safe_open(sidecar, framework="pt", device="cpu") as src:
@@ -269,6 +280,14 @@ class P8NativeTPMoE:
         )
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
+        # MCG never dereferences the LUT pointer. The diagnostic-only arm
+        # reuses that dead ABI slot for exactly 128 FP32 trace values (512 B),
+        # initialized to an all-ones NaN sentinel so partial writes fail closed.
+        self.input_prequant_trace = (
+            torch.full((512,), 0xFF, dtype=torch.uint8, device=self.device)
+            if self.diagnostic_raw_fc1
+            else self.zero_lut
+        )
         self.zero_rotation = torch.zeros(1, dtype=torch.float16, device=self.device)
         self.scale_component_packed = (
             self.scale_component.packed.to(device=self.device)
@@ -315,6 +334,17 @@ class P8NativeTPMoE:
             deterministic_output=self.deterministic_output,
             swiglu_limit=self.swiglu_limit,
         )
+        if self.diagnostic_raw_fc1:
+            if not (small_m and self.full_coupled):
+                raise RuntimeError(
+                    "raw FC1 diagnostic dispatched outside full-coupled M1"
+                )
+            from b12x.moe._shared.kernels.p8_h128_fc1 import (
+                P8H128FC1RawCaptureKernel,
+            )
+
+            kernel.materialized_phase1_kernel = P8H128FC1RawCaptureKernel()
+            kernel.p8_input_prequant_diagnostic = True
         launch = _DynamicMoEW4A8Launch(
             kernel,
             k=self.hidden,
@@ -397,6 +427,8 @@ class P8NativeTPMoE:
                 ("identity", int(not self.full_coupled)),
                 ("scale_sandwich", int(self.scale_component is not None)),
                 ("full_coupled", int(self.full_coupled)),
+                ("raw_fc1_diagnostic", int(self.diagnostic_raw_fc1)),
+                ("input_prequant_diagnostic", int(self.diagnostic_raw_fc1)),
                 ("codebook", "mcg"),
                 ("deterministic_output", int(self.deterministic_output)),
             ),
@@ -525,11 +557,20 @@ class P8NativeTPMoE:
             scale_flat = torch.zeros(
                 scale_elements, dtype=torch.uint8, device=self.device
             )
-            intermediate_u32 = torch.zeros(
-                rows_padded * (self.intermediate + self.intermediate // 32) // 4,
+            intermediate_words = (
+                rows_padded * (self.intermediate + self.intermediate // 32) // 4
+            )
+            intermediate_u32 = torch.full(
+                (intermediate_words,),
+                -1 if self.diagnostic_raw_fc1 else 0,
                 dtype=torch.int32,
                 device=self.device,
             )
+            if self.diagnostic_raw_fc1:
+                # Diagnostic tail layout starts after 128 payload words/row:
+                # metadata[32] | atomic write_count[32] | sentinel[448].
+                trace_base = rows_padded * (self.intermediate // 4)
+                intermediate_u32[trace_base + 32 : trace_base + 64].zero_()
 
             def z1():
                 return torch.zeros(1, dtype=torch.int32, device=self.device)
@@ -605,10 +646,10 @@ class P8NativeTPMoE:
             physical_tiles,
             arm.mac,
             current_cuda_stream(),
-            _gptr(cutlass.Uint8, self.zero_lut),
+            _gptr(cutlass.Uint8, self.input_prequant_trace),
             _gptr(cutlass.Float16, self.scale_component_packed),
         )
-        if self.deterministic_output:
+        if self.deterministic_output and not self.diagnostic_raw_fc1:
             if self.full_coupled:
                 reducer = self._compile_full_coupled_reducer()
                 reducer(
@@ -639,4 +680,9 @@ class P8NativeTPMoE:
                                    "fused_scratch_zero": fused_scratch_zero,
                                    "fc1_tile_n": self.fc1_tile_n if small_m else 128,
                                    "tile_m": tile_m}
+            if self.diagnostic_raw_fc1:
+                self.debug_dispatch["diagnostic_raw_fc1"] = True
+                self.debug_tensors["input_prequant_trace"] = (
+                    self.input_prequant_trace
+                )
         return output

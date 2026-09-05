@@ -18,6 +18,7 @@ from cutlass.cutlass_dsl import Int32, Int64, T, Uint32, dsl_user_op
 from cutlass._mlir.dialects import llvm
 
 from b12x._lib.intrinsics import (
+    atomic_add_global_i32,
     cp_async4_shared_global,
     cp_async_u32_shared_global,
     e2m1x8_to_qmma_e2m1x8,
@@ -103,6 +104,7 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
     mma_m_blocks = 1
     owned_row_groups = 4
     scale_sandwich = False
+    diagnostic_raw_fc1 = False
 
     def __init__(self, tile_n: int):
         if tile_n not in (32, 64):
@@ -811,6 +813,45 @@ class P8NarrowFC1Kernel(W4A8MaterializedPhase1Kernel):
 
         cute.arch.sync_threads()
 
+        if cutlass.const_expr(self.diagnostic_raw_fc1):
+            # Localization-only carrier: one row per (route, output_tile),
+            # containing gate[128] | up[128] as exact FP16 bytes. The M1 direct
+            # schedule reserves sixteen physical rows per route, so tiles 0..3
+            # are disjoint and remain inside the existing payload allocation.
+            # Return before any H128/nonlinearity/down-boundary work; this mode
+            # can never produce a model-output closure result.
+            if tid < Int32(64) and valid_rows > Int32(0):
+                capture_row = (
+                    source_m_tile * Int32(self.source_tile_m) + output_tile
+                )
+                capture_words_per_row = intermediate_tiles * Int32(32)
+                capture_base = capture_row * capture_words_per_row
+                gate_pair = ld_shared_u32(epilogue_base + tid * Int32(4))
+                up_pair = ld_shared_u32(up_epilogue_base + tid * Int32(4))
+                intermediate_u32[capture_base + tid] = gate_pair
+                intermediate_u32[capture_base + Int32(64) + tid] = up_pair
+            if tid == Int32(0):
+                # Dead scale-tail trace: 32 observed route/tile identities and
+                # 32 atomic write counts. The remaining 448 words stay at the
+                # wrapper's 0xFFFFFFFF sentinel and prove bounded writes.
+                trace_slot = source_m_tile * Int32(4) + output_tile
+                trace_base = rows_capacity * capture_words_per_row
+                trace_value = (
+                    (expert_idx & Int32(0x1FF))
+                    | ((source_m_tile & Int32(0x7)) << Int32(9))
+                    | ((output_tile & Int32(0x3)) << Int32(12))
+                )
+                intermediate_u32[trace_base + trace_slot] = trace_value
+                atomic_add_global_i32(
+                    get_ptr_as_int64(
+                        intermediate_u32,
+                        trace_base + Int32(32) + trace_slot,
+                    ),
+                    Int32(1),
+                )
+            cute.arch.sync_threads()
+            return
+
         if cutlass.const_expr(self.full_coupled):
             # Full joint FC1 owner. Physical atom order is
             # gate32,up32,gate32,up32. Each warp owns one routed row; each
@@ -1175,3 +1216,12 @@ class P8H128FC1Kernel(P8NarrowFC1Kernel):
             cutlass.Float32(1.0) + cute.math.exp(-gate, fastmath=False)
         )
         return gate * sigmoid * up
+
+
+class P8H128FC1RawCaptureKernel(P8H128FC1Kernel):
+    """Diagnostic-only M1 owner that stops after raw FP16 gate/up capture."""
+
+    diagnostic_raw_fc1 = True
+
+    def __init__(self):
+        super().__init__(full_coupled=True)
