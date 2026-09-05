@@ -48,6 +48,6 @@ def transform(name: str, raw: bytes) -> tuple[str, dict]:
         source += '\nfrom p8_index_trace.observer import wrap_backend\nwrap_backend(B12xMLASparseImpl)\n'
     else:
         source += '\nfrom p8_index_trace.observer import wrap_capture\nwrap_capture(V2ForcedDecodeCapture)\n'
-    compile(source, f'<index-trace:{name}>', 'exec')
+    compile(source, f'<index-trace:{name}>', 'exec', dont_inherit=True)
     return source, {'module': name, 'original_sha256': original,
                     'emitted_sha256': hashlib.sha256(source.encode()).hexdigest()}

@@ -23,7 +23,9 @@ class _Loader(importlib.abc.Loader):
         source, receipt = transform(self.name, Path(self.origin).read_bytes())
         receipt['origin'] = self.origin
         TRANSFORMATIONS[self.name] = receipt
-        exec(compile(source, self.origin, 'exec'), module.__dict__)
+        # A loader's own future flags must not change the imported module's
+        # annotations or semantics (notably torch custom-op schema inference).
+        exec(compile(source, self.origin, 'exec', dont_inherit=True), module.__dict__)
 
 
 class _Finder(importlib.abc.MetaPathFinder):

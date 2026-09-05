@@ -4,6 +4,8 @@ from __future__ import annotations
 import ast
 import importlib.util
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -49,3 +51,30 @@ def test_buffers_cannot_be_allocated_inside_capture():
     source = (ROOT / 'runtime_patch/p8_index_trace/observer.py').read_text()
     start = source.index('if entry is None:')
     assert source.index('observer buffers must be allocated', start) < source.index('torch.zeros(', start)
+
+
+def test_import_loader_does_not_inherit_future_annotations(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'runtime_patch'))
+    from p8_index_trace import _Loader
+    import p8_index_trace
+    source = 'class LocalType: pass\ndef f(value: LocalType) -> int: return 1\n'
+    file = tmp_path / 'fixture.py'
+    file.write_text(source)
+    monkeypatch.setattr(p8_index_trace, 'transform', lambda name, raw: (raw.decode(), {}))
+    module = types.ModuleType('fixture')
+    _Loader('fixture', str(file)).exec_module(module)
+    assert module.f.__annotations__['value'] is module.LocalType
+    assert module.f.__annotations__['return'] is int
+
+
+def test_import_loader_preserves_explicit_future_annotations(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'runtime_patch'))
+    from p8_index_trace import _Loader
+    import p8_index_trace
+    source = 'from __future__ import annotations\nclass LocalType: pass\ndef f(value: LocalType) -> int: return 1\n'
+    file = tmp_path / 'fixture.py'
+    file.write_text(source)
+    monkeypatch.setattr(p8_index_trace, 'transform', lambda name, raw: (raw.decode(), {}))
+    module = types.ModuleType('fixture')
+    _Loader('fixture', str(file)).exec_module(module)
+    assert module.f.__annotations__['value'] == 'LocalType'

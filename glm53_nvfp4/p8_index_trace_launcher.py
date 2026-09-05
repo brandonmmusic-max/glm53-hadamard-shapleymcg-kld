@@ -29,7 +29,15 @@ from .p8_weight_identity import fingerprint
 pilot, cold = base.pilot, base.cold
 REPO = Path(__file__).resolve().parents[1]
 ROOT = base.ROOT
-PREFIX = 'glm53-p8-index-trace-v1'
+PREFIX = 'glm53-p8-index-trace-v2'
+V1_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-index-trace-v1')
+V1_PLAN = V1_REPO / 'experiments/p8-index-trace-v1-final.json'
+V1_OUTPUT = ROOT / 'index-trace-v1'
+V1_PLAN_SHA = 'a900b61096bd377a9430dea87127d2ebf6da6d4209f8b6cbe1b4f3ee7973b265'
+V1_EXEC_SHA = '43f91db06306435eaacf4e0969349983bc3ee2b5bb23f26673495b5c2a4d1024'
+V1_STAGE_SHA = '77b496198a9bf591ab999f656f8a8bf277f677d641cd997d4feb47e1de69d451'
+IMPORT_SOURCES = {'runtime_patch/p8_index_trace/__init__.py',
+                  'runtime_patch/p8_index_trace/patches.py', 'scripts/preflight_p8_index_trace_import.py'}
 OLD_REPO = Path('/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-capture-v3')
 OLD_PLAN = OLD_REPO / 'experiments/p8-forced-m1-v2-v3.json'
 OLD_PLAN_SHA = '7b675117a4a2c8a5abe87056dae6a3b6bcd1db2d44d8d0b5c45ad0f33b219085'
@@ -44,7 +52,10 @@ UNMODIFIED_SOURCES = {'/opt/infernal-invocation/b12x/b12x/attention/nsa_indexer/
                       '69110dcf9d54d4e14ee4d501990245a2cbad7621d0a3d84f035f93d368add7af'}
 REPEATS = (1, 2)
 RAW_BYTES = 2 * protocol.ROWS * protocol.VOCAB_LIMIT * 4
-FIXED = {'schema': 'glm53-p8.index-trace-plan.v1', 'capture_image': IMAGE,
+FIXED = {'schema': 'glm53-p8.index-trace-plan.v2', 'capture_image': IMAGE,
+         'amends_plan_sha256': V1_PLAN_SHA, 'amends_execution_sha256': V1_EXEC_SHA,
+         'amends_stage_sha256': V1_STAGE_SHA,
+         'amendment': 'Preserve failed v1 import before evaluation; prevent compiler future-annotation inheritance and require exact-image schema/import parity before repeating the unchanged two-run diagnostic.',
          'model_config': str(MODEL_CONFIG), 'model_config_sha256': MODEL_CONFIG_SHA,
          'unmodified_image_sources': UNMODIFIED_SOURCES,
          'repeats': list(REPEATS), 'window_id': WINDOW, 'trace_rows': list(range(255, 264)),
@@ -93,6 +104,7 @@ def verify_model_config():
 
 def historical_inputs():
     """Authenticate metadata and source only: deliberately no teacher loader."""
+    verify_v1_failure()
     verify_model_config()
     if pilot.sha(OLD_PLAN) != OLD_PLAN_SHA or OLD_PLAN.with_suffix('.sha256').read_text().split()[0] != OLD_PLAN_SHA:
         raise ValueError('old v3 plan seal differs')
@@ -138,10 +150,65 @@ def historical_inputs():
 
 def source_files():
     return base.SOURCE_FILES | {'glm53_nvfp4/p8_index_trace_launcher.py',
+        'scripts/preflight_p8_index_trace_import.py',
         'tests/test_p8_index_trace_launcher.py',
         'tests/test_p8_index_trace_observer.py', 'scripts/preflight_p8_index_trace.py',
         'glm53_nvfp4/p8_index_trace_analysis.py', 'tests/test_p8_index_trace_analysis.py',
         *(f'runtime_patch/p8_index_trace/{name}' for name in ('__init__.py', 'observer.py', 'patches.py'))}
+
+
+def verify_v1_failure():
+    """Authenticate the failed attempt without reading model or teacher data."""
+    stage = V1_OUTPUT / 'repeat-01-n128'
+    for path, expected in ((V1_PLAN, V1_PLAN_SHA), (V1_OUTPUT / 'execution.json', V1_EXEC_SHA),
+                           (stage / 'execution.json', V1_STAGE_SHA)):
+        if path != path.resolve() or not path.is_file() or pilot.sha(path) != expected:
+            raise ValueError('v1 amendment receipt identity differs')
+    if V1_PLAN.with_suffix('.sha256').read_text().split()[0] != V1_PLAN_SHA:
+        raise ValueError('v1 amendment plan seal differs')
+    plan = json.loads(V1_PLAN.read_text())
+    if (plan.get('schema') != 'glm53-p8.index-trace-plan.v1' or plan.get('output') != str(V1_OUTPUT)
+            or plan.get('capture_image') != IMAGE or len(plan.get('source_sha256', {})) != 38):
+        raise ValueError('v1 frozen plan or 38-source inventory differs')
+    for name, digest in plan['source_sha256'].items():
+        path = V1_REPO / name
+        if path != path.resolve() or not path.is_relative_to(V1_REPO) or pilot.sha(path) != digest:
+            raise ValueError('v1 frozen source drift')
+    root = json.loads((V1_OUTPUT / 'execution.json').read_text())
+    execution = json.loads((stage / 'execution.json').read_text())
+    if (root.get('exit_code') != 1 or root.get('plan_sha256') != V1_PLAN_SHA
+            or root.get('repeats') != [{'index': 1, 'execution_sha256': V1_STAGE_SHA}]
+            or root.get('restoration') != {'backend': True, 'timer': False, 'errors': []}
+            or root.get('restoration_safety') != {'ok': True, 'errors': [], 'containers': []}
+            or root.get('final_identity_audit') != {'ok': True}
+            or root.get('teacher_logits_opened') is not False or root.get('protected_roles_opened') != []
+            or execution.get('exit_code') != 1 or execution.get('plan_sha256') != V1_PLAN_SHA
+            or execution.get('windows') != [] or execution.get('cleanup') != {'ok': True, 'errors': []}
+            or execution.get('protected_roles_opened') != [] or len(execution.get('files', {})) != 10):
+        raise ValueError('v1 failure or restoration status differs')
+    for name, entry in execution['files'].items():
+        path = stage / name
+        if (path != path.resolve() or not path.is_relative_to(stage) or not path.is_file()
+                or path.stat().st_size != entry['bytes'] or pilot.sha(path) != entry['sha256']):
+            raise ValueError('v1 stage file identity differs')
+    for name in ('requests', 'captures', 'index-traces'):
+        directory = stage / name
+        if directory != directory.resolve() or not directory.is_dir() or any(directory.iterdir()):
+            raise ValueError('v1 attempt must contain zero evaluation and trace artifacts')
+    if (V1_OUTPUT / 'repeat-02-n128').exists() or (V1_OUTPUT / 'comparison.json').exists():
+        raise ValueError('v1 unexpected second repeat or comparison')
+    container = json.loads((stage / 'container-final.private.json').read_text())
+    if (container.get('State', {}).get('Running') is not False
+            or container['State'].get('Status') != 'exited'
+            or container.get('Id') != execution.get('container_id') or container.get('Image') != IMAGE):
+        raise ValueError('v1 final container was not the stopped owned image')
+
+
+def prior_unit_terminal():
+    state = pilot.command(['systemctl', '--user', 'show', 'glm53-p8-index-trace-v1.service',
+                           '-p', 'ActiveState', '-p', 'Result', '-p', 'MainPID']).stdout
+    if set(state.strip().splitlines()) != {'ActiveState=failed', 'Result=exit-code', 'MainPID=0'}:
+        raise ValueError('v1 unit must be terminal failed with MainPID0')
 
 
 def core_transformations(value):
@@ -175,17 +242,36 @@ def preflight_receipt(path):
     return core_transformations(value['source_transformations'])
 
 
-def make_plan(path, output, source_preflight):
+def import_preflight_receipt(path, transformations):
+    if path != path.resolve() or not path.is_file():
+        raise ValueError('canonical import preflight receipt required')
+    value = json.loads(path.read_text())
+    required = {'schema': 'glm53-p8.index-import-preflight.v2', 'status': 'passed', 'image_id': IMAGE,
+                'schemas_equal': True, 'annotation_mode_preserved': True, 'breakable_cudagraph': True,
+                'gpu_used': False, 'model_loaded': False, 'teacher_logits_opened': False,
+                'speed_measurement_valid': False}
+    if any(value.get(key) != expected for key, expected in required.items()):
+        raise ValueError('exact-image import/schema parity preflight differs')
+    if value.get('source_sha256') != {name: pilot.sha(REPO / name) for name in IMPORT_SOURCES}:
+        raise ValueError('import preflight source identity differs')
+    if core_transformations(value.get('source_transformations')) != transformations:
+        raise ValueError('import preflight emitted source identity differs')
+
+
+def make_plan(path, output, source_preflight, import_preflight):
     if (path != path.resolve() or output != output.resolve() or output.parent != ROOT
             or path.exists() or path.with_suffix('.sha256').exists() or output.exists()):
         raise ValueError('fresh canonical plan, seal and campaign output required')
     window, stats, old = historical_inputs()
+    prior_unit_terminal()
     transformations = preflight_receipt(source_preflight)
+    import_preflight_receipt(import_preflight, transformations)
     plan = {**copy.deepcopy(FIXED), 'created_at': pilot.now(), 'output': str(output), 'windows': [window],
             'input_stats': stats, 'old_plan_sha256': OLD_PLAN_SHA, 'old_execution_sha256': OLD_EXEC_SHA,
             'image_receipt': old['image_receipt'], 'image_receipt_sha256': old['image_receipt_sha256'],
             'source_preflight': str(source_preflight), 'source_preflight_sha256': pilot.sha(source_preflight),
             'source_transformations': transformations,
+            'import_preflight': str(import_preflight), 'import_preflight_sha256': pilot.sha(import_preflight),
             'source_preflight_script_sha256': pilot.sha(REPO / 'scripts/preflight_p8_index_trace.py'),
             'capture_artifact_owner': {'uid': os.getuid(), 'gid': os.getgid()},
             'source_sha256': {name: pilot.sha(REPO / name) for name in sorted(source_files())}}
@@ -208,6 +294,10 @@ def verify_identities(plan):
             or pilot.sha(REPO / 'scripts/preflight_p8_index_trace.py') != plan['source_preflight_script_sha256']
             or preflight_receipt(preflight) != plan['source_transformations']):
         raise ValueError('source preflight or emitted-source identity drift')
+    import_preflight = Path(plan['import_preflight'])
+    if pilot.sha(import_preflight) != plan['import_preflight_sha256']:
+        raise ValueError('import preflight receipt drift')
+    import_preflight_receipt(import_preflight, plan['source_transformations'])
     window, stats, old = historical_inputs()
     if (plan['windows'] != [window] or plan['input_stats'] != stats
             or plan['image_receipt'] != old['image_receipt'] or plan['image_receipt_sha256'] != old['image_receipt_sha256']
@@ -381,7 +471,7 @@ def compare_repeats(plan):
     del arrays
     from . import p8_index_trace_analysis
     analysis = p8_index_trace_analysis.compare(root, transformations=plan['source_transformations'])
-    return {'schema': 'glm53-p8.index-trace-comparison.v1', 'same_n128_logits': exact,
+    return {'schema': 'glm53-p8.index-trace-comparison.v2', 'same_n128_logits': exact,
         'index_trace_analysis': analysis, 'teacher_logits_opened': False, 'kld_measured': False,
         'qualification_pass': False, 'speed_measurement_valid': False, 'allocation_restart': False,
         'interpretation': 'Full2047 same-N128 logits show whether divergence recurred under instrumentation; matching logits in two runs remain inconclusive, not falsification or proof of observer causality.'}
@@ -389,6 +479,7 @@ def compare_repeats(plan):
 
 def run(path):
     plan = authenticate(path)
+    prior_unit_terminal()
     output, digest = Path(plan['output']), pilot.sha(path)
     if output.exists() or pilot.command(['git', '-C', str(REPO), 'status', '--porcelain']).stdout.strip():
         raise ValueError('fresh output and clean sealed checkout required')
@@ -414,7 +505,8 @@ def run(path):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         output.mkdir(mode=0o700)
         prior = {'backend': pilot.active('klc-backend.service', True), 'timer': pilot.active('klc-model-stack.timer')}
-        record = {'schema': 'glm53-p8.index-trace-execution.v1', 'plan_sha256': digest, 'started_at': pilot.now(),
+        record = {'schema': 'glm53-p8.index-trace-execution.v2', 'plan_sha256': digest, 'started_at': pilot.now(),
+                  'amends_plan_sha256': V1_PLAN_SHA, 'amends_execution_sha256': V1_EXEC_SHA,
                   'prior': prior, 'exit_code': 1, 'repeats': [], 'teacher_logits_opened': False,
                   'protected_roles_opened': [], 'allocation_restart': False, 'speed_measurement_valid': False,
                   'adapter': 'scoped base.capture_stage adapter; both repeats canary N128, no full panel or quality stopping gate'}
@@ -477,7 +569,8 @@ if __name__ == '__main__':
     prepare.add_argument('--plan', type=Path, required=True)
     prepare.add_argument('--output', type=Path, required=True)
     prepare.add_argument('--source-preflight', type=Path, required=True)
+    prepare.add_argument('--import-preflight', type=Path, required=True)
     execute = commands.add_parser('run')
     execute.add_argument('--plan', type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(make_plan(args.plan, args.output, args.source_preflight) if args.command == 'plan' else run(args.plan)))
+    print(json.dumps(make_plan(args.plan, args.output, args.source_preflight, args.import_preflight) if args.command == 'plan' else run(args.plan)))
