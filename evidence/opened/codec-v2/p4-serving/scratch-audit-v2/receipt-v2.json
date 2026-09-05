@@ -1,0 +1,108 @@
+{
+  "schema": "glm53-p4-serving-scratch-audit-receipt.v2",
+  "base_commit": "af7691109edb8c7a48084f92fdc7637324ed8cb4",
+  "source_sha256": {
+    "experiments/p4-serving-scratch-audit-v2.json": "285066b8b98307e3f481696c84e34b83821abaf51bd6dce90d5ac908deae6d4e",
+    "runtime_patch/p4_native_kernel.py": "31b5d34ce399728dc6e74b0f7e2205e8542b862ea3feed2a39d58b766b1748ca",
+    "runtime_patch/p4_glm_serving.py": "a2367f3600fb16b6d75fb64074d24ad26e5d67f649151c3380bd8b9846ceb506",
+    "runtime_patch/sitecustomize.py": "0f9173037c40a442555dd3d238475fa74d955c79cd0ebf2b80967096b942c096",
+    "runtime_patch/p4/p4_moe.cu": "3aabeefd2779507c6a432ed9f24c9224fc777f454d2e08a45007eb6b7d3c197a",
+    "runtime_patch/p4/p4_decode.cuh": "39e2f92dd35035b63dc2a37ce5d4c11af54e9e0fe928eb5ef35bb3ede90b6fda",
+    "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p4_native.py": "a4849cafe05a2a44715508a2ae0e77849870aa4db8ac6b00e67d5c1115059aa5",
+    "tests/test_p4_glm_serving.py": "f0e08fdbe66f290b633d9e5c5515ea4f027fc06f77ac49576270ce1b6acdf24d",
+    "tests/test_p4_native_kernel.py": "6fa8c14cadacf822ca744af19482d7f2db28d0411a2a08a1c79ad097b5f8e0da",
+    "tests/test_p4_codec.py": "cd93d553a06cf3f84bfc5112ab8b54715ea72c440eb8f75bb28b810b68e2cfc3",
+    "docs/P4_GLM_SERVING.md": "d28b8f12774f6cc3035c6afd1d5e0ca605b0d480d7dbd9d36daa52905d43ffc2",
+    "docs/P4_NATIVE.md": "ab92f1533395702efdecbd933f2797bafa5e28caaf284077b2a8eab1d17657bc",
+    "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/DECISIONS.md": "71f040ef3627dfabec20fb72edec9f9330c42baa9cdfb5919523acb11cce9872",
+    "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/attempt-1-summary.log": "89cdbcf0fcf0954fec403c3c73757ad23745028b945feeade5ae507be570942e",
+    "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/attempt-2.log": "872991596cbad0ed74df2e0e0ff2126837fa390da21ef4b6db390b200f9be852",
+    "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/attempt-3.log": "b5e8472750e9cc6308a812f77ece143e3b16b6ba99c01c3b2e0966177a73bd5a",
+    "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/bridge-import.log": "6683b453bb945fd2f43fd2a53257012dae9f44aeba10e39c4e2f310afe06b9cf",
+    "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/scripts/run_kld_v3.sh": "b879f17a2979861faeb0bc38b6af1c6536de5e11c14f533549c679b482d7fec1",
+    "/usr/local/cuda-13.2/include/cuda_runtime_api.h": "42da3b0dc8fe60bf8730a9f8689668df9f44e5f955ce31ed9b05bb1ef7a3a342"
+  },
+  "evidence_level": "host-static-offline-only",
+  "packaging_note": "The initial staged diff check found extra blank EOF lines in generated logs/receipt. Only trailing blank lines were removed; test output/result content was unchanged and artifact hashes were refreshed.",
+  "decision_file": "experiments/p4-serving-scratch-audit-v2.json",
+  "numbered_decisions": "evidence/opened/codec-v2/p4-serving/scratch-audit-v2/DECISIONS.md",
+  "attempts": [
+    {
+      "attempt": 1,
+      "exit_code": 0,
+      "result": "147 passed in 5.98s",
+      "log": "attempt-1-summary.log",
+      "log_limit": "Summary preserved; full stdout remains in task transcript."
+    },
+    {
+      "attempt": 2,
+      "exit_code": 0,
+      "result": "147 passed in 5.94s",
+      "start_utc": "2026-09-04 23:56:35 UTC",
+      "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0 python3 -m pytest -q -s tests/test_p4_glm_serving.py tests/test_p4_native_kernel.py tests/test_p4_codec.py",
+      "log": "attempt-2.log",
+      "source_difference": "tests/test_p4_native_kernel.py before adding p4_capture_state to existing exported-symbol check; SHA256 30e9678ed3d1186e1b0c1a0c5dc0c76c32e2782c7da09d30e88df81561b0889a"
+    },
+    {
+      "attempt": 3,
+      "exit_code": 0,
+      "result": "147 passed in 6.03s",
+      "start_utc": "2026-09-04 23:57:12 UTC",
+      "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0 python3 -m pytest -q -s tests/test_p4_glm_serving.py tests/test_p4_native_kernel.py tests/test_p4_codec.py",
+      "log": "attempt-3.log",
+      "source_difference": "All source/test hashes in source_sha256 match this final run."
+    }
+  ],
+  "bridge_import": {
+    "exit_code": 0,
+    "command": "CUDA_VISIBLE_DEVICES='' PYTHONPATH=runtime_patch python3 evidence/opened/codec-v2/p4-serving/check_bridge_import.py /home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-astra-p4-bridge/evidence/opened/codec-v2/p4-bridge-v2/fixture/ranks",
+    "log": "bridge-import.log",
+    "rank_files_checked": 4,
+    "geometry": [
+      3,
+      128,
+      64
+    ],
+    "cuda_discovery_forbidden": true
+  },
+  "source_contracts": {
+    "vllm_root": "/home/brandonmusic/KLC_SANDBOXES/glm53-exl3-k4-sm120/vllm",
+    "vllm_commit": "df684ff47dcbf088b41311494fd20347a702e56a",
+    "check": "AST-extracted real RoutedExperts methods and real carrier signatures, factory/loader/runner ownership, actual ParallelConfig.use_ubatching execution; not a full server import.",
+    "readiness_check": "Exact parent run_kld_v3.sh grep expression executed by bash on actual emitted logs for 3;3,4;3,4,44, including negative ldlq mutation.",
+    "capture_api": "CUDA 13.2 cudaStreamGetCaptureInfo returns active state and process-unique capture ID; ID 0 remains distinct from eager None; invalidated/failed queries fail closed."
+  },
+  "findings_fixed": [
+    "Global cross-model scratch alias: explicit namespace/TP-rank owner, independent standalone default owners.",
+    "Different captures on same stream alias: include capture sequence in workspace key and separate eager key.",
+    "External-launch raw-pointer lifetime: process-lifetime capture pins retain runtime, sidecars, scratch and input tensors.",
+    "Python/ctypes host enqueue interleaving: nonblocking per-owner lock rejects concurrent and reentrant calls before any stage.",
+    "DBO false does not imply no microbatching: check actual vLLM enable_dbo and use_ubatching before carrier construction.",
+    "Readiness canonicalization mismatch: reject noncanonical layer syntax instead of rewriting silently.",
+    "Traceback-reporting failure could bypass os._exit: BaseException catch plus finally guarantees status 78."
+  ],
+  "offline_isa": {
+    "mma": "OMMA.SF.16864.F32.E2M1.E2M1.UE4M3.4X",
+    "assembled_sites": 15,
+    "linked_library_sites": 15,
+    "projection_registers": 62,
+    "projection_shared_bytes": 1728,
+    "spill_load_bytes": 0,
+    "spill_store_bytes": 0,
+    "ptx_sha256": "2ca01ffcabc94f2861a278f838999ca147084518805b7ea4138071e480d1beb5",
+    "exported_capture_query_checked": true,
+    "weight_decoder_changed": false
+  },
+  "restrictions": [
+    "No CUDA device launch or graph capture/replay occurred in this audit.",
+    "Captured resources are intentionally retained until worker exit. Repeated recapture grows retained memory.",
+    "Second construction of the same model namespace/layer/rank is rejected; reload requires a new worker.",
+    "DBO and microbatching unsupported. Separate namespaces and streams are structurally isolated, not device-concurrency qualified.",
+    "One host capture-state query and enqueue guard added; cost and production peak memory are unmeasured.",
+    "Device closure, real serving output, graph replay, determinism, KLD and TP4 throughput remain unqualified."
+  ],
+  "isa_cost": "P4 uses native mxf4nvf4 K64. P8 uses mxf8f6f4 K32 and twice the MMA issue count for the same K span.",
+  "gpu_executed": false,
+  "protected_roles_opened": [],
+  "ldlq": false
+}

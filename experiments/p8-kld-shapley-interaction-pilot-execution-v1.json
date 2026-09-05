@@ -1,0 +1,92 @@
+{
+  "schema": "glm53-p8.direct-kld-shapley-pilot-execution.v1",
+  "status": "preregistered-before-any-pilot-coalition-run",
+  "purpose": "Validate end-to-end KLD coalition interactions and the direct-KLD Shapley estimator before building the 42-layer P8/MXFP8 ladder.",
+  "role": "already-opened conditional-fit n=32 adaptive development role",
+  "windows": 32,
+  "domain_counts": {
+    "axis1_general": 8,
+    "axis2_legal": 8,
+    "axis3_code_agentic": 8,
+    "axis4_reasoning_termination": 8
+  },
+  "game": {
+    "layers": [3, 19, 20, 22],
+    "base": "matched decoded full-Hessian GPTQ NVFP4 BF16 reconstruction at all four layers",
+    "candidate": "replace coalition layers with their frozen decoded K4 procedural-MCG P8 BF16 reconstruction",
+    "execution": "all arms use zero-copy BF16 overlays and the same InstantTensor/framework path",
+    "interpretation": "interaction/estimator pilot only; not the final native P8-to-MXFP8 6-bpw game and not a kernel result"
+  },
+  "run_prefix": "p8-kld-shapley-pilot-v1",
+  "runtime": {
+    "image": "klc/glm53-flash-nvfp4:r19-sm120-tp4-ep4-dcp4-v79-dflash2-packed-aux-candidate",
+    "image_id": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "load_format": "instanttensor",
+    "tensor_parallel": 4,
+    "decode_context_parallel": 4,
+    "runtime_patch_manifest": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/p8-joint-policy-runtime-manifest-v1.json",
+    "runtime_patch_manifest_sha256": "8022e45be4df40c632851de6c7f17c5baec26b6ee734757c331c083388a9d044",
+    "runtime_patch_tree_sha256": "aff4a704870805f0243a7721e333d7f5050542bfd86e4af00a526a3894d9a2db",
+    "moe_backend": "humming"
+  },
+  "run_order": [
+    "kld-c-e3b0c44298fc1c14",
+    "kld-c-785f3ec7eb32f30b",
+    "kld-c-0e760153c920e73a",
+    "kld-c-65909a69d60745f8",
+    "kld-c-0a643dc5dc31b4b0",
+    "kld-c-9400f1b21cb527d7",
+    "kld-c-15797e5c9a679cec",
+    "kld-c-b1a72923860f1d10"
+  ],
+  "primary_estimand": "For each layer and window, average of its two contextual reductions KLD(before coalition) minus KLD(after adding layer) along the antithetic paths.",
+  "decision_rule": {
+    "estimator_integrity": "Every coalition must contain the identical 32 windows and domains and each path's maximum absolute window-level Shapley efficiency residual must be <= 1e-12.",
+    "interaction_interpretation": "Report both contextual marginals, their averaged per-window marginal, sign, ranking, BCa interval, domains, and window wins. Intervals are controls and do not veto development.",
+    "scale_up": "Proceed to the native 42-layer game only after estimator integrity passes; this pilot does not select or qualify a final codec."
+  },
+  "bootstrap": {
+    "method": "paired BCa",
+    "unit": "window",
+    "replicates": 50000,
+    "seed": 20260966
+  },
+  "stopping_rule": "Run every one of the eight unique coalitions once; resume incomplete windows only; no exclusions, substitutions, or rerolls.",
+  "algorithm_exclusion": "LDLQ and BlockLDLQ are excluded.",
+  "protected_boundary": "Selection, confirmation, final, and all reserved 28 confirmation logits remain unopened.",
+  "inputs": {
+    "preflight_addendum": {
+      "path": "experiments/p8-kld-shapley-interaction-pilot-preflight-addendum-v1.json",
+      "sha256": "6d4b8e8c661cdeddab13fe26bb851860e9a658adb54436a8274ba63839c771d0"
+    },
+    "preflight_addendum_v2": {
+      "path": "experiments/p8-kld-shapley-interaction-pilot-preflight-addendum-v2.json",
+      "sha256": "94cf54df86d275bab5ccb435359ed67905bddbe182e507b4eb0d8a3e377e3538"
+    },
+    "preflight_addendum_v3": {
+      "path": "experiments/p8-kld-shapley-interaction-pilot-preflight-addendum-v3.json",
+      "sha256": "5e2a42407543158f0456d642ef8044df8fd4662a56fd63d42488bf8419524bb7"
+    },
+    "preflight_addendum_v4": {
+      "path": "experiments/p8-kld-shapley-interaction-pilot-preflight-addendum-v4.json",
+      "sha256": "1b493c8b2128d315907d0bd3dd2cf152f1f9b07a8f7d923c0d2676ebd078dc27"
+    },
+    "design": {
+      "path": "experiments/p8-kld-shapley-interaction-pilot-v1.json",
+      "sha256": "630788423430cc565109e810cfd93d38b772b4e2570f67586f28be05250a17d6"
+    },
+    "full_native6_design": {
+      "path": "experiments/p8-kld-shapley-native6-v1.json",
+      "sha256": "282fc1058ddf246470f42ddc768618e6ae0c38bd59f0cae82a5f2b29860c923e"
+    },
+    "overlay_manifest": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/codec-v2/kld-shapley-pilot-v1/overlay-manifest.json",
+      "sha256": "34b9fe2b3379e392f115480306d355e83d7b74be32fd9f6299279a8fc8d8f3bf"
+    },
+    "roles": {
+      "path": "/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json",
+      "sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
+    }
+  },
+  "ldlq": false
+}

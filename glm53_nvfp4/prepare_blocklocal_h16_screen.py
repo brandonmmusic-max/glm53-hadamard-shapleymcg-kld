@@ -34,6 +34,15 @@ def main() -> None:
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
+    prior = json.loads(args.prior_analysis.read_text())
+    if (
+        prior.get("decision") not in {
+            "fail-do-not-open-v4-selection",
+            "fail-do-not-open-new-teacher-role",
+        }
+        or prior.get("protected_roles_opened") != []
+    ):
+        raise RuntimeError("prior analysis is not an eligible preserved fit-only failure")
     payload = {
         "schema": "glm53-blocklocal-signed-h16-screen-plan.v1",
         "created_at": datetime.now(timezone.utc).isoformat(),

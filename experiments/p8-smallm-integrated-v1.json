@@ -1,0 +1,30 @@
+{
+  "schema": "glm53-p8-smallm-integrated-plan.v1",
+  "frozen_at_utc": "2026-09-05T06:20:00Z",
+  "purpose": "Measure whether the graph-qualified P8 small-M scheduler is selected in TP4 GLM serving and recovers full-model C1 decode throughput.",
+  "candidate": {
+    "image_sha256": "c9eddeca0d9dedf210eaaff918f1bf44d5338202902143f7d646d2325ad475ed",
+    "runtime_commit": "02418d30e245bfae6586cb34b46bafd7c9e6a98f",
+    "topology": {"tp": 4, "ep": false, "dcp": 1},
+    "codec": "K4 procedural MCG to E4M3, physical UE8M0/32, identity boundary, 4.25 routed bpw",
+    "small_m_scheduler": true
+  },
+  "benchmark": {
+    "context": "32k",
+    "concurrency": 1,
+    "max_tokens": 4096,
+    "decode_duration_seconds": 20,
+    "decode_warmup_seconds": 3,
+    "standalone_prefill": true,
+    "cuda_graph": "FULL"
+  },
+  "fixed_references": {
+    "old_p8_c1_tokens_per_second": 20.6937,
+    "exl3_c1_tokens_per_second": 91.2645
+  },
+  "decision_rule": "Integration closes only if all 168 layer/rank first-forward receipts select small_m_scheduler=true, FULL CUDA graphs are proven by logs, the benchmark completes, and no thermal abort occurs. The original product gate remains failed unless the measured C1 decode rate exceeds 91.2645 tokens/s; a single run can diagnose recovery but cannot replace the required five-cold-run product comparison.",
+  "thermal": {"start_max_c": 75, "abort_at_c": 90, "user_allowed_c": 89},
+  "protected_roles_opened": [],
+  "ldlq": false,
+  "allocation_game": "stopped"
+}

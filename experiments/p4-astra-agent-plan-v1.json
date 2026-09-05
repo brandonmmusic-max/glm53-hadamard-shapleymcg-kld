@@ -1,0 +1,69 @@
+{
+  "schema": "glm53-p4-astra-agent-plan.v1",
+  "created_at": "2026-09-04T19:09:48-04:00",
+  "status": "predeclared-before-agent-result",
+  "repository": {
+    "url": "https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld",
+    "visibility": "private",
+    "branch": "glm53-flash-nvfp4-v2",
+    "base_commit": "b2b56f34253c94240cf05ef13b55c90808c075ed"
+  },
+  "agent_runtime": {
+    "cli": "codex-cli 0.153.3",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "max",
+    "models_cache_sha256": "857c1bfd89adfdba357b8238b41bb34a624fe91c2bc8027e1e163c542524e8d3",
+    "official_model_page": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+    "execution": "three isolated git worktrees under persistent systemd user services"
+  },
+  "question": "Can the existing K4 procedural-MCG codec be decoded in the MoE prologue into exact native NVFP4 E2M1 plus E4M3/16 operands and execute through mxf4nvf4 without a dense BF16/FP16 weight path?",
+  "candidate": "K4 procedural-MCG sliding-window stream to packed E2M1 plus physical E4M3/16 residual scales to mxf4nvf4 m16n8k64",
+  "controls": [
+    "independent CPU bit-exact P4 reference",
+    "stock NVFP4 kernel at matched topology and benchmark protocol",
+    "current P8 mxf8f6f4 endpoint as a quality/runtime boundary, not a speed control"
+  ],
+  "hard_constraints": [
+    "no LDLQ or BlockLDLQ",
+    "lookup tables at or below 4096 bytes",
+    "no dense BF16/FP16 weight materialization or weight matmul",
+    "protected selection, confirmation, final, and 28 reserved confirmation logits remain unopened",
+    "agent phase performs no GPU run or service modification"
+  ],
+  "roles": [
+    {
+      "name": "kernel",
+      "branch": "astra-p4-kernel",
+      "prompt": "agent_prompts/p4_kernel_gpt6_astra.md",
+      "deliverable": "separate fused P4 endpoint, structural tests, and bounded receipt"
+    },
+    {
+      "name": "codec",
+      "branch": "astra-p4-codec",
+      "prompt": "agent_prompts/p4_codec_gpt6_astra.md",
+      "deliverable": "independent P4 pack/decode/reference verifier, deterministic fixture, and rate proof"
+    },
+    {
+      "name": "critic",
+      "branch": "astra-p4-critic",
+      "prompt": "agent_prompts/p4_critic_gpt6_astra.md",
+      "deliverable": "adversarial ISA/runtime evidence matrix and falsifiable device gates"
+    }
+  ],
+  "integration_order": [
+    "review critic and codec findings",
+    "review kernel diff against the frozen contract",
+    "cherry-pick only compatible focused commits with attribution",
+    "run full CPU/static suite",
+    "predeclare and run GPU bit/arithmetic closure",
+    "only after closure run integrated KLD, five-run determinism, and TP4 performance"
+  ],
+  "acceptance_gates": {
+    "structural": "bit-exact reference, exact scale geometry and rate, explicit mxf4nvf4 path, no BF16/FP16 weight path",
+    "device": "FC1 and FC2 finite numerical closure versus independent reference with preserved raw hashes",
+    "integration": "kernel KLD equals pseudoquant within predeclared engineering interval on already-open conditional-fit data",
+    "performance": "five cold TP4 runs with CUDA-graph parity; report prefill and decode separately versus stock NVFP4 and exact EXL3",
+    "determinism": "five-run bitwise-identical output hashes"
+  },
+  "claim_boundary": "No native-P4, NVFP4-speed, quality, or serving claim is permitted from the agent phase alone."
+}

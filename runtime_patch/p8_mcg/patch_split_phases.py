@@ -75,7 +75,7 @@ def patch(path: Path) -> None:
             raise ValueError("identity and coupled trellis boundaries are exclusive")
         self.trellis_identity_boundary = bool(trellis_identity_boundary)
         if self.trellis_codebook == "mcg" and self.trellis_bits == 2:
-            raise ValueError("P8 MCG split kernels support K3/K4, not K2")
+            raise ValueError("P8 MCG split kernels support K3/K4/K5, not K2")
         if self.trellis_codebook == "mcg" and self.trellis_direct_lut:
             raise ValueError("procedural MCG does not use a direct LUT")
         if self.w4a8_trellis:

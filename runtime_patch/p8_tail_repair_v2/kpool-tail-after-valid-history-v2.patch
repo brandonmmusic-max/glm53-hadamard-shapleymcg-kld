@@ -1,0 +1,36 @@
+diff --git a/vllm/models/glm5next/nvidia/ops/kpool_compress.py b/vllm/models/glm5next/nvidia/ops/kpool_compress.py
+index 37e12b8..4dfdd43 100644
+--- a/vllm/models/glm5next/nvidia/ops/kpool_compress.py
++++ b/vllm/models/glm5next/nvidia/ops/kpool_compress.py
+@@ -1045,15 +1045,27 @@ def _expand_pools_and_append_tail_kernel(
+     tail_count = seq_len - tail_start  # in [0, POOL_SIZE)
+ 
+-    # History region [0, topk): expand selected pool g = cols // POOL_SIZE.
+-    is_history = cols < topk
++    # P8 tail-after-valid-history-v2: when all complete pools fit, the
++    # logical-short ordering contains ``pool_len`` valid pool IDs followed by
++    # -1 padding. Put the incomplete causal tail immediately after those
++    # valid expanded tokens, inside the consumer's first ``topk`` columns.
++    # If more complete pools exist than fit, retain v1's explicit rule:
++    # displace exactly tail_count lowest-priority history-token columns.
++    n_groups = topk // POOL_SIZE
++    all_complete_pools_fit = pool_len <= n_groups
++    valid_history_count = pool_len * POOL_SIZE
++    displaced_history_count = topk - tail_count
++    history_count = tl.where(
++        all_complete_pools_fit, valid_history_count, displaced_history_count
++    )
++    is_history = cols < history_count
+     g = cols // POOL_SIZE
+     o = cols % POOL_SIZE
+     pid = tl.load(pool_ids_ptr + row * pid_s0 + g, mask=mask & is_history, other=-1)
+     hist_val = (pid * POOL_SIZE + o).to(tl.int32)
+     hist_out = tl.where(pid >= 0, hist_val, -1)
+ 
+-    # Tail region [topk, out_cols): the request's trailing incomplete pool.
+-    tail_off = cols - topk
++    # Tail region begins after this row's retained valid history.
++    tail_off = cols - history_count
+     is_tail = (tail_off >= 0) & (tail_off < tail_count)
+     tail_val = (tail_start + tail_off).to(tl.int32)
+     tail_out = tl.where(is_tail, tail_val, -1)

@@ -1,0 +1,43 @@
+{
+  "schema": "glm53.p8-exl3-fp8-ds-mla-forced-decode-prereg.v1",
+  "status": "predeclared-before-plan-seal-or-gpu-run",
+  "created_at": "2026-09-05T13:10:00-04:00",
+  "question": "Does changing only the MLA KV-cache dtype from nvfp4_ds_mla to fp8_ds_mla remove the approximately 0.11 forced-decode endpoint in native TrellisMX-P8 and production EXL3?",
+  "arms": ["p8", "exl3"],
+  "single_variable_within_product": {
+    "from": "nvfp4_ds_mla",
+    "to": "fp8_ds_mla",
+    "unchanged": [
+      "product-specific production model, image parent, MoE path, topology, and caches",
+      "forced-token sequences and pre-mask FP32 V2 capture hook",
+      "four one-per-domain conditional-fit windows and teacher logits",
+      "CUDA graphs, max_num_seqs=1, MTP off, and KLD implementation"
+    ]
+  },
+  "runtime": {
+    "common": {"tp": 4, "attention_backend": "B12X_MLA_SPARSE", "cuda_graphs": true, "mtp": false},
+    "p8": {"ep": false, "dcp": 1, "moe": "native P8 N64 fused-scratch production path", "physical_bpw": 4.25},
+    "exl3": {"ep": true, "dcp": 4, "moe": "b12x production path", "stored_bpw": 4.0}
+  },
+  "windows": [
+    {"id": "conditional-fit-0032", "domain": "axis1_general"},
+    {"id": "conditional-fit-0021", "domain": "axis2_legal"},
+    {"id": "conditional-fit-0090", "domain": "axis3_code_agentic"},
+    {"id": "conditional-fit-0003", "domain": "axis4_reasoning_termination"}
+  ],
+  "nvfp4_ds_mla_baselines": {
+    "p8": {"mean_kld": 0.11747408351921039, "window_kld": {"conditional-fit-0032": 0.097427959573676, "conditional-fit-0021": 0.20159250798813763, "conditional-fit-0090": 0.09817271669377985, "conditional-fit-0003": 0.07270314982124808}},
+    "exl3": {"mean_kld": 0.112849789327567, "window_kld": {"conditional-fit-0032": 0.12777844900697938, "conditional-fit-0021": 0.17043228583393247, "conditional-fit-0090": 0.07371076785152708, "conditional-fit-0003": 0.07947765461782906}}
+  },
+  "metric": "KL(teacher || student), nats, FP64 CPU, all 154880 vocabulary entries; report all-row and true-decode-only means",
+  "decision_before_result": {
+    "nvfp4_mla_implicated": "Both products improve at least 20 percent and both fp8_ds_mla means are below 0.09.",
+    "kv_format_exonerated": "Neither product improves at least 20 percent and both fp8_ds_mla means remain at least 0.09.",
+    "otherwise": "Report an arm-specific or inconclusive interaction; do not generalize across products."
+  },
+  "storage": {"destination_filesystem": "/media/brandonmusic/nvme1n1p3", "raw_bytes_per_arm": 5072629760, "raw_bytes_total": 10145259520, "required_additional_headroom_bytes": 21474836480, "klcstore_raw_writes": 0},
+  "roles": {"opened": ["conditional-fit"], "protected_opened": []},
+  "retry_policy": "No silent retry, substitution, topology harmonization, or window replacement; preserve failure and amend explicitly.",
+  "claim_boundary": "A targeted serving-path and KV-format diagnostic, not a full32 product-quality or speed qualification.",
+  "ldlq": false
+}

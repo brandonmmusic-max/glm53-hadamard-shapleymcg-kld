@@ -1,0 +1,91 @@
+{
+  "authorization": "User authorized CPU implementation, tests and current-branch commit; no push, GPU, protected role, model download or service action.",
+  "base_commit": "74471a7cba6a5058088608d71949f36a541045b1",
+  "branch": "astra-p4-codec",
+  "candidate": "glm53-p4-mcg-matrix.v1, procedural-mcg-alpha1-rne-e2m1, identity boundary",
+  "controls": [
+    "Scalar struct binary16 arithmetic and inverse logical-coordinate decoder",
+    "NVIDIA CUDA header host conversion compiled by g++",
+    "Existing EXL3 packer and ModelOpt scale swizzle on CPU",
+    "Exhaustive float64 fixed-code scale SSE"
+  ],
+  "data": {
+    "model_revision": "N/A",
+    "protected_data_access": "forbidden; none needed",
+    "roles": {
+      "conditional-fit": [],
+      "confirmation": [],
+      "final": [],
+      "fit": [],
+      "selection": []
+    },
+    "synthetic_recipe": "make_fixture in glm53_nvfp4/p4_fixture.py, fixed 32x128 matrix",
+    "teacher_revision": "N/A"
+  },
+  "environment_sha256": "5fb3f7d733c47e95ef30ed5a018a5661f35ef1509e53beaeebef4c0f4c00b108",
+  "evidence_level": "structural",
+  "failure_policy": "Preserve attempt output and explain fixes; reruns are implementation debugging, never final qualification.",
+  "falsification": "Any unexpected byte, state, scale address, accounting equality, invalid-input acceptance, or host-conversion mismatch fails the corresponding structural gate.",
+  "hypothesis": "The explicit alpha-1 RNE law and byte layout agree with a separately written scalar oracle and the installed NVIDIA host conversions.",
+  "initial_source_sha256": {
+    "glm53_nvfp4/build_p8_tp4_sidecars.py": "e99f7563bf143dfde2508f89a24ce431e3040fb465763b486feaa33d809bbc6a",
+    "glm53_nvfp4/modelopt.py": "ac96af58da9f53811cb98425e995dc1a4e48d587e5595ede68909743239e0157",
+    "glm53_nvfp4/p4_codec.py": "ca31c52251c2b3f14e553b327ac4aaa1eb262d5ab5c65fd03989b9da5c1ba2b4",
+    "glm53_nvfp4/p4_fixture.py": "b64ca7c4205a042b90083cd97d376d7eca793aba877eb251fa496706f214fd28",
+    "glm53_nvfp4/trellis_nvfp4.py": "091c6dda4cf583b3342131c15f2b5cb751379133e085af2cc8fa46f22772cbf6",
+    "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py": "2428e8a6abaec75348181e6afee37deb2edf7697c820dd762029a453c8b071e4",
+    "runtime_patch/p8_mcg/w4a8_mcg_decode.py": "8b1e90d3189231ff77b4e3a44aa8d51d4383d565d5e43a7e73faa40cec65b17f",
+    "runtime_patch/p8_native_kernel.py": "a1f04de129e9e088137b869182fc03ea5e2268f5123ba8a5abbceeb0534b43b4",
+    "scripts/p4_cuda_host_oracle.cpp": "4cdf2ab579ad3e59d1c4622978a47efd2883a1f1736cc5e7803e1406a46190a4",
+    "tests/test_p4_codec.py": "da8c39acd2291360b796c9d2054871312b07a01f1a39ea12c9f40d4f91756924"
+  },
+  "invariants": {
+    "bits_per_tile": 1024,
+    "full_file_accounting": "payload bytes + measured padded header bytes + 8-byte length prefix",
+    "global_scale_bytes_per_matrix": 4,
+    "largest_numeric_lookup_bytes": 1008,
+    "scales_per_tile": 16,
+    "state_lut_bytes": 0,
+    "stream_and_scales_bpw": "9/2"
+  },
+  "not_tested": [
+    "GPU execution and register/MMA mapping",
+    "MoE integration",
+    "GPU determinism",
+    "speed",
+    "model quality"
+  ],
+  "predeclared_checks": [
+    "all 65536 MCG states in batches of 256",
+    "all 16 E2M1 nibbles and every midpoint plus adjacent float64 values",
+    "all 126 positive E4M3 scale codes",
+    "fixed-code scale fitting vs exhaustive SSE including zero basis, ties and clipping",
+    "rectangular logical matrices 16x16, 32x48 and 144x80",
+    "cyclic tile boundaries, word boundaries and independent state recurrence",
+    "128x4 scale padding and addresses",
+    "canonical safetensors roundtrip and independent library reader",
+    "all contract metadata fields and corrupted shape, dtype, endian, offsets, hashes, layout and padding",
+    "deterministic fixture and exact rational payload/container bpw"
+  ],
+  "question": "Can a K4 procedural-MCG cyclic sliding 16-bit stream decode bit-exactly to packed E2M1 and physical E4M3/16 scales at an exact charged stored rate?",
+  "repetitions": "One deterministic CPU run, replay fixture once; no statistical replication claim.",
+  "rivals": [
+    "Self-consistent pack/unpack hides a word or lane permutation",
+    "Canonicalized negative zero or midpoint ties change native operand bytes",
+    "Uncharged scalar or container bytes understate stored rate",
+    "Scale values or addresses are confused with P8 UE8M0/32"
+  ],
+  "run_order": [
+    "write and verify synthetic fixture",
+    "run focused CPU pytest suite",
+    "compile optional NVIDIA host oracle with g++",
+    "verify fixture and exhaustive host conversions",
+    "inspect diff and commit"
+  ],
+  "schema": "glm53-p4-cpu-structural-plan.v1",
+  "sealing_method": "SHA-256 of this exact JSON file; separate plan.sha256. This proves integrity, not secrecy.",
+  "skill_adaptation": "Model-free structural audit uses the sealed-method canonical manifest option. The generic experiment_record.py strict schema requires a model revision even for structural work; no fabricated model identity or qualification is supplied.",
+  "stopping_rule": "Finish when the structural gates pass; no GPU/model/holdout continuation.",
+  "success_threshold": "Zero unexplained mismatches and all targeted tests pass.",
+  "unit": "One synthetic byte fixture; exhaustive finite state census is deterministic coverage, not independent model-quality observations."
+}

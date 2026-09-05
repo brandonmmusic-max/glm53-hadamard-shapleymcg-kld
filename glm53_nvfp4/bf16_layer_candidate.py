@@ -25,7 +25,9 @@ def _layer_for(name: str) -> int | None:
 def build(carrier: Path, output: Path, chunks: list[Path], bf16_layers: set[int]) -> dict:
     if not bf16_layers or not bf16_layers.issubset(set(ROUTED_LAYERS)):
         raise ValueError(f"invalid BF16 layer set: {sorted(bf16_layers)}")
-    output.mkdir(parents=True, exist_ok=True)
+    if output.exists() or output.is_symlink():
+        raise FileExistsError(f"refusing to reuse BF16 overlay destination: {output}")
+    output.mkdir(parents=True)
     original = json.loads((carrier / "model.safetensors.index.json").read_text())
     weight_map = dict(original["weight_map"])
     redirected: dict[str, str] = {}

@@ -1,0 +1,34 @@
+{
+  "schema": "glm53-p8-all42-thermal-amendment.v1",
+  "recorded_at": "2026-09-04T19:17:48-04:00",
+  "status": "operator-directed-build-control-amendment",
+  "reason": "The operator explicitly stated that 89 C is acceptable after the live layer-3 worker repeatedly paused at 89 C. The pause threshold affects build wall time, not the encoded objective or KLD role.",
+  "prior_control": {
+    "pause_c": 89,
+    "resume_c": 78,
+    "script_sha256": "3f9b5ceff2d3eb55a4de32143c98abb53626f82f933e0d4bff327a06e299a422"
+  },
+  "amended_control": {
+    "pause_c": 94,
+    "resume_c": 88,
+    "script_sha256": "721010075548ee48c9d8a6fa9bd96b63310f3d8a434309cfac07e3a848a46660",
+    "overrides": [
+      "GLM53_P8_THERMAL_PAUSE_C",
+      "GLM53_P8_THERMAL_RESUME_C"
+    ]
+  },
+  "local_driver_observation": {
+    "command": "nvidia-smi -q -d TEMPERATURE",
+    "driver": "610.57.04",
+    "cuda": "13.3",
+    "interpretation": "Current T.Limit was reported as remaining margin rather than an absolute temperature. The GPU driver remains responsible for hardware throttling; 94 C is an experiment-runner emergency pause, not a claimed device specification."
+  },
+  "scientific_scope": {
+    "encoder_objective_changed": false,
+    "role_assignment_changed": false,
+    "candidate_selection_changed": false,
+    "protected_logits_opened": false,
+    "performance_benchmark_policy": "unchanged; candidate and controls still require matched thermal conditions"
+  },
+  "application": "The already-running shell retains the prior thresholds until it reaches a safe restart boundary. The amended defaults apply only after the service is restarted; no completed sidecar is overwritten."
+}

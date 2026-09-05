@@ -1,0 +1,3171 @@
+From f7c7fd9da1b6f700b46ec0fd9787779cf86f18b6 Mon Sep 17 00:00:00 2001
+From: Luke Alonso <lalonso@gmail.com>
+Date: Thu, 27 Aug 2026 04:38:31 -0700
+Subject: [PATCH] feat(attention): add GLM-5.3 sparse MLA contract
+
+
+diff --git a/b12x/attention/_shared/mla/api.py b/b12x/attention/_shared/mla/api.py
+index 9dc229a..ba6a96b 100644
+--- a/b12x/attention/_shared/mla/api.py
++++ b/b12x/attention/_shared/mla/api.py
+@@ -18,7 +18,7 @@ except ImportError:  # Keep the pure-PyTorch fallback usable outside vLLM images
+ 
+ from .merge import clear_sparse_mla_merge_kernel_cache
+ from .reference import sparse_mla_reference
+-from .traits import kv_fp8_rope_enabled
++from .traits import ModelType, kv_fp8_rope_enabled
+ 
+ _MLA_STRATEGY_ENV = "B12X_MLA_PREFILL_STRATEGY"
+ _MLA_FORCE_SINGLE_PASS_ENV = "B12X_MLA_FORCE_SINGLE_PASS"
+@@ -26,6 +26,8 @@ _MLA_FORCE_SPLIT_ENV = "B12X_MLA_FORCE_SPLIT"
+ _MLA_SM120_BACKEND = "sm120"
+ # GLM_NSA uncompressed decode contract (q_head_dim = d_nope+d_rope = 512+64).
+ _MLA_UNIFIED_GLM_Q_HEAD_DIM = 576
++_MLA_UNIFIED_GLM_NEXT_Q_HEAD_DIM = 512
++_MLA_UNIFIED_GLM_NEXT_RECORD_BYTES = 528
+ _MLA_SINGLE_PASS_TARGET_Q_ROWS = 2048
+ _MLA_SINGLE_PASS_TARGET_TOPK = 2048
+ _LN2 = math.log(2.0)
+@@ -93,6 +95,9 @@ class MLASparseExtendMetadata:
+ def clear_mla_caches() -> None:
+     """Clear any cached MLA runtime state."""
+     clear_sparse_mla_merge_kernel_cache()
++    from .kv_cache import clear_glm_next_mla_kv_cache_kernel_cache
++
++    clear_glm_next_mla_kv_cache_kernel_cache()
+ 
+ 
+ def _is_cuda_graph_capture_active(device: torch.device) -> bool:
+@@ -243,6 +248,39 @@ def _get_mla_output_view(
+     return output_buffer[:rows, :heads, :v_head_dim]
+ 
+ 
++def _get_mla_lse_view(
++    *,
++    workspace: object,
++    q_all: torch.Tensor,
++) -> torch.Tensor:
++    rows = int(q_all.shape[0])
++    heads = int(q_all.shape[1])
++    final_lse = workspace.final_lse
++    if final_lse is None:
++        raise RuntimeError("workspace is missing MLA final LSE buffer")
++    if final_lse.device != q_all.device:
++        raise ValueError(
++            f"workspace MLA final LSE buffer is on {final_lse.device}, "
++            f"expected {q_all.device}"
++        )
++    if final_lse.dtype != torch.float32:
++        raise TypeError(
++            "workspace MLA final LSE buffer must have dtype torch.float32, "
++            f"got {final_lse.dtype}"
++        )
++    if final_lse.ndim != 2:
++        raise ValueError(
++            f"workspace MLA final LSE buffer must be rank 2, got {final_lse.ndim}"
++        )
++    if int(final_lse.shape[0]) < rows or int(final_lse.shape[1]) < heads:
++        raise ValueError(
++            "workspace MLA final LSE buffer is too small: "
++            f"buffer={tuple(final_lse.shape)} required=({rows}, {heads})"
++        )
++    _validate_tensor_storage_bounds(final_lse, name="workspace MLA final LSE buffer")
++    return final_lse[:rows, :heads]
++
++
+ def _validate_split_control_tensors(
+     *,
+     workspace: object,
+@@ -387,6 +425,7 @@ def sparse_mla_decode_forward(
+     backend: str | None = None,
+     forced_num_splits: int | None = None,
+     scale_format: int | None = None,
++    model_type: int | None = None,
+     fp8_rope: bool | None = None,
+     latent_scale_per_token: bool = False,
+ ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+@@ -419,6 +458,7 @@ def sparse_mla_decode_forward(
+         backend=backend,
+         forced_num_splits=forced_num_splits,
+         scale_format=scale_format,
++        model_type=model_type,
+         fp8_rope=fp8_rope,
+         latent_scale_per_token=latent_scale_per_token,
+     )
+@@ -439,6 +479,7 @@ def sparse_mla_extend_forward(
+     lse_scale: Literal["base2", "natural"] = "base2",
+     identity_page_table: bool = False,
+     scale_format: int | None = None,
++    model_type: int | None = None,
+     fp8_rope: bool | None = None,
+     latent_scale_per_token: bool = False,
+ ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+@@ -472,6 +513,7 @@ def sparse_mla_extend_forward(
+         lse_scale=lse_scale,
+         identity_page_table=identity_page_table,
+         scale_format=scale_format,
++        model_type=model_type,
+         fp8_rope=fp8_rope,
+         latent_scale_per_token=latent_scale_per_token,
+     )
+@@ -495,6 +537,7 @@ def _run_sparse_mla(
+     backend: str | None = None,
+     forced_num_splits: int | None = None,
+     scale_format: int | None = None,
++    model_type: int | None = None,
+     fp8_rope: bool | None = None,
+     latent_scale_per_token: bool = False,
+ ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+@@ -592,7 +635,55 @@ def _run_sparse_mla(
+         if scale_format is not None
+         else getattr(workspace, "scale_format", None)
+     )
+-    if int(scale_format_for_call or -1) == 2 and fp8_rope is None:
++    planned_model_type = getattr(workspace, "model_type", None)
++    if planned_model_type is not None:
++        planned_model_type = int(planned_model_type)
++    if (
++        model_type is not None
++        and planned_model_type is not None
++        and int(model_type) != planned_model_type
++    ):
++        raise ValueError(
++            "sparse MLA run model_type does not match its plan: "
++            f"run={int(model_type)}, plan={planned_model_type}"
++        )
++    model_type_for_call = (
++        int(model_type)
++        if model_type is not None
++        else planned_model_type
++    )
++    if model_type_for_call is not None:
++        model_type_for_call = int(model_type_for_call)
++    if model_type_for_call == ModelType.GLM_NEXT:
++        if int(q_all.shape[-1]) != _MLA_UNIFIED_GLM_NEXT_Q_HEAD_DIM:
++            raise ValueError(
++                "GLM_NEXT sparse MLA requires q_head_dim=512, got "
++                f"{int(q_all.shape[-1])}"
++            )
++        if int(kv_cache.shape[-1]) != _MLA_UNIFIED_GLM_NEXT_RECORD_BYTES:
++            raise ValueError(
++                "GLM_NEXT sparse MLA cache record must be 528 bytes, got "
++                f"{int(kv_cache.shape[-1])}"
++            )
++        if scale_format_for_call not in (None, 1):
++            raise ValueError(
++                "GLM_NEXT sparse MLA requires scale_format=1 "
++                f"(ARBITRARY_FP32), got {scale_format_for_call}"
++            )
++        if fp8_rope not in (None, False):
++            raise ValueError("GLM_NEXT sparse MLA has no RoPE cache payload")
++        scale_format_for_call = 1
++        fp8_rope_for_call = False
++    elif model_type_for_call not in (None, ModelType.GLM_NSA):
++        raise ValueError(
++            "attention.sparse_mla supports ModelType.GLM_NSA or "
++            f"ModelType.GLM_NEXT; got model_type={model_type_for_call}"
++        )
++    if (
++        model_type_for_call != ModelType.GLM_NEXT
++        and int(scale_format_for_call or -1) == 2
++        and fp8_rope is None
++    ):
+         # Normal vLLM calls arrive through b12x.integration.mla, whose stable
+         # public signature does not carry this new option. The allocated record
+         # is therefore the authoritative process-lifetime ABI at this boundary;
+@@ -604,7 +695,7 @@ def _run_sparse_mla(
+                 f"{record_bytes}"
+             )
+         fp8_rope_for_call = record_bytes == 368
+-    else:
++    elif model_type_for_call != ModelType.GLM_NEXT:
+         fp8_rope_for_call = _resolve_kv_fp8_rope(fp8_rope)
+     if int(scale_format_for_call or -1) == 2:
+         expected_record_bytes = 368 if fp8_rope_for_call else 432
+@@ -684,10 +775,15 @@ def _run_sparse_mla(
+         )
+     if _sm120_route:
+         q_head_dim = int(q_all.shape[-1])
+-        if q_head_dim != _MLA_UNIFIED_GLM_Q_HEAD_DIM:
++        expected_q_head_dim = (
++            _MLA_UNIFIED_GLM_NEXT_Q_HEAD_DIM
++            if model_type_for_call == ModelType.GLM_NEXT
++            else _MLA_UNIFIED_GLM_Q_HEAD_DIM
++        )
++        if q_head_dim != expected_q_head_dim:
+             raise ValueError(
+-                f"SM120 sparse MLA decode requires the GLM_NSA contract "
+-                f"(q_head_dim={_MLA_UNIFIED_GLM_Q_HEAD_DIM}); got q_head_dim={q_head_dim}"
++                "SM120 sparse MLA requires the selected GLM contract "
++                f"(q_head_dim={expected_q_head_dim}); got q_head_dim={q_head_dim}"
+             )
+         if workspace.mode in ("extend", "verify", "draft_extend"):
+             return _run_sm120_prefill(
+@@ -703,6 +799,7 @@ def _run_sparse_mla(
+                 return_lse=return_lse,
+                 lse_scale=lse_scale,
+                 scale_format=scale_format_for_call,
++                model_type=model_type_for_call,
+                 fp8_rope=fp8_rope_for_call,
+                 latent_scale_per_token=latent_scale_per_token,
+             )
+@@ -722,6 +819,7 @@ def _run_sparse_mla(
+             lse_scale=lse_scale,
+             forced_num_splits=forced_num_splits,
+             scale_format_override=scale_format_for_call,
++            model_type_override=model_type_for_call,
+             fp8_rope_override=fp8_rope_for_call,
+             latent_scale_per_token=latent_scale_per_token,
+         )
+@@ -768,6 +866,7 @@ def _run_sm120_prefill(
+     return_lse: bool,
+     lse_scale: Literal["base2", "natural"],
+     scale_format: int | None = None,
++    model_type: int | None = None,
+     fp8_rope: bool | None = None,
+     latent_scale_per_token: bool = False,
+ ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+@@ -779,6 +878,10 @@ def _run_sm120_prefill(
+         q_all=q_all,
+         v_head_dim=v_head_dim,
+     )
++    lse_out = _get_mla_lse_view(
++        workspace=workspace,
++        q_all=q_all,
++    )
+     _, lse_base2 = run_unified_prefill(
+         q=q_all,
+         kv_cache=kv_cache,
+@@ -789,7 +892,9 @@ def _run_sm120_prefill(
+         topk_length=active_token_counts,
+         attn_sink=attn_sink,
+         output=output,
++        lse_out=lse_out,
+         scale_format=scale_format,
++        model_type=model_type,
+         fp8_rope=fp8_rope,
+         latent_scale_per_token=latent_scale_per_token,
+     )
+diff --git a/b12x/attention/_shared/mla/decode_math.py b/b12x/attention/_shared/mla/decode_math.py
+index f364046..77ffbc0 100644
+--- a/b12x/attention/_shared/mla/decode_math.py
++++ b/b12x/attention/_shared/mla/decode_math.py
+@@ -339,33 +339,39 @@ def s0_quantize_q_to_smem(
+     )
+ 
+     # --- Step 1: copy Q-rope bf16 -> smem; zero-fill invalid heads. ---
+-    if cutlass.const_expr(vectorized_rope_copy):
+-        chunks_per_head = d_rope // 4
+-        i = tid
+-        while i < Int32(hpb * chunks_per_head):
+-            h = i // Int32(chunks_per_head)
+-            chunk = i - h * Int32(chunks_per_head)
+-            d = chunk * Int32(4)
+-            q0 = Uint32(0)
+-            q1 = Uint32(0)
+-            if h < valid_hpb:
+-                q_off = cute.crd2idx((head_base + h, Int32(d_nope) + d), q_token.layout)
+-                q0, q1 = ld_global_nc_v2_u32(get_ptr_as_int64(q_token, q_off))
+-            s_addr = q_rope_base_addr + (h * Int32(q_rope_stride) + d) * Int32(2)
+-            st_shared_u32(s_addr, q0)
+-            st_shared_u32(s_addr + Int32(4), q1)
+-            i += Int32(num_threads)
+-    else:
+-        i = tid
+-        while i < Int32(hpb * d_rope):
+-            h = i // Int32(d_rope)
+-            d = i - h * Int32(d_rope)
+-            s_byte = (h * Int32(q_rope_stride) + d) * Int32(2)
+-            val = Float32(0.0)
+-            if h < valid_hpb:
+-                val = Float32(q_token[head_base + h, Int32(d_nope) + d])
+-            st_shared_bf16_from_f32(_smem_byte(q_rope_base_addr, s_byte), val)
+-            i += Int32(num_threads)
++    if cutlass.const_expr(d_rope > 0):
++        if cutlass.const_expr(vectorized_rope_copy):
++            chunks_per_head = d_rope // 4
++            i = tid
++            while i < Int32(hpb * chunks_per_head):
++                h = i // Int32(chunks_per_head)
++                chunk = i - h * Int32(chunks_per_head)
++                d = chunk * Int32(4)
++                q0 = Uint32(0)
++                q1 = Uint32(0)
++                if h < valid_hpb:
++                    q_off = cute.crd2idx(
++                        (head_base + h, Int32(d_nope) + d), q_token.layout
++                    )
++                    q0, q1 = ld_global_nc_v2_u32(get_ptr_as_int64(q_token, q_off))
++                s_addr = (
++                    q_rope_base_addr
++                    + (h * Int32(q_rope_stride) + d) * Int32(2)
++                )
++                st_shared_u32(s_addr, q0)
++                st_shared_u32(s_addr + Int32(4), q1)
++                i += Int32(num_threads)
++        else:
++            i = tid
++            while i < Int32(hpb * d_rope):
++                h = i // Int32(d_rope)
++                d = i - h * Int32(d_rope)
++                s_byte = (h * Int32(q_rope_stride) + d) * Int32(2)
++                val = Float32(0.0)
++                if h < valid_hpb:
++                    val = Float32(q_token[head_base + h, Int32(d_nope) + d])
++                st_shared_bf16_from_f32(_smem_byte(q_rope_base_addr, s_byte), val)
++                i += Int32(num_threads)
+ 
+     # --- Steps 2-3: per-(head,tile) absmax over valid heads. ---
+     # Keep the dynamic-loop index names distinct across const_expr branches:
+diff --git a/b12x/attention/_shared/mla/io.py b/b12x/attention/_shared/mla/io.py
+index 57af0e9..3c34ce7 100644
+--- a/b12x/attention/_shared/mla/io.py
++++ b/b12x/attention/_shared/mla/io.py
+@@ -69,6 +69,7 @@ _DSV4_FOOTER_BYTES = 8  # 7 UE8M0 + 1 pad; == SCALE_BYTES_PER_TOKEN.
+ _GLM_GMEM_STRIDE = 656
+ _GLM_NOPE_SCALE_BYTES = 528  # 512 e4m3 + 16 inline fp32; bulk #1 (-> kv_fp8 row).
+ _GLM_ROPE_BYTES = 128  # 64 bf16; bulk #2 (-> kv_rope).
++_GLM_NEXT_GMEM_STRIDE = 528  # Same latent+scales row, with no RoPE suffix.
+ 
+ # NVFP4 MLA latent layout: 256B E2M1 NoPE + 32B E4M3 scales + 16B pad + 128B
+ # BF16 RoPE. The NoPE+scale+pad region is staged as a 288B row; decode math
+@@ -177,9 +178,11 @@ def io_issue_gather(
+             _ROPE = Int32(_NVFP4_ROPE_BYTES)
+             _ROPE_SRC = Int64(_NVFP4_ROPE_SRC)
+     else:
+-        _IOS = Int64(_GLM_GMEM_STRIDE)  # 656 per-token contiguous record
++        _IOS = Int64(
++            _GLM_GMEM_STRIDE if rope_smem_stride else _GLM_NEXT_GMEM_STRIDE
++        )
+         _NOPE = Int32(_GLM_NOPE_SCALE_BYTES)  # 528 nope+inline-fp32 -> kv_fp8
+-        _ROPE = Int32(_GLM_ROPE_BYTES)  # 128 -> kv_rope
++        _ROPE = Int32(_GLM_ROPE_BYTES if rope_smem_stride else 0)
+         _ROPE_SRC = Int64(_GLM_NOPE_SCALE_BYTES)  # rope follows nope+scales
+     _FOOT = Int32(scale_bytes_per_token)
+ 
+@@ -214,12 +217,13 @@ def io_issue_gather(
+                 _NOPE,
+                 full_mbar_u32,
+             )
+-            cp_async_bulk_g2s_mbar(
+-                kv_rope_dst_addr + entry * Int32(rope_smem_stride * 2),
+-                data_base_i64 + _ROPE_SRC,
+-                _ROPE,
+-                full_mbar_u32,
+-            )
++            if cutlass.const_expr(rope_smem_stride > 0):
++                cp_async_bulk_g2s_mbar(
++                    kv_rope_dst_addr + entry * Int32(rope_smem_stride * 2),
++                    data_base_i64 + _ROPE_SRC,
++                    _ROPE,
++                    full_mbar_u32,
++                )
+ 
+     def _issue_payload():
+         eo = Int32(0)
+@@ -262,12 +266,13 @@ def io_issue_gather(
+                         _NOPE,
+                         full_mbar_u32,
+                     )
+-                    cp_async_bulk_g2s_mbar(
+-                        kv_rope_dst_addr + entry * Int32(rope_smem_stride * 2),
+-                        data_base_i64 + _ROPE_SRC,
+-                        _ROPE,
+-                        full_mbar_u32,
+-                    )
++                    if cutlass.const_expr(rope_smem_stride > 0):
++                        cp_async_bulk_g2s_mbar(
++                            kv_rope_dst_addr + entry * Int32(rope_smem_stride * 2),
++                            data_base_i64 + _ROPE_SRC,
++                            _ROPE,
++                            full_mbar_u32,
++                        )
+             eo += Int32(io_threads)
+ 
+     # Native H16 can overlap the random scalar footer load with the much larger
+diff --git a/b12x/attention/_shared/mla/io_mg.py b/b12x/attention/_shared/mla/io_mg.py
+index 2ace3ee..16e477c 100644
+--- a/b12x/attention/_shared/mla/io_mg.py
++++ b/b12x/attention/_shared/mla/io_mg.py
+@@ -33,6 +33,7 @@ _IO_THREADS = 128
+ # issued here.
+ _GLM_IO_STRIDE = 656
+ _GLM_NOPE_SCALE_BYTES = 528
++_GLM_NEXT_IO_STRIDE = 528
+ # NVFP4 MLA latent record: 256B E2M1 NoPE + 32B E4M3 group-16 scales + 16B pad
+ # + 128B BF16 RoPE. The 288B NoPE+scales+pad region bulk-copies into the kv_fp8
+ # row; RoPE is read from global/L2 by the math exactly like GLM.
+@@ -146,6 +147,7 @@ def io_issue_gather_glm_mg(
+     io_threads: cutlass.Constexpr = _IO_THREADS,
+     scale_format: cutlass.Constexpr = 1,
+     fp8_rope: cutlass.Constexpr = False,
++    has_rope: cutlass.Constexpr = True,
+     per_token_latent_scale: cutlass.Constexpr = False,
+     kv_sc_dst_addr: Int32 = Int32(0),
+ ):
+@@ -168,7 +170,7 @@ def io_issue_gather_glm_mg(
+             _ios = Int64(_NVFP4_IO_STRIDE)
+         _nope = Int32(_NVFP4_NOPE_SCALE_BYTES)
+     else:
+-        _ios = Int64(_GLM_IO_STRIDE)
++        _ios = Int64(_GLM_IO_STRIDE if has_rope else _GLM_NEXT_IO_STRIDE)
+         _nope = Int32(_GLM_NOPE_SCALE_BYTES)
+ 
+     if cutlass.const_expr(
+diff --git a/b12x/attention/_shared/mla/kernel.py b/b12x/attention/_shared/mla/kernel.py
+index 66d148d..07534ae 100644
+--- a/b12x/attention/_shared/mla/kernel.py
++++ b/b12x/attention/_shared/mla/kernel.py
+@@ -60,6 +60,7 @@ from .traits import (
+     ModelType,
+     ScaleFormat,
+     infer_model_type,
++    is_glm_model_type,
+     make_unified_traits,
+ )
+ 
+@@ -77,6 +78,7 @@ _DSV4_HEAD_DIM = 512
+ _GLM_HEAD_DIM = 576
+ # GLM per-token packed cache record (reference.pack_mla_kv_cache_reference).
+ _GLM_KV_GMEM_STRIDE = 656
++_GLM_NEXT_KV_GMEM_STRIDE = 528
+ # DSV4 H8 packs the contiguous 576-byte data record into a 592-byte smem row.
+ # The 16-byte pad preserves KV_SMEM_STRIDE/4 % 32 == 20, matching the generic
+ # 464-byte row's bank rotation while allowing one bulk copy per candidate.
+@@ -2322,14 +2324,14 @@ def _cache_block_stride_bytes(
+         COMPRESSED_SPARSE_MLA_BYTES_PER_TOKEN,
+     )
+ 
+-    if int(model_type) == int(ModelType.GLM_NSA):
++    if is_glm_model_type(model_type):
+         # GLM-family per-token contiguous record: 656B (ARBITRARY_FP32) or
+         # 432B (NVFP4_E4M3). ``record_bytes`` comes from traits.kv_gmem_stride.
+         rec = int(record_bytes) if record_bytes is not None else _GLM_KV_GMEM_STRIDE
+         expected = int(page_size) * rec
+     else:
+         expected = int(page_size) * COMPRESSED_SPARSE_MLA_BYTES_PER_TOKEN
+-    if int(model_type) == int(ModelType.GLM_NSA) and cache.is_contiguous():
++    if is_glm_model_type(model_type) and cache.is_contiguous():
+         return expected
+     # Use the tensor's physical page stride for padded views.
+     if cache.ndim >= 2:
+@@ -2741,6 +2743,7 @@ def run_unified_decode(
+     forced_num_splits: int | None = None,
+     out: torch.Tensor | None = None,
+     scale_format_override: int | None = None,
++    model_type_override: int | None = None,
+     fp8_rope_override: bool | None = None,
+     latent_scale_per_token: bool = False,
+ ):
+@@ -2791,16 +2794,20 @@ def run_unified_decode(
+                 "indexed_indices, and indexed_page_size together (partial extra "
+                 "trio is unsupported, matching upstream sparse_mla_sm120.cu:171-174)"
+             )
+-        if int(q_all.shape[-1]) != _DSV4_HEAD_DIM:
++        if int(q_all.shape[-1]) != _DSV4_HEAD_DIM or (
++            model_type_override is not None
++            and int(model_type_override) != int(ModelType.DSV4)
++        ):
+             raise ValueError(
+                 "SM120 sparse MLA decode dual-cache (extra tokens) is DSV4-only "
+-                "(q_head_dim==512); GLM/DSV3.2 has no extra cache"
++                "(explicit ModelType.DSV4); GLM/DSV3.2 has no extra cache"
+             )
+ 
+     q_head_dim = int(q_all.shape[-1])
+     if q_head_dim not in (_DSV4_HEAD_DIM, _GLM_HEAD_DIM):
+         raise NotImplementedError(
+-            f"SM120 sparse MLA decode supports q_head_dim 512 (DSV4) or 576 (GLM); "
++            "SM120 sparse MLA decode supports q_head_dim 512 (DSV4 or explicit "
++            "GLM_NEXT) or 576 (GLM_NSA); "
+             f"got {q_head_dim}"
+         )
+ 
+@@ -2846,7 +2853,9 @@ def run_unified_decode(
+     h_blocks = h_blocks_full + (1 if rem_heads else 0)
+ 
+     model_type, compute_mode, scale_format = infer_model_type(
+-        q_head_dim, swa_k_cache.dtype
++        q_head_dim,
++        swa_k_cache.dtype,
++        model_type=model_type_override,
+     )
+     if scale_format_override is not None:
+         scale_format = int(scale_format_override)
+@@ -2877,6 +2886,13 @@ def run_unified_decode(
+         fp8_rope=fp8_rope_override,
+         latent_scale_per_token=bool(latent_scale_per_token),
+     )
++    if int(model_type) == int(ModelType.GLM_NEXT) and int(
++        swa_k_cache.shape[-1]
++    ) != _GLM_NEXT_KV_GMEM_STRIDE:
++        raise ValueError(
++            "GLM_NEXT sparse MLA cache record must be 528 bytes, got "
++            f"{int(swa_k_cache.shape[-1])}"
++        )
+     if scale_format == ScaleFormat.NVFP4_E4M3 and int(swa_k_cache.shape[-1]) != int(
+         traits.kv_gmem_stride
+     ):
+diff --git a/b12x/attention/_shared/mla/kv_cache.py b/b12x/attention/_shared/mla/kv_cache.py
+index feaf7ad..1a1b3be 100644
+--- a/b12x/attention/_shared/mla/kv_cache.py
++++ b/b12x/attention/_shared/mla/kv_cache.py
+@@ -1,4 +1,15 @@
+-"""nvfp4_ds_mla KV_FP8_ROPE=1 record writer (SM120).
++"""SM120 quantized MLA cache record writers.
++
++``concat_and_cache_glm_next_mla`` writes the GLM-5.3-Flash absorbed-MLA
++record consumed by the explicit ``ModelType.GLM_NEXT`` sparse-MLA recipe:
++
++    [   0, 512)  512 x E4M3 latent values (four consecutive 128-dim groups)
++    [ 512, 528)  4 x fp32 group scales (group amax / 448.0)
++
++The record has no RoPE payload.  The cache may have a padded page stride so a
++selector-only pooled-K tail can share each physical allocation; only the
++528-byte semantic row is written.  Slot-to-page address arithmetic stays in
++Int64, including the products by page and record stride.
+ 
+ ``concat_and_cache_nvfp4_mla_fp8_rope`` quantizes the MLA compressed latent
+ (512 16-bit dims) plus the decoupled RoPE key (64 dims) into the compact
+@@ -53,6 +64,7 @@ mode, so the mode is server-static and joins the kernel compile identity.
+ from __future__ import annotations
+ 
+ from functools import lru_cache
++from threading import RLock
+ 
+ import cuda.bindings.driver as cuda
+ import cutlass
+@@ -65,7 +77,9 @@ from cutlass.cutlass_dsl import T, dsl_user_op
+ 
+ from b12x._lib.compiler import (
+     KernelCompileSpec,
++    compile as compile_cute,
+     launch as b12x_launch,
++    run_compiled,
+     tensor_compile_fact,
+ )
+ from b12x._lib.intrinsics import (
+@@ -80,6 +94,7 @@ from b12x._lib.intrinsics import (
+     quantize_and_pack_16_fast,
+     rcp_approx_ftz,
+     st_global_f32,
++    st_global_u32,
+     st_global_u64,
+     st_global_u8,
+ )
+@@ -109,6 +124,18 @@ _LATENT_SCALE_OFFSET = _PAD_OFFSET  # 292
+ _LATENT_SCALE_BYTES = 4
+ _TWO_LEVEL_RCP = 1.0 / (6.0 * 448.0)
+ 
++# GLM-5.3-Flash absorbed-MLA cache geometry.  Keep these names distinct from
++# the nvfp4_ds_mla constants above: both writers intentionally live here, but
++# their records are unrelated ABIs.
++_GLM_NEXT_LATENT_DIM = 512
++_GLM_NEXT_GROUP_SIZE = 128
++_GLM_NEXT_NUM_GROUPS = _GLM_NEXT_LATENT_DIM // _GLM_NEXT_GROUP_SIZE
++_GLM_NEXT_SCALE_OFFSET = _GLM_NEXT_LATENT_DIM
++_GLM_NEXT_RECORD_BYTES = _GLM_NEXT_LATENT_DIM + _GLM_NEXT_NUM_GROUPS * 4
++_GLM_NEXT_E4M3_MAX_RCP = 1.0 / 448.0
++_GLM_NEXT_WRITER_LOCK = RLock()
++_GLM_NEXT_WRITER_COMPILED: dict[tuple[int, int, torch.dtype], object] = {}
++
+ 
+ @dsl_user_op
+ def _ld_global_u32(base_ptr: Int64, *, loc=None, ip=None) -> Uint32:
+@@ -157,6 +184,22 @@ def _bf16x2_to_f32x2(bf2: Uint32, *, loc=None, ip=None):
+     return Float32(f0), Float32(f1)
+ 
+ 
++@cute.jit
++def _glm_next_cache_record_address(
++    base: Int64,
++    slot: Int64,
++    block_stride: Int64,
++    entry_stride: Int64,
++    *,
++    block_size: cutlass.Constexpr,
++) -> Int64:
++    """Resolve a flat slot without narrowing either scaled offset."""
++    block_size64 = Int64(block_size)
++    block_idx = slot // block_size64
++    block_off = slot - block_idx * block_size64
++    return base + block_idx * block_stride + block_off * entry_stride
++
++
+ class ConcatAndCacheNvfp4MlaFp8RopeKernel:
+     """Per-token KV_FP8_ROPE=1 nvfp4_ds_mla record writer.
+ 
+@@ -361,6 +404,135 @@ class ConcatAndCacheNvfp4MlaFp8RopeKernel:
+                     st_global_u64(dst + Int64(_ROPE_OFFSET + 8 * w), q8)
+ 
+ 
++class ConcatAndCacheGlmNextMlaKernel:
++    """BF16 to GLM_NEXT E4M3-plus-FP32 cache writer.
++
++    Each warp owns one consecutive 128-dim quantization group.  Its 32 lanes
++    load and store four adjacent values, reduce amax within the warp, and lane
++    zero writes the group's FP32 scale.  There is one CTA per source token.
++    """
++
++    def __init__(self, block_size: int):
++        self.block_size = int(block_size)
++
++    @cute.jit
++    def __call__(
++        self,
++        kv_c: cute.Tensor,  # (num_tokens, 512) bf16
++        kv_cache: cute.Tensor,  # (num_blocks, block_size, 528) u8
++        slot_mapping: cute.Tensor,  # (num_tokens,) int32/int64
++        kv_c_stride: Int64,  # kv_c.stride(0), elements
++        block_stride: Int64,  # kv_cache.stride(0), bytes
++        entry_stride: Int64,  # kv_cache.stride(1), bytes
++        slot_capacity: Int64,
++        num_tokens: Int32,
++        stream: cuda.CUstream,
++    ):
++        self.kernel(
++            kv_c,
++            kv_cache,
++            slot_mapping,
++            kv_c_stride,
++            block_stride,
++            entry_stride,
++            slot_capacity,
++        ).launch(
++            grid=(num_tokens, 1, 1),
++            block=[_THREADS, 1, 1],
++            stream=stream,
++        )
++
++    @cute.kernel
++    def kernel(
++        self,
++        kv_c: cute.Tensor,
++        kv_cache: cute.Tensor,
++        slot_mapping: cute.Tensor,
++        kv_c_stride: Int64,
++        block_stride: Int64,
++        entry_stride: Int64,
++        slot_capacity: Int64,
++    ):
++        tidx, _, _ = cute.arch.thread_idx()
++        token_idx, _, _ = cute.arch.block_idx()
++        tid = Int32(tidx)
++        token = Int32(token_idx)
++        token64 = token.to(Int64)
++
++        slot = Int64(slot_mapping[token])
++        if (slot >= Int64(0)) & (slot < slot_capacity):
++            dst = _glm_next_cache_record_address(
++                get_ptr_as_int64(kv_cache, 0),
++                slot,
++                block_stride,
++                entry_stride,
++                block_size=self.block_size,
++            )
++
++            group = tid // Int32(32)
++            lane = tid - group * Int32(32)
++            src_elem = (
++                token64 * kv_c_stride
++                + group.to(Int64) * Int64(_GLM_NEXT_GROUP_SIZE)
++                + lane.to(Int64) * Int64(4)
++            )
++            pair01 = _ld_global_u32(get_ptr_as_int64(kv_c, src_elem))
++            pair23 = _ld_global_u32(get_ptr_as_int64(kv_c, src_elem + Int64(2)))
++            v0, v1 = _bf16x2_to_f32x2(pair01)
++            v2, v3 = _bf16x2_to_f32x2(pair23)
++
++            group_amax = fabs_f32(v0)
++            group_amax = fmax_f32(group_amax, fabs_f32(v1))
++            group_amax = fmax_f32(group_amax, fabs_f32(v2))
++            group_amax = fmax_f32(group_amax, fabs_f32(v3))
++            group_amax = fmax_f32(
++                group_amax,
++                cute.arch.shuffle_sync_bfly(group_amax, offset=1),
++            )
++            group_amax = fmax_f32(
++                group_amax,
++                cute.arch.shuffle_sync_bfly(group_amax, offset=2),
++            )
++            group_amax = fmax_f32(
++                group_amax,
++                cute.arch.shuffle_sync_bfly(group_amax, offset=4),
++            )
++            group_amax = fmax_f32(
++                group_amax,
++                cute.arch.shuffle_sync_bfly(group_amax, offset=8),
++            )
++            group_amax = fmax_f32(
++                group_amax,
++                cute.arch.shuffle_sync_bfly(group_amax, offset=16),
++            )
++
++            # A unit scale for an all-zero group matches the CPU reference and
++            # avoids a zero reciprocal.  Every other group records amax/448.
++            scale = Float32(1.0)
++            if group_amax != Float32(0.0):
++                scale = group_amax * Float32(_GLM_NEXT_E4M3_MAX_RCP)
++            inv_scale = rcp_approx_ftz(scale)
++            packed = cvt_f32x4_to_e4m3x4(
++                v0 * inv_scale,
++                v1 * inv_scale,
++                v2 * inv_scale,
++                v3 * inv_scale,
++            )
++            st_global_u32(
++                dst
++                + group.to(Int64) * Int64(_GLM_NEXT_GROUP_SIZE)
++                + lane.to(Int64) * Int64(4),
++                packed,
++            )
++            if lane == Int32(0):
++                st_global_f32(
++                    dst
++                    + Int64(_GLM_NEXT_SCALE_OFFSET)
++                    + group.to(Int64) * Int64(4),
++                    scale,
++                )
++
++
+ @lru_cache(maxsize=None)
+ def _build_concat_and_cache_nvfp4_mla_fp8_rope_kernel(
+     block_size: int, is_bf16: bool, per_token_scale: bool = False
+@@ -372,6 +544,19 @@ def clear_nvfp4_mla_fp8_rope_kv_cache_kernel_cache() -> None:
+     _build_concat_and_cache_nvfp4_mla_fp8_rope_kernel.cache_clear()
+ 
+ 
++@lru_cache(maxsize=None)
++def _build_concat_and_cache_glm_next_mla_kernel(
++    block_size: int,
++) -> ConcatAndCacheGlmNextMlaKernel:
++    return ConcatAndCacheGlmNextMlaKernel(block_size)
++
++
++def clear_glm_next_mla_kv_cache_kernel_cache() -> None:
++    _build_concat_and_cache_glm_next_mla_kernel.cache_clear()
++    with _GLM_NEXT_WRITER_LOCK:
++        _GLM_NEXT_WRITER_COMPILED.clear()
++
++
+ def _torch_to_cutlass_dtype(dtype: torch.dtype) -> type[cutlass.Numeric]:
+     if dtype == torch.bfloat16:
+         return cutlass.BFloat16
+@@ -379,6 +564,8 @@ def _torch_to_cutlass_dtype(dtype: torch.dtype) -> type[cutlass.Numeric]:
+         return cutlass.Float16
+     if dtype == torch.uint8:
+         return cutlass.Uint8
++    if dtype == torch.int32:
++        return cutlass.Int32
+     if dtype == torch.int64:
+         return cutlass.Int64
+     raise TypeError(f"unsupported dtype {dtype}")
+@@ -395,6 +582,252 @@ def _to_kernel_tensor(
+     return cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
+ 
+ 
++def _glm_next_cache_byte_offset(
++    slot: int,
++    *,
++    block_size: int,
++    block_stride: int,
++    entry_stride: int = _GLM_NEXT_RECORD_BYTES,
++) -> int:
++    """Host mirror of the writer's Int64 slot-to-byte address calculation."""
++    if slot < 0:
++        raise ValueError("slot must be non-negative")
++    if block_size <= 0 or block_stride <= 0 or entry_stride <= 0:
++        raise ValueError("cache strides and block_size must be positive")
++    block_idx, block_off = divmod(int(slot), int(block_size))
++    return block_idx * int(block_stride) + block_off * int(entry_stride)
++
++
++def _glm_next_cache_writer_signature(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> tuple[int, int, torch.dtype]:
++    device_index = kv_c.device.index
++    if device_index is None:
++        device_index = torch.cuda.current_device()
++    return int(device_index), int(kv_cache.shape[1]), slot_mapping.dtype
++
++
++def _glm_next_cache_writer_launch(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> tuple[object, tuple[object, ...], KernelCompileSpec]:
++    num_tokens = int(slot_mapping.shape[0])
++    block_size = int(kv_cache.shape[1])
++    slot_capacity = int(kv_cache.shape[0]) * block_size
++    kernel = _build_concat_and_cache_glm_next_mla_kernel(block_size)
++    args = (
++        _to_kernel_tensor(kv_c, assumed_align=4, leading_dim=1),
++        _to_kernel_tensor(kv_cache, assumed_align=16, leading_dim=2),
++        _to_kernel_tensor(
++            slot_mapping,
++            assumed_align=8 if slot_mapping.dtype == torch.int64 else 4,
++            leading_dim=0,
++        ),
++        Int64(int(kv_c.stride(0))),
++        Int64(int(kv_cache.stride(0))),
++        Int64(int(kv_cache.stride(1))),
++        Int64(slot_capacity),
++        Int32(num_tokens),
++        current_cuda_stream(),
++    )
++    cache_key = (
++        tensor_compile_fact("kv_c", kv_c, dynamic_dims=(0,), dynamic_strides=(0,)),
++        tensor_compile_fact(
++            "kv_cache",
++            kv_cache,
++            dynamic_dims=(0,),
++            dynamic_strides=(0,),
++        ),
++        tensor_compile_fact("slot_mapping", slot_mapping, dynamic_dims=(0,)),
++        block_size,
++    )
++    spec = KernelCompileSpec.from_key(
++        "attention.mla.glm_next_kv_cache",
++        1,
++        cache_key,
++        labels=("kv_c", "kv_cache", "slot_mapping", "block_size"),
++    )
++    return kernel, args, spec
++
++
++def _compile_glm_next_mla_cache_writer(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> object:
++    signature = _glm_next_cache_writer_signature(kv_c, kv_cache, slot_mapping)
++    with _GLM_NEXT_WRITER_LOCK:
++        compiled = _GLM_NEXT_WRITER_COMPILED.get(signature)
++    if compiled is None:
++        kernel, args, spec = _glm_next_cache_writer_launch(
++            kv_c, kv_cache, slot_mapping
++        )
++        compiled = compile_cute(kernel, *args, compile_spec=spec)
++        with _GLM_NEXT_WRITER_LOCK:
++            _GLM_NEXT_WRITER_COMPILED[signature] = compiled
++    return compiled
++
++
++def _concat_and_cache_glm_next_mla_flat_launch(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    if int(slot_mapping.shape[0]) == 0:
++        return
++    signature = _glm_next_cache_writer_signature(kv_c, kv_cache, slot_mapping)
++    with _GLM_NEXT_WRITER_LOCK:
++        compiled = _GLM_NEXT_WRITER_COMPILED.get(signature)
++    if compiled is None:
++        if torch.cuda.is_current_stream_capturing():
++            raise RuntimeError(
++                "GLM_NEXT cache-writer compile miss during CUDA graph capture; "
++                "call compile_glm_next_mla_cache_writer before capture"
++            )
++        compiled = _compile_glm_next_mla_cache_writer(
++            kv_c, kv_cache, slot_mapping
++        )
++    _, args, _ = _glm_next_cache_writer_launch(kv_c, kv_cache, slot_mapping)
++    run_compiled(compiled, args)
++
++
++@torch.library.custom_op(
++    "b12x::concat_and_cache_glm_next_mla",
++    mutates_args=("kv_cache",),
++)
++def _concat_and_cache_glm_next_mla_op(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    _concat_and_cache_glm_next_mla_flat_launch(kv_c, kv_cache, slot_mapping)
++
++
++@_concat_and_cache_glm_next_mla_op.register_fake
++def _concat_and_cache_glm_next_mla_fake(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    return None
++
++
++def _validate_glm_next_mla_cache_writer_args(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    """Validate the fixed-buffer GLM_NEXT cache-writer contract."""
++    if kv_c.ndim != 2 or int(kv_c.shape[1]) != _GLM_NEXT_LATENT_DIM:
++        raise ValueError(
++            "kv_c must be (num_tokens, "
++            f"{_GLM_NEXT_LATENT_DIM}), got {tuple(kv_c.shape)}"
++        )
++    if kv_c.dtype != torch.bfloat16:
++        raise TypeError(f"kv_c must be BF16, got {kv_c.dtype}")
++    if kv_cache.ndim != 3 or int(kv_cache.shape[2]) != _GLM_NEXT_RECORD_BYTES:
++        raise ValueError(
++            "kv_cache must be (num_pages, page_size, "
++            f"{_GLM_NEXT_RECORD_BYTES}) uint8, got {tuple(kv_cache.shape)}"
++        )
++    num_pages = int(kv_cache.shape[0])
++    page_size = int(kv_cache.shape[1])
++    if num_pages <= 0 or page_size <= 0:
++        raise ValueError("kv_cache num_pages and page_size must be positive")
++    if kv_cache.dtype != torch.uint8:
++        raise TypeError(f"kv_cache must be uint8, got {kv_cache.dtype}")
++    if slot_mapping.ndim != 1 or slot_mapping.dtype not in (
++        torch.int32,
++        torch.int64,
++    ):
++        raise TypeError(
++            "slot_mapping must be a 1-D int32 or int64 tensor, got "
++            f"{tuple(slot_mapping.shape)} {slot_mapping.dtype}"
++        )
++    if not slot_mapping.is_contiguous():
++        raise ValueError("slot_mapping must be contiguous")
++    num_tokens = int(slot_mapping.shape[0])
++    if int(kv_c.shape[0]) < num_tokens:
++        raise ValueError(
++            f"kv_c must cover slot_mapping's {num_tokens} tokens, got "
++            f"{int(kv_c.shape[0])} rows"
++        )
++    if kv_c.stride(1) != 1:
++        raise ValueError("kv_c rows must be innermost-contiguous")
++    if kv_c.stride(0) % 2 != 0 or kv_c.data_ptr() % 4 != 0:
++        raise ValueError("kv_c rows must be 4-byte aligned (even row stride)")
++    if kv_cache.stride(2) != 1 or kv_cache.stride(1) != _GLM_NEXT_RECORD_BYTES:
++        raise ValueError("kv_cache must have packed 528-byte semantic records")
++    semantic_page_bytes = page_size * _GLM_NEXT_RECORD_BYTES
++    page_stride = int(kv_cache.stride(0))
++    if page_stride < semantic_page_bytes:
++        raise ValueError(
++            "kv_cache page stride must cover every semantic record in the page"
++        )
++    if (
++        kv_cache.data_ptr() % 16 != 0
++        or page_stride % 16 != 0
++        or kv_cache.stride(1) % 16 != 0
++    ):
++        raise ValueError("kv_cache base, pages, and records must be 16-byte aligned")
++    slot_capacity = num_pages * page_size
++    if num_tokens >= 2**31:
++        raise ValueError("slot_mapping token count must fit in int32 launch geometry")
++    if slot_capacity >= 2**63:
++        raise ValueError("kv_cache slot capacity must fit in int64")
++    if not (kv_c.is_cuda and kv_cache.is_cuda and slot_mapping.is_cuda):
++        raise ValueError("all tensors must be on CUDA")
++    if len({kv_c.device, kv_cache.device, slot_mapping.device}) != 1:
++        raise ValueError("all tensors must be on the same device")
++
++
++def compile_glm_next_mla_cache_writer(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    """Compile the exact GLM_NEXT page-size/slot-dtype writer specialization.
++
++    This does not mutate any tensor.  Call it before CUDA graph capture when a
++    normal eager warmup write is undesirable.  Token count, page count, source
++    row stride, and padded page stride remain runtime-dynamic.
++    """
++    _validate_glm_next_mla_cache_writer_args(kv_c, kv_cache, slot_mapping)
++    if int(slot_mapping.shape[0]) == 0:
++        raise ValueError("cache-writer compilation requires at least one token")
++    _compile_glm_next_mla_cache_writer(kv_c, kv_cache, slot_mapping)
++
++
++def concat_and_cache_glm_next_mla(
++    kv_c: torch.Tensor,
++    kv_cache: torch.Tensor,
++    slot_mapping: torch.Tensor,
++) -> None:
++    """Quantize BF16 absorbed MLA latents into GLM_NEXT cache slots.
++
++    ``kv_cache`` is the semantic ``(num_pages, page_size, 528)`` uint8 view.
++    Its page stride may exceed ``page_size * 528`` so additional page-local
++    storage can follow the MLA records.  The writer never touches that tail.
++    Negative and out-of-capacity slot ids are skipped, as required by padded
++    CUDA-graph batches.
++
++    Warm the exact page-size/slot-dtype specialization once before CUDA graph
++    capture, or call ``compile_glm_next_mla_cache_writer``.  Subsequent calls
++    launch using only caller-owned fixed buffers and are capture safe.
++
++    :param kv_c: absorbed latent rows, ``(>= num_tokens, 512)`` BF16.
++    :param kv_cache: strided paged cache view, ``(num_pages, page_size, 528)``
++        uint8, with packed 528-byte rows; mutated in place.
++    :param slot_mapping: contiguous ``(num_tokens,)`` int32/int64 flat slot ids;
++        ids are promoted to Int64 before address arithmetic.
++    """
++    _validate_glm_next_mla_cache_writer_args(kv_c, kv_cache, slot_mapping)
++    torch.ops.b12x.concat_and_cache_glm_next_mla(kv_c, kv_cache, slot_mapping)
++
++
+ def _concat_and_cache_nvfp4_mla_fp8_rope_flat_launch(
+     kv_c: torch.Tensor,
+     k_pe: torch.Tensor,
+diff --git a/b12x/attention/_shared/mla/prefill.py b/b12x/attention/_shared/mla/prefill.py
+index b064476..a9bf14a 100644
+--- a/b12x/attention/_shared/mla/prefill.py
++++ b/b12x/attention/_shared/mla/prefill.py
+@@ -14,6 +14,8 @@ Supported (MG) shapes:
+   * DSV4 dual-cache (extra/indexed tokens): topk==128, heads % 8 == 0,
+     pbs_extra in {2, 64} (BF16-QK), using the same head partitioning.
+   * GLM_NSA: topk in {512, 1024, 2048}
++  * GLM_NEXT: topk in {512, 1024, 2048, 2051, 2112}; 2112 is an
++    alignment-only container whose per-row ``topk_length`` remains 2051.
+ Anything else (other topk, unsupported heads, GLM dual, etc.) raises ValueError.
+ DSV4 + GLM DECODE kernels are untouched and stay byte-identical.
+ """
+@@ -29,6 +31,7 @@ from .traits import (
+     ModelType,
+     ScaleFormat,
+     infer_model_type,
++    is_glm_model_type,
+     make_unified_traits,
+ )
+ 
+@@ -51,14 +54,14 @@ def _cache_block_stride_bytes(
+         COMPRESSED_SPARSE_MLA_BYTES_PER_TOKEN,
+     )
+ 
+-    if model_type == ModelType.GLM_NSA:
++    if is_glm_model_type(model_type):
+         # GLM-family per-token contiguous record: 656B (ARBITRARY_FP32) or
+         # 432B (NVFP4_E4M3). ``record_bytes`` comes from traits.kv_gmem_stride.
+         rec = int(record_bytes) if record_bytes is not None else _GLM_KV_GMEM_STRIDE
+         expected = int(page_size) * rec
+     else:
+         expected = int(page_size) * COMPRESSED_SPARSE_MLA_BYTES_PER_TOKEN
+-    if model_type == ModelType.GLM_NSA and cache.is_contiguous():
++    if is_glm_model_type(model_type) and cache.is_contiguous():
+         return expected
+     # The runtime page stride is part of the packed/padded cache contract.
+     if cache.ndim >= 2:
+@@ -115,6 +118,7 @@ def run_unified_prefill(
+     stride_extra_kv_block: int | None = None,
+     workspace=None,
+     scale_format: int | None = None,
++    model_type: int | None = None,
+     latent_scale: float = 1.0,
+     fp8_rope: bool | None = None,
+     latent_scale_per_token: bool = False,
+@@ -125,8 +129,9 @@ def run_unified_prefill(
+     FlashInfer-shaped multi-group (MG) prefill kernel (``run_unified_prefill_mg``).
+     Unsupported shapes HARD-FAIL (raise-not-fallback); there is no decode-reuse path.
+ 
+-    Routes DSV4 (q_head_dim==512, UE8M0 footer, V_HAS_ROPE) AND GLM_NSA
+-    (q_head_dim==576, ARBITRARY_FP32 inline scales, V==nope) through the SAME kernel
++    Routes DSV4 (q_head_dim==512, UE8M0 footer, V_HAS_ROPE), GLM_NSA
++    (q_head_dim==576, ARBITRARY_FP32 inline scales, V==nope), and explicit
++    GLM_NEXT (q_head_dim==512, ARBITRARY_FP32 inline scales, no RoPE) through the SAME kernel
+     via the traits const_expr branches (model_type/scale_format/v_has_rope/
+     nt_per_warp_xv), exactly like the decode launcher. DSV4 additionally supports a
+     DUAL-CACHE union (extra_kv_cache / extra_indices / extra_topk_length /
+@@ -135,10 +140,12 @@ def run_unified_prefill(
+     chunks). The extra cache is DSV4-only (GLM has no extra section -> RAISE).
+ 
+     Args:
+-      q:            (T, heads, D_QK) bf16. D_QK 512 (DSV4) or 576 (GLM_NSA).
++      q:            (T, heads, D_QK) bf16. D_QK 512 (DSV4/explicit GLM_NEXT)
++                    or 576 (GLM_NSA).
+       kv_cache:     flat uint8 MAIN KV cache (reshaped to 1-D).
+       topk_indices: (T, topk) int32 flat slot ids (-1 = invalid sentinel).
+-      sm_scale:     softmax scale (typically D_QK**-0.5).
++      sm_scale:     caller-owned physical softmax scale. GLM_NEXT uses
++                    256**-0.5 even though its absorbed query width is 512.
+       page_block_size: tokens per MAIN KV block (64 for DSV4/GLM).
+       topk_length:  optional (T,) int32 per-token MAIN valid length; entries past it
+                     are masked. Defaults to full ``topk`` for every token.
+@@ -164,8 +171,9 @@ def run_unified_prefill(
+         # Genuinely-unsupported contract -> error like upstream (infer_model_type
+         # ICHECKs d_qk in {512, 576}). NOT a legacy fallback.
+         raise ValueError(
+-            f"SM120 sparse MLA prefill supports DSV4 (q_head_dim=512) or GLM_NSA "
+-            f"(q_head_dim=576); got q_head_dim={q_head_dim}"
++            "SM120 sparse MLA prefill supports q_head_dim=512 (DSV4 or "
++            "explicit GLM_NEXT) or q_head_dim=576 (GLM_NSA); "
++            f"got q_head_dim={q_head_dim}"
+         )
+ 
+     num_tokens, heads, _ = q.shape
+@@ -179,13 +187,18 @@ def run_unified_prefill(
+         )
+ 
+     model_type, compute_mode, inferred_scale_format = infer_model_type(
+-        q_head_dim, kv_cache.dtype
++        q_head_dim,
++        kv_cache.dtype,
++        model_type=model_type,
+     )
+     if scale_format is None:
+         scale_format = inferred_scale_format
+     else:
+         scale_format = int(scale_format)
+-        if q_head_dim == _GLM_HEAD_DIM and scale_format == ScaleFormat.NVFP4_E4M3:
++        if (
++            model_type == ModelType.GLM_NSA
++            and scale_format == ScaleFormat.NVFP4_E4M3
++        ):
+             # NVFP4 GLM-family prefill runs the BF16-QK MG arm (native E2M1
+             # dequant + BF16 MMA); FP8 compute would misread the 432B record.
+             compute_mode = ComputeMode.BF16
+@@ -210,6 +223,13 @@ def run_unified_prefill(
+         fp8_rope=fp8_rope,
+         latent_scale_per_token=bool(latent_scale_per_token),
+     )
++    if model_type == ModelType.GLM_NEXT and int(kv_cache.shape[-1]) != int(
++        traits.kv_gmem_stride
++    ):
++        raise ValueError(
++            "GLM_NEXT sparse MLA cache record must be 528 bytes, got "
++            f"{int(kv_cache.shape[-1])}"
++        )
+     d_v = int(traits.d_v)
+ 
+     # ── DSV4 dual-cache: validate the extra trio (all-or-none) and that it is DSV4. ──
+@@ -348,13 +368,16 @@ def run_unified_prefill(
+     _mg_glm = (
+         _mg_enabled
+         and not has_extra
+-        and model_type == ModelType.GLM_NSA
++        and is_glm_model_type(model_type)
+         and scale_format == ScaleFormat.ARBITRARY_FP32
+     )
+-    if _mg_glm and topk in (512, 1024, 2048):
++    glm_topk_supported = topk in (512, 1024, 2048) or (
++        model_type == ModelType.GLM_NEXT and topk in (2051, 2112)
++    )
++    if _mg_glm and glm_topk_supported:
+         return _run_partitioned_mg(
+             compute_mode=ComputeMode.FP8,
+-            model_type=ModelType.GLM_NSA,
++            model_type=model_type,
+             scale_format=ScaleFormat.ARBITRARY_FP32,
+         )
+     # ── NVFP4 (E2M1 + E4M3 group-16, GLM-family) MG gate ───────────────────────
+@@ -427,7 +450,8 @@ def run_unified_prefill(
+         "DSV4 single-cache topk in {512, 1024, 2048} (FP8) or 128 "
+         "(BF16-QK, heads%8==0); "
+         "DSV4 dual-cache topk==128 with heads%8==0 and pbs_extra in {2, 64}; "
+-        "GLM_NSA topk in {512, 1024, 2048}; "
++        "GLM_NSA topk in {512, 1024, 2048}; GLM_NEXT topk in "
++        "{512, 1024, 2048, 2051, 2112}; "
+         "NVFP4 (GLM-family, scale_format=2) topk in {128, 512, 1024, 2048}. "
+         "No decode-reuse fallback."
+     )
+diff --git a/b12x/attention/_shared/mla/prefill_mg.py b/b12x/attention/_shared/mla/prefill_mg.py
+index b335683..2a54500 100644
+--- a/b12x/attention/_shared/mla/prefill_mg.py
++++ b/b12x/attention/_shared/mla/prefill_mg.py
+@@ -71,12 +71,19 @@ from .decode_math import (
+ )
+ from .io_mg import io_issue_gather_dsv4_nope, io_issue_gather_glm_mg
+ from .smem_mg import get_prefill_mg_shared_storage_cls, make_smem_layout_mg
+-from .traits import ComputeMode, ModelType, ScaleFormat, make_unified_traits
++from .traits import (
++    ComputeMode,
++    ModelType,
++    ScaleFormat,
++    is_glm_model_type,
++    make_unified_traits,
++)
+ 
+ 
+ _CAND_WINDOW = 64
+ _DSV4_HEAD_DIM = 512
+ _GLM_HEAD_DIM = 576
++_GLM_NEXT_HEAD_DIM = 512
+ _PREFILL_BLOCK_THREADS = 384
+ _PREFILL_IO_THREADS = 128
+ _IO_REGS = 32
+@@ -2346,13 +2353,16 @@ class UnifiedPrefillMGKernel:
+         # W XV, V==nope (no XV-rope), 656/528 KV geometry, KV-rope from global/L2,
+         # Q-rope registerized (aliased onto W_FP8). DSV4 is the scale_format==0 /
+         # has_extra arm and is byte-identical.
+-        is_glm = cutlass.const_expr(t.model_type == ModelType.GLM_NSA)
++        is_glm = cutlass.const_expr(
++            t.model_type in (ModelType.GLM_NSA, ModelType.GLM_NEXT)
++        )
++        has_rope = cutlass.const_expr(t.d_rope > 0)
+         # NVFP4 (E2M1 + E4M3 group-16) GLM-family arm: BF16-QK with native
+         # in-register dequant, BF16 P.V staged in the dead W_FP8 region, and
+         # the 432B/288B record geometry. is_glm stays true for NVFP4 so the
+         # shared GLM staging (io gather / kv_sc absence / q_rope alias) applies.
+         is_nvfp4 = cutlass.const_expr(t.scale_format == ScaleFormat.NVFP4_E4M3)
+-        q_head_dim = cutlass.const_expr(_GLM_HEAD_DIM if is_glm else _DSV4_HEAD_DIM)
++        q_head_dim = cutlass.const_expr(t.d_nope + t.d_rope)
+         # Compile-time head-group count: 1 (heads==16) or 2 (heads % 32 == 0). All
+         # group-1 work below const_expr-elides when n_hg==1 (single-group MG).
+         n_hg = cutlass.const_expr(self.mg_n_hg)
+@@ -2539,6 +2549,7 @@ class UnifiedPrefillMGKernel:
+                         io_threads=_PREFILL_IO_THREADS,
+                         scale_format=t.scale_format,
+                         fp8_rope=t.fp8_rope,
++                        has_rope=has_rope,
+                         per_token_latent_scale=t.latent_scale_per_token,
+                         kv_sc_dst_addr=kv_sc_addr,
+                     )
+@@ -2639,6 +2650,7 @@ class UnifiedPrefillMGKernel:
+                                 io_threads=_PREFILL_IO_THREADS,
+                                 scale_format=t.scale_format,
+                                 fp8_rope=t.fp8_rope,
++                                has_rope=has_rope,
+                                 per_token_latent_scale=t.latent_scale_per_token,
+                                 kv_sc_dst_addr=kv_sc_addr + buf * kv_sc_buf,
+                             )
+@@ -2809,7 +2821,7 @@ class UnifiedPrefillMGKernel:
+                         num_threads=self.math_threads,
+                         barrier_id=2,
+                     )
+-                if cutlass.const_expr(is_glm):
++                if cutlass.const_expr(is_glm and has_rope):
+                     # GLM FP8 registerizes Q-rope (the smem scratch aliases W_FP8,
+                     # only live in S0/XV-free): preload the bf16 Q-rope A operands
+                     # to registers, then sync so W_FP8 is free for S6 -- exactly
+@@ -3106,7 +3118,7 @@ class UnifiedPrefillMGKernel:
+                             scale_format=t.scale_format,
+                             valid_hpb=t.hpb,
+                         )
+-                    if cutlass.const_expr(is_glm):
++                    if cutlass.const_expr(is_glm and has_rope):
+                         # GLM QK-RoPE: Q-rope A from preloaded registers, KV-rope B
+                         # from global/L2 (GLM record packing), once per tile reused
+                         # across head groups. v_has_rope=False so there is no XV-rope.
+@@ -3127,7 +3139,7 @@ class UnifiedPrefillMGKernel:
+                             scale_format=t.scale_format,
+                             fp8_rope=t.fp8_rope,
+                         )
+-                    else:
++                    elif cutlass.const_expr(not is_glm):
+                         # Fused QK-RoPE: KV-RoPE B operand gathered ONCE per CTA tile
+                         # (vectorized nc.u32 b16-pair), reused across head groups --
+                         # matches FlashInfer's prefetch_kv_rope reuse.
+@@ -3746,7 +3758,7 @@ def _sparse_mla_prefill_mg_flat_launch(
+             f"mg_n_hg==1 for the 8-head shard); got active_heads={active_heads}"
+         )
+     pack_hilo_rows = (
+-        int(model_type) == int(ModelType.GLM_NSA)
++        is_glm_model_type(model_type)
+         and int(scale_format) == int(ScaleFormat.ARBITRARY_FP32)
+         and int(mg_n_hg) == 1
+         and valid_hpb == 8
+@@ -4105,7 +4117,7 @@ def run_unified_prefill_mg(
+     head_offset: int = 0,
+ ):
+     model_type = int(model_type)
+-    is_glm = model_type == ModelType.GLM_NSA
++    is_glm = is_glm_model_type(model_type)
+     # DSV4 dual-cache (has_extra) union. all-or-none + DSV4-only (GLM has no extra
+     # section). Forced BF16-QK by the caller (FI ships dual-cache as BF16 only).
+     has_extra = extra_kv_cache is not None
+@@ -4123,7 +4135,13 @@ def run_unified_prefill_mg(
+     if scale_format is None:
+         scale_format = ScaleFormat.ARBITRARY_FP32 if is_glm else ScaleFormat.UE8M0_BYTE
+     scale_format = int(scale_format)
+-    expected_qdim = _GLM_HEAD_DIM if is_glm else _DSV4_HEAD_DIM
++    expected_qdim = {
++        ModelType.DSV4: _DSV4_HEAD_DIM,
++        ModelType.GLM_NSA: _GLM_HEAD_DIM,
++        ModelType.GLM_NEXT: _GLM_NEXT_HEAD_DIM,
++    }.get(model_type)
++    if expected_qdim is None:
++        raise ValueError(f"unsupported sparse MLA model_type={model_type}")
+     if int(q.shape[-1]) != expected_qdim:
+         raise ValueError(
+             f"SM120 sparse MLA MG prefill ({'GLM' if is_glm else 'DSV4'}) expects "
+@@ -4183,6 +4201,13 @@ def run_unified_prefill_mg(
+         fp8_rope=fp8_rope,
+         latent_scale_per_token=bool(latent_scale_per_token),
+     )
++    if model_type == ModelType.GLM_NEXT and int(kv_cache.shape[-1]) != int(
++        traits.kv_gmem_stride
++    ):
++        raise ValueError(
++            "GLM_NEXT sparse MLA MG cache record must be 528 bytes, got "
++            f"{int(kv_cache.shape[-1])}"
++        )
+     # heads_per_cta = mg_n_hg * HPB. mg_n_hg==2 covers paired head groups; mg_n_hg==1
+     # covers a single-group launch, including 16-head tails and the heads==8
+     # valid_hpb shard. The caller picks mg_n_hg and active head range.
+diff --git a/b12x/attention/_shared/mla/reference.py b/b12x/attention/_shared/mla/reference.py
+index 00488b5..2475e62 100644
+--- a/b12x/attention/_shared/mla/reference.py
++++ b/b12x/attention/_shared/mla/reference.py
+@@ -15,6 +15,7 @@ _MLA_ROPE_DIM = 64
+ _MLA_GROUP_SIZE = 128
+ _MLA_SCALE_BYTES = (_MLA_NOPE_DIM // _MLA_GROUP_SIZE) * 4
+ _MLA_PACKED_DIM = 656
++_MLA_NO_ROPE_PACKED_DIM = _MLA_NOPE_DIM + _MLA_SCALE_BYTES
+ 
+ 
+ def _as_2d_cache(x: torch.Tensor, expected_dim: int, name: str) -> torch.Tensor:
+@@ -33,11 +34,11 @@ def _as_2d_cache(x: torch.Tensor, expected_dim: int, name: str) -> torch.Tensor:
+ 
+ def pack_mla_kv_cache_reference(
+     k_nope: torch.Tensor,
+-    k_rope: torch.Tensor,
++    k_rope: torch.Tensor | None = None,
+     *,
+     group_size: int = _MLA_GROUP_SIZE,
+ ) -> torch.Tensor:
+-    """Pack MLA KV cache into the FP8+scale+rope byte layout used by NSA."""
++    """Pack a GLM MLA latent record, optionally including its BF16 RoPE lane."""
+ 
+     if group_size != _MLA_GROUP_SIZE:
+         raise ValueError(
+@@ -45,14 +46,16 @@ def pack_mla_kv_cache_reference(
+         )
+ 
+     k_nope_2d = _as_2d_cache(k_nope, _MLA_NOPE_DIM, "k_nope")
+-    k_rope_2d = _as_2d_cache(k_rope, _MLA_ROPE_DIM, "k_rope")
+-    if k_nope_2d.shape[0] != k_rope_2d.shape[0]:
+-        raise ValueError("k_nope and k_rope must have the same token count")
+-    if k_rope_2d.dtype != torch.bfloat16:
+-        raise ValueError(
+-            "k_rope must have dtype torch.bfloat16 because the packed MLA layout "
+-            f"stores raw BF16 rope bytes, got {k_rope_2d.dtype}"
+-        )
++    k_rope_2d = None
++    if k_rope is not None:
++        k_rope_2d = _as_2d_cache(k_rope, _MLA_ROPE_DIM, "k_rope")
++        if k_nope_2d.shape[0] != k_rope_2d.shape[0]:
++            raise ValueError("k_nope and k_rope must have the same token count")
++        if k_rope_2d.dtype != torch.bfloat16:
++            raise ValueError(
++                "k_rope must have dtype torch.bfloat16 because the packed MLA layout "
++                f"stores raw BF16 rope bytes, got {k_rope_2d.dtype}"
++            )
+ 
+     quant_bytes: list[torch.Tensor] = []
+     scale_bytes: list[torch.Tensor] = []
+@@ -65,13 +68,14 @@ def pack_mla_kv_cache_reference(
+         quant_bytes.append(quant.view(torch.uint8).reshape(block.shape[0], group_size))
+         scale_bytes.append(scale.view(torch.uint8).reshape(block.shape[0], 4))
+ 
+-    rope_bytes = k_rope_2d.view(torch.uint8).reshape(
+-        k_rope_2d.shape[0], _MLA_ROPE_DIM * 2
+-    )
+-    packed = torch.cat(
+-        [torch.cat(quant_bytes, dim=1), torch.cat(scale_bytes, dim=1), rope_bytes],
+-        dim=1,
+-    )
++    fields = [torch.cat(quant_bytes, dim=1), torch.cat(scale_bytes, dim=1)]
++    if k_rope_2d is not None:
++        fields.append(
++            k_rope_2d.view(torch.uint8).reshape(
++                k_rope_2d.shape[0], _MLA_ROPE_DIM * 2
++            )
++        )
++    packed = torch.cat(fields, dim=1)
+     return packed.unsqueeze(1).contiguous()
+ 
+ 
+@@ -87,7 +91,21 @@ def unpack_mla_kv_cache_reference(
+             f"Only group_size={_MLA_GROUP_SIZE} is supported in the reference."
+         )
+ 
+-    packed = _as_2d_cache(kv_cache, _MLA_PACKED_DIM, "kv_cache").view(torch.uint8)
++    if kv_cache.ndim == 3:
++        if kv_cache.shape[1] != 1:
++            raise ValueError(
++                f"kv_cache middle dimension must be 1, got {tuple(kv_cache.shape)}"
++            )
++        kv_cache = kv_cache[:, 0, :]
++    if kv_cache.ndim != 2 or int(kv_cache.shape[1]) not in (
++        _MLA_NO_ROPE_PACKED_DIM,
++        _MLA_PACKED_DIM,
++    ):
++        raise ValueError(
++            "kv_cache must be rank-2 or rank-3 with record width 528 or 656, "
++            f"got {tuple(kv_cache.shape)}"
++        )
++    packed = kv_cache.contiguous().view(torch.uint8)
+     num_tokens = packed.shape[0]
+     num_groups = _MLA_NOPE_DIM // group_size
+ 
+@@ -95,11 +113,12 @@ def unpack_mla_kv_cache_reference(
+     nope_q = nope_q.reshape(num_tokens, _MLA_NOPE_DIM).to(torch.float32)
+     scales = packed[:, _MLA_NOPE_DIM : _MLA_NOPE_DIM + num_groups * 4].contiguous()
+     scales = scales.view(torch.float32).reshape(num_tokens, num_groups)
+-    rope = packed[:, _MLA_NOPE_DIM + num_groups * 4 :].contiguous().view(torch.bfloat16)
+-    rope = rope.reshape(num_tokens, _MLA_ROPE_DIM).to(torch.float32)
+-
+     nope = nope_q.reshape(num_tokens, num_groups, group_size) * scales.unsqueeze(-1)
+     nope = nope.reshape(num_tokens, _MLA_NOPE_DIM)
++    if int(packed.shape[1]) == _MLA_NO_ROPE_PACKED_DIM:
++        return nope.unsqueeze(1).contiguous()
++    rope = packed[:, _MLA_NOPE_DIM + num_groups * 4 :].contiguous().view(torch.bfloat16)
++    rope = rope.reshape(num_tokens, _MLA_ROPE_DIM).to(torch.float32)
+     return torch.cat([nope, rope], dim=1).unsqueeze(1).contiguous()
+ 
+ 
+diff --git a/b12x/attention/_shared/mla/smem.py b/b12x/attention/_shared/mla/smem.py
+index 5539ba9..3809dbd 100644
+--- a/b12x/attention/_shared/mla/smem.py
++++ b/b12x/attention/_shared/mla/smem.py
+@@ -213,7 +213,12 @@ def make_smem_layout(traits: UnifiedMLATraits) -> SmemLayout:
+     q_rope_off = off
+     # DSV4's 64-bf16 rows otherwise repeat every 128 bytes and alias banks
+     # across heads during the native H8/H16 scalar Q-RoPE loads.
+-    q_rope_stride = d_rope + (8 if traits.has_extra_cache else 0)
++    # CUTLASS typed shared storage cannot expose a zero-length MemRange. The
++    # GLM_NEXT recipe has d_rope==0, so reserve one unused padded row while all
++    # RoPE math and IO remain const-expr-elided by d_rope.
++    q_rope_stride = (
++        d_rope + (8 if traits.has_extra_cache else 0) if d_rope else 8
++    )
+     q_rope_bytes = hpb * q_rope_stride * 2
+     off = q_rope_off + q_rope_bytes  # FlashInfer packs Q regions back-to-back
+ 
+@@ -258,8 +263,8 @@ def make_smem_layout(traits: UnifiedMLATraits) -> SmemLayout:
+ 
+     # --- Double-buffered KV rope (bf16) linear entry*D_ROPE + d. ---
+     kv_rope_off = off
+-    kv_rope_stride = d_rope
+-    kv_rope_buf_bytes = bi * d_rope * 2
++    kv_rope_stride = d_rope if d_rope else 1
++    kv_rope_buf_bytes = bi * kv_rope_stride * 2
+     off = kv_rope_off + kv_rope_buf_bytes * bufs
+ 
+     # --- P6 mbarrier pair placeholder (16B aligned; reserved, unused in P5). ---
+@@ -549,12 +554,18 @@ def _run_module_asserts() -> None:
+     glm = _assert_model(ModelType.GLM_NSA, ComputeMode.FP8, ScaleFormat.ARBITRARY_FP32)
+     _assert_model(ModelType.GLM_NSA, ComputeMode.BF16, ScaleFormat.ARBITRARY_FP32)
+     _assert_model(ModelType.GLM_NSA, ComputeMode.BF16, ScaleFormat.NVFP4_E4M3)
++    glm_next = _assert_model(
++        ModelType.GLM_NEXT, ComputeMode.FP8, ScaleFormat.ARBITRARY_FP32
++    )
+     # Sanity on the expected magnitudes (~92KB DSV4, ~96KB GLM after the
+     # double-buffered KV + footer + w_fp8 refinements).
+     assert 80 * 1024 <= dsv4 <= 96 * 1024, f"DSV4 smem {dsv4}B outside ~92KB band"
+     assert 88 * 1024 <= glm <= SM120_SMEM_CARVEOUT_BYTES, (
+         f"GLM smem {glm}B outside ~96KB band"
+     )
++    assert 80 * 1024 <= glm_next <= SM120_SMEM_CARVEOUT_BYTES, (
++        f"GLM_NEXT smem {glm_next}B outside the expected band"
++    )
+ 
+ 
+ _run_module_asserts()
+diff --git a/b12x/attention/_shared/mla/smem_mg.py b/b12x/attention/_shared/mla/smem_mg.py
+index c045d4c..aa3f3aa 100644
+--- a/b12x/attention/_shared/mla/smem_mg.py
++++ b/b12x/attention/_shared/mla/smem_mg.py
+@@ -530,5 +530,17 @@ def _run_module_asserts() -> None:
+         )
+         get_prefill_mg_shared_storage_cls(glm, mg_n_hg=nhg)
+ 
++    glm_next = make_unified_traits(
++        ModelType.GLM_NEXT, ComputeMode.FP8, ScaleFormat.ARBITRARY_FP32
++    )
++    for nhg in (1, 2):
++        gl = make_smem_layout_mg(glm_next, mg_n_hg=nhg)
++        assert gl.kv_smem_stride == 528
++        assert gl.kv_sc_buf_bytes == 0
++        assert gl.kv_rope_buf_bytes == 0
++        assert gl.q_rope_stride == 8  # Dummy aliased storage; no RoPE math runs.
++        assert gl.total_bytes < SM120_SMEM_CARVEOUT_BYTES
++        get_prefill_mg_shared_storage_cls(glm_next, mg_n_hg=nhg)
++
+ 
+ _run_module_asserts()
+diff --git a/b12x/attention/_shared/mla/traits.py b/b12x/attention/_shared/mla/traits.py
+index bd395e0..6591ed0 100644
+--- a/b12x/attention/_shared/mla/traits.py
++++ b/b12x/attention/_shared/mla/traits.py
+@@ -31,6 +31,9 @@ def kv_fp8_rope_enabled() -> bool:
+ class ModelType:
+     DSV4 = 0
+     GLM_NSA = 1
++    # GLM-5.3 Flash absorbed MLA: the full 512-wide query is NoPE and the
++    # latent cache record carries no decoupled RoPE payload.
++    GLM_NEXT = 2
+ 
+ 
+ class ComputeMode:
+@@ -224,26 +227,104 @@ def make_unified_traits(
+             rope_scale_offset=-1,
+         )
+ 
++    if model_type == ModelType.GLM_NEXT:
++        if scale_format != ScaleFormat.ARBITRARY_FP32:
++            raise ValueError(
++                "GLM_NEXT requires ScaleFormat.ARBITRARY_FP32 (inline); "
++                f"got scale_format={scale_format!r}"
++            )
++        if compute_mode != ComputeMode.FP8:
++            raise ValueError(
++                "GLM_NEXT currently requires ComputeMode.FP8; "
++                f"got compute_mode={compute_mode!r}"
++            )
++        if fp8_rope is not None and bool(fp8_rope):
++            raise ValueError("GLM_NEXT has no RoPE cache payload")
++        # GLM-5.3 Flash keeps the 512-dimensional absorbed latent used by the
++        # GLM sparse-MLA math, but qk_rope_head_dim is zero. Its cache record is
++        # therefore exactly the 512 E4M3 latent bytes plus four inline fp32
++        # group scales. No RoPE suffix is present.
++        return UnifiedMLATraits(
++            model_type=ModelType.GLM_NEXT,
++            compute_mode=compute_mode,
++            scale_format=ScaleFormat.ARBITRARY_FP32,
++            d_nope=512,
++            d_rope=0,
++            d_v=512,
++            quant_tile=128,
++            num_scales=4,
++            n_v_chunks=4,
++            nt_per_warp_xv=2,
++            kv_gmem_stride=528,
++            kv_smem_stride=528,
++            q_nope_stride=528,
++            bi=64,
++            hpb=16,
++            block_threads=288,
++            math_threads=256,
++            bulk_tx_bytes=33792,  # 64 * 528; there is no RoPE transaction.
++            v_has_rope=False,
++            has_extra_cache=False,
++            fp8_rope=False,
++            rope_gmem_offset=528,
++            rope_payload_bytes=0,
++            rope_scale_offset=-1,
++        )
++
+     raise ValueError(
+         f"unsupported model_type {model_type!r} (DSV3_2 is dropped; "
+-        "valid: ModelType.DSV4, ModelType.GLM_NSA)"
++        "valid: ModelType.DSV4, ModelType.GLM_NSA, ModelType.GLM_NEXT)"
+     )
+ 
+ 
+-def infer_model_type(q_head_dim: int, kv_dtype) -> tuple[int, int, int]:
++def infer_model_type(
++    q_head_dim: int,
++    kv_dtype,
++    *,
++    model_type: int | None = None,
++) -> tuple[int, int, int]:
+     """Map (q_head_dim, kv_dtype) -> (model_type, compute_mode, scale_format).
+ 
+     ``q_head_dim`` is ``d_nope + d_rope``:
+       - DSV4:  448 + 64 = 512 -> (DSV4, FP8, UE8M0_BYTE)
+       - GLM:   512 + 64 = 576 -> (GLM_NSA, FP8, ARBITRARY_FP32)
++      - GLM_NEXT: 512 + 0 = 512 -> (GLM_NEXT, FP8, ARBITRARY_FP32)
++
++    The 512-wide contracts are ambiguous by shape. Existing callers retain
++    DSV4 as the compatibility default; GLM_NEXT callers must pass its explicit
++    ``model_type`` identity.
+ 
+     Both decode targets are FP8 today; ``kv_dtype`` is accepted for the future
+     BF16 const_expr branch but does not currently change the result.
+     """
++    if model_type is not None:
++        model_type = int(model_type)
++        expected_q_head_dim = {
++            ModelType.DSV4: 512,
++            ModelType.GLM_NSA: 576,
++            ModelType.GLM_NEXT: 512,
++        }.get(model_type)
++        if expected_q_head_dim is None:
++            raise ValueError(f"unsupported explicit model_type={model_type!r}")
++        if q_head_dim != expected_q_head_dim:
++            raise ValueError(
++                f"model_type={model_type} requires q_head_dim={expected_q_head_dim}; "
++                f"got {q_head_dim}"
++            )
++        if model_type == ModelType.DSV4:
++            return (ModelType.DSV4, ComputeMode.FP8, ScaleFormat.UE8M0_BYTE)
++        return (model_type, ComputeMode.FP8, ScaleFormat.ARBITRARY_FP32)
++
+     if q_head_dim == 512:
+         return (ModelType.DSV4, ComputeMode.FP8, ScaleFormat.UE8M0_BYTE)
+     if q_head_dim == 576:
+         return (ModelType.GLM_NSA, ComputeMode.FP8, ScaleFormat.ARBITRARY_FP32)
+     raise ValueError(
+-        f"unsupported q_head_dim={q_head_dim!r}; expected 512 (DSV4) or 576 (GLM_NSA)"
++        f"unsupported q_head_dim={q_head_dim!r}; expected 512 (DSV4 or explicit "
++        "GLM_NEXT) or 576 (GLM_NSA)"
+     )
++
++
++def is_glm_model_type(model_type: int) -> bool:
++    """Return whether ``model_type`` uses the GLM latent-cache family."""
++    return int(model_type) in (ModelType.GLM_NSA, ModelType.GLM_NEXT)
+diff --git a/b12x/attention/sparse_mla/__init__.py b/b12x/attention/sparse_mla/__init__.py
+index b9583fc..074f497 100644
+--- a/b12x/attention/sparse_mla/__init__.py
++++ b/b12x/attention/sparse_mla/__init__.py
+@@ -1,7 +1,7 @@
+-"""Sparse MLA decode/extend for SM12x (DeepSeek-V3.2 DSV4, GLM NSA).
++"""Sparse MLA decode/extend for SM12x (DeepSeek-V3.2 DSV4, GLM NSA/Next).
+ 
+ Multi-head latent attention over top-k-selected KV tokens from a paged
+-cache (DSV4: head_dim 576 = 512 nope + 64 rope, v_head_dim 512), FP8-e4m3
++cache (DSV4: head_dim 512 = 448 nope + 64 rope, v_head_dim 512), FP8-e4m3
+ or BF16 compute, split-KV decode with on-device merge; a single-pass decode
+ path is selected automatically on SM121. Selection indices typically come
+ from ``attention.dsa_indexer``.
+@@ -21,6 +21,12 @@ Example:
+                               cache_seqlens_int32=lens,
+                               nsa_cache_seqlens_int32=active)
+     out = sparse_mla.run_decode(binding=binding, kv_cache=kv, sm_scale=scale)
++
++GLM Next uses an explicit recipe identity because its absorbed 512-wide query
++collides with DSV4 by shape. Plan with ``model_type=ModelType.GLM_NEXT`` and
++use a 528-byte cache record: 512 E4M3 latent bytes followed by four FP32
++group-128 scales, with no RoPE suffix. Its physical attention scale remains
++``256**-0.5``.
+ """
+ 
+ from __future__ import annotations
+@@ -35,6 +41,7 @@ META = OpMeta(
+     api_style="planned",
+     entry_points=(
+         "Caps",
++        "ModelType",
+         "Plan",
+         "Binding",
+         "Scratch",
+@@ -44,11 +51,13 @@ META = OpMeta(
+         "bind",
+         "run_decode",
+         "run_extend",
++        "compile_glm_next_mla_cache_writer",
++        "concat_and_cache_glm_next_mla",
+         "is_supported",
+         "clear_caches",
+     ),
+     dtypes=("bf16", "fp8_e4m3"),
+-    recipes=("dsv4", "glm_nsa"),
++    recipes=("dsv4", "glm_nsa", "glm_next"),
+     requires=("triton",),
+     provenance=Provenance(
+         repo="https://github.com/lukealonso/b12x",
+@@ -70,8 +79,11 @@ if TYPE_CHECKING:  # static analysis only; runtime resolution is lazy
+         ExtendMetadata,
+         Plan,
+         Scratch,
++        ModelType,
+         bind,
+         clear_caches,
++        compile_glm_next_mla_cache_writer,
++        concat_and_cache_glm_next_mla,
+         is_supported,
+         plan,
+         run_decode,
+diff --git a/b12x/attention/sparse_mla/_scratch.py b/b12x/attention/sparse_mla/_scratch.py
+index 2bc51a5..7e4a695 100644
+--- a/b12x/attention/sparse_mla/_scratch.py
++++ b/b12x/attention/sparse_mla/_scratch.py
+@@ -34,6 +34,7 @@ from b12x._lib.scratch import (
+     scratch_buffer_spec,
+     scratch_tensor,
+ )
++from b12x.attention._shared.mla.traits import ModelType
+ 
+ 
+ @dataclass(frozen=True, kw_only=True)
+@@ -46,6 +47,7 @@ class B12XSparseMLAScratchCaps:
+     kv_dtype: torch.dtype = torch.bfloat16
+     head_dim: int = 576
+     v_head_dim: int = 512
++    model_type: int | None = None
+     mode: Literal["decode", "extend", "verify", "draft_extend"] = "decode"
+     max_batch: int | None = None
+     max_kv_rows: int = 0
+@@ -65,6 +67,14 @@ class B12XSparseMLAScratchCaps:
+         object.__setattr__(self, "max_width", max(int(self.max_width), 1))
+         object.__setattr__(self, "head_dim", max(int(self.head_dim), 1))
+         object.__setattr__(self, "v_head_dim", max(int(self.v_head_dim), 1))
++        if self.model_type is not None:
++            object.__setattr__(self, "model_type", int(self.model_type))
++            if int(self.model_type) == int(ModelType.GLM_NEXT):
++                if int(self.head_dim) != 512 or int(self.v_head_dim) != 512:
++                    raise ValueError(
++                        "ModelType.GLM_NEXT requires head_dim=512 and "
++                        f"v_head_dim=512; got {self.head_dim} and {self.v_head_dim}"
++                    )
+         max_batch = self.max_q_rows if self.max_batch is None else self.max_batch
+         object.__setattr__(self, "max_batch", max(int(max_batch), 1))
+         object.__setattr__(self, "max_kv_rows", max(int(self.max_kv_rows), 0))
+@@ -122,6 +132,7 @@ class B12XSparseMLAScratch:
+     kv_chunk_size_value: int | None = None
+     num_chunks_value: int | None = None
+     sm_scale_value: float | None = None
++    model_type: int | None = None
+ 
+     def set_split_chunk_config(self, *, kv_chunk_size: int, num_chunks: int) -> None:
+         if num_chunks <= 0 or num_chunks > self.max_chunks_per_row:
+@@ -310,9 +321,9 @@ def _sparse_mla_scratch_layout(
+     num_q_heads = int(caps.num_q_heads)
+     v_head_dim = int(caps.v_head_dim)
+     max_chunks_per_row = max(int(caps.max_chunks_per_row), 1)
+-    # Only the split-K DECODE path needs tmp_output/tmp_lse/final_lse + split
+-    # control. The single-pass prefill (extend/verify/draft_extend) only writes
+-    # output_buffer, so it gets a standalone output view -- no multi-chunk scratch.
++    # Only the split-K DECODE path needs tmp_output/tmp_lse + split control.
++    # Every mode owns output and final-LSE views so prefill never allocates its
++    # LSE output during capture.
+     split = caps.mode == "decode"
+ 
+     cursor = 0
+@@ -355,6 +366,9 @@ def _sparse_mla_scratch_layout(
+         output_offset_bytes = cursor
+         cursor += max_total_q * num_q_heads * v_head_dim * dtype_nbytes(caps.dtype)
+         cursor = align_up(cursor, SCRATCH_ALIGN_BYTES)
++        final_lse_offset_bytes = cursor
++        cursor += max_total_q * num_q_heads * dtype_nbytes(torch.float32)
++        cursor = align_up(cursor, SCRATCH_ALIGN_BYTES)
+ 
+     sm_scale_offset_bytes = cursor
+     cursor += dtype_nbytes(torch.float32)
+@@ -412,12 +426,6 @@ def _materialize_sparse_mla_scratch(
+             shape=(max_total_q, num_q_heads, max_chunks_per_row),
+             dtype=torch.float32,
+         )
+-        final_lse, _ = materialize_scratch_view(
+-            scratch_storage,
+-            offset_bytes=layout.final_lse_offset_bytes,
+-            shape=(max_total_q, num_q_heads),
+-            dtype=torch.float32,
+-        )
+         kv_chunk_size_ptr, _ = materialize_scratch_view(
+             scratch_storage,
+             offset_bytes=layout.kv_chunk_size_offset_bytes,
+@@ -447,6 +455,13 @@ def _materialize_sparse_mla_scratch(
+                 dtype=caps.dtype,
+             )
+ 
++    final_lse, _ = materialize_scratch_view(
++        scratch_storage,
++        offset_bytes=layout.final_lse_offset_bytes,
++        shape=(max_total_q, num_q_heads),
++        dtype=torch.float32,
++    )
++
+     sm_scale_tensor, _ = materialize_scratch_view(
+         scratch_storage,
+         offset_bytes=layout.sm_scale_offset_bytes,
+@@ -462,6 +477,7 @@ def _materialize_sparse_mla_scratch(
+         num_q_heads=num_q_heads,
+         head_dim=caps.head_dim,
+         v_head_dim=v_head_dim,
++        model_type=caps.model_type,
+         topk=caps.max_width,
+         max_total_q=caps.max_q_rows,
+         max_batch=caps.max_batch,
+diff --git a/b12x/attention/sparse_mla/api.py b/b12x/attention/sparse_mla/api.py
+index 5fd3754..27f25d6 100644
+--- a/b12x/attention/sparse_mla/api.py
++++ b/b12x/attention/sparse_mla/api.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ from ..._lib.gating import default_is_supported
++from .._shared.mla.traits import ModelType
+ from .._shared.mla.api import (
+     MLASparseDecodeMetadata as DecodeMetadata,
+ )
+@@ -18,6 +19,10 @@ from .._shared.mla.api import (
+ from .._shared.mla.api import (
+     sparse_mla_extend_forward as run_extend,
+ )
++from .._shared.mla.kv_cache import (
++    compile_glm_next_mla_cache_writer,
++    concat_and_cache_glm_next_mla,
++)
+ from ._scratch import (
+     B12XSparseMLABinding as Binding,
+ )
+@@ -51,6 +56,7 @@ def is_supported(device=None) -> bool:
+ 
+ 
+ __all__ = [
++    "ModelType",
+     "Caps",
+     "Plan",
+     "Binding",
+@@ -61,6 +67,8 @@ __all__ = [
+     "bind",
+     "run_decode",
+     "run_extend",
++    "compile_glm_next_mla_cache_writer",
++    "concat_and_cache_glm_next_mla",
+     "is_supported",
+     "clear_caches",
+ ]
+diff --git a/tests/attention/test_glm_next_mla.py b/tests/attention/test_glm_next_mla.py
+new file mode 100644
+index 0000000..76eafc0
+--- /dev/null
++++ b/tests/attention/test_glm_next_mla.py
+@@ -0,0 +1,1359 @@
++from __future__ import annotations
++
++import pytest
++import torch
++
++from b12x.attention import glm_pooled_indexer, sparse_mla
++from b12x.attention._shared.mla.reference import (
++    pack_mla_kv_cache_reference,
++    sparse_mla_reference,
++    unpack_mla_kv_cache_reference,
++)
++from b12x.attention._shared.mla.kv_cache import (
++    _glm_next_cache_byte_offset,
++    _glm_next_cache_record_address,
++    concat_and_cache_glm_next_mla,
++)
++from b12x.attention._shared.mla.traits import (
++    ComputeMode,
++    ModelType,
++    ScaleFormat,
++    infer_model_type,
++    make_unified_traits,
++)
++
++from ..conftest import require_b12x as require_sm120
++
++
++_GLM_NEXT_RECORD_BYTES = 528
++_GLM_NEXT_PAGE_SIZE = 64
++_GLM_NEXT_HEAD_DIM = 512
++_GLM_NEXT_SM_SCALE = 256**-0.5
++
++
++def _glm_next_plan_and_binding(
++    *,
++    device: torch.device,
++    q: torch.Tensor,
++    selected: torch.Tensor,
++    active: torch.Tensor,
++    cache_seqlens: torch.Tensor,
++    mode: str = "decode",
++    page_size: int = _GLM_NEXT_PAGE_SIZE,
++):
++    plan = sparse_mla.plan(
++        sparse_mla.Caps(
++            device=device,
++            num_q_heads=int(q.shape[1]),
++            max_q_rows=int(q.shape[0]),
++            max_batch=int(cache_seqlens.shape[0]),
++            max_width=int(selected.shape[1]),
++            max_kv_rows=max(int(active.max().item()), 1),
++            kv_dtype=torch.uint8,
++            head_dim=_GLM_NEXT_HEAD_DIM,
++            v_head_dim=_GLM_NEXT_HEAD_DIM,
++            page_size=page_size,
++            model_type=ModelType.GLM_NEXT,
++            mode=mode,
++        )
++    )
++    spec = plan.scratch_specs()[0]
++    binding = sparse_mla.bind(
++        plan,
++        scratch=torch.empty(spec.shape, dtype=spec.dtype, device=device),
++        q=q,
++        selected_indices=selected,
++        cache_seqlens_int32=cache_seqlens,
++        nsa_cache_seqlens_int32=active,
++    )
++    return plan, binding
++
++
++def _assert_glm_next_attention_close(
++    actual: torch.Tensor,
++    expected: torch.Tensor,
++) -> None:
++    actual_f = actual.float()
++    expected_f = expected.float()
++    cosine = torch.nn.functional.cosine_similarity(
++        actual_f.reshape(-1), expected_f.reshape(-1), dim=0
++    ).item()
++    max_abs = (actual_f - expected_f).abs().max().item()
++    assert cosine > 0.995, f"cosine similarity {cosine:.8f} did not exceed 0.995"
++    assert max_abs < 0.03, f"max absolute error {max_abs:.8f} exceeded 0.03"
++
++
++def _glm_next_dense_physical_reference(
++    q: torch.Tensor,
++    latent: torch.Tensor,
++    w_uk_t: torch.Tensor,
++    w_uv: torch.Tensor,
++) -> torch.Tensor:
++    keys = torch.einsum(
++        "rl,hpl->rhp", latent.float(), w_uk_t.float()
++    ).to(torch.bfloat16)
++    values = torch.einsum(
++        "rl,hlv->rhv", latent.float(), w_uv.float()
++    ).to(torch.bfloat16)
++    logits = torch.einsum("rhp,shp->hrs", q.float(), keys.float())
++    logits.mul_(_GLM_NEXT_SM_SCALE)
++    causal_mask = torch.ones(
++        (q.shape[0], q.shape[0]), dtype=torch.bool, device=q.device
++    ).triu_(1)
++    logits.masked_fill_(causal_mask.unsqueeze(0), -torch.inf)
++    probabilities = torch.softmax(logits, dim=-1)
++    return torch.einsum(
++        "hrs,shv->rhv", probabilities, values.float()
++    ).to(torch.bfloat16)
++
++
++def test_glm_next_traits_define_no_rope_record() -> None:
++    traits = make_unified_traits(
++        ModelType.GLM_NEXT,
++        ComputeMode.FP8,
++        ScaleFormat.ARBITRARY_FP32,
++    )
++
++    assert (traits.d_nope, traits.d_rope, traits.d_v) == (512, 0, 512)
++    assert traits.kv_gmem_stride == 528
++    assert traits.kv_smem_stride == 528
++    assert traits.bulk_tx_bytes == 64 * 528
++    assert traits.rope_payload_bytes == 0
++    assert not traits.v_has_rope
++    assert not traits.fp8_rope
++
++
++def test_glm_next_requires_explicit_identity_for_ambiguous_head_width() -> None:
++    assert infer_model_type(512, torch.uint8) == (
++        ModelType.DSV4,
++        ComputeMode.FP8,
++        ScaleFormat.UE8M0_BYTE,
++    )
++    assert infer_model_type(
++        512,
++        torch.uint8,
++        model_type=ModelType.GLM_NEXT,
++    ) == (
++        ModelType.GLM_NEXT,
++        ComputeMode.FP8,
++        ScaleFormat.ARBITRARY_FP32,
++    )
++
++    with pytest.raises(ValueError, match="requires q_head_dim=512"):
++        infer_model_type(576, torch.uint8, model_type=ModelType.GLM_NEXT)
++
++
++def test_glm_next_rejects_rope_and_nvfp4_cache_recipes() -> None:
++    with pytest.raises(ValueError, match="ARBITRARY_FP32"):
++        make_unified_traits(
++            ModelType.GLM_NEXT,
++            ComputeMode.BF16,
++            ScaleFormat.NVFP4_E4M3,
++        )
++    with pytest.raises(ValueError, match="no RoPE cache payload"):
++        make_unified_traits(
++            ModelType.GLM_NEXT,
++            ComputeMode.FP8,
++            ScaleFormat.ARBITRARY_FP32,
++            fp8_rope=True,
++        )
++    with pytest.raises(ValueError, match="ComputeMode.FP8"):
++        make_unified_traits(
++            ModelType.GLM_NEXT,
++            ComputeMode.BF16,
++            ScaleFormat.ARBITRARY_FP32,
++        )
++
++
++def test_glm_next_reference_record_is_528_bytes() -> None:
++    torch.manual_seed(20260826)
++    latent = torch.randn((7, 512), dtype=torch.bfloat16) / 4
++
++    packed = pack_mla_kv_cache_reference(latent)
++    unpacked = unpack_mla_kv_cache_reference(packed)
++
++    assert tuple(packed.shape) == (7, 1, 528)
++    assert tuple(unpacked.shape) == (7, 1, 512)
++    cosine = torch.nn.functional.cosine_similarity(
++        unpacked[:, 0].flatten(), latent.float().flatten(), dim=0
++    )
++    assert float(cosine) > 0.999
++
++
++def test_glm_next_packed_page_view_preserves_padded_page_stride() -> None:
++    from b12x.attention._shared.mla.api import _is_supported_packed_kv_cache_view
++    from b12x.attention._shared.mla.kernel import _cache_block_stride_bytes
++
++    page_size = 64
++    record_bytes = 528
++    semantic_page_bytes = page_size * record_bytes
++    pooled_tail_bytes = (page_size // 4) * 128 * 2
++    padded_page_bytes = semantic_page_bytes + pooled_tail_bytes
++    storage = torch.empty((3, padded_page_bytes), dtype=torch.uint8)
++    cache = torch.as_strided(
++        storage,
++        size=(3, page_size, record_bytes),
++        stride=(padded_page_bytes, record_bytes, 1),
++    )
++
++    assert tuple(cache.shape) == (3, 64, 528)
++    assert not cache.is_contiguous()
++    assert _is_supported_packed_kv_cache_view(cache, page_size=page_size)
++    assert (
++        _cache_block_stride_bytes(
++            cache,
++            page_size=page_size,
++            model_type=ModelType.GLM_NEXT,
++            record_bytes=record_bytes,
++        )
++        == padded_page_bytes
++    )
++
++
++def test_glm_next_cache_writer_uses_wide_padded_page_offsets() -> None:
++    page_size = 64
++    page_stride = page_size * 528 + (page_size // 4) * 128 * 2
++    high_page = 2**31 // page_stride + 1
++    slot = high_page * page_size + 7
++
++    offset = _glm_next_cache_byte_offset(
++        slot,
++        block_size=page_size,
++        block_stride=page_stride,
++    )
++
++    assert offset == high_page * page_stride + 7 * 528
++    assert offset > 2**31
++    annotations = _glm_next_cache_record_address.__annotations__
++    assert annotations["slot"] == "Int64"
++    assert annotations["block_stride"] == "Int64"
++    assert annotations["entry_stride"] == "Int64"
++    assert annotations["return"] == "Int64"
++
++
++def _valid_glm_next_writer_args() -> list[torch.Tensor]:
++    page_size = 64
++    page_stride = page_size * 528 + (page_size // 4) * 128 * 2
++    backing = torch.empty((2, page_stride), dtype=torch.uint8)
++    cache = torch.as_strided(
++        backing,
++        size=(2, page_size, 528),
++        stride=(page_stride, 528, 1),
++    )
++    return [
++        torch.empty((2, 512), dtype=torch.bfloat16),
++        cache,
++        torch.arange(2, dtype=torch.int64),
++    ]
++
++
++@pytest.mark.parametrize(
++    ("case", "error", "match"),
++    [
++        ("source_shape", ValueError, r"kv_c must be \(num_tokens, 512\)"),
++        ("source_dtype", TypeError, "kv_c must be BF16"),
++        ("cache_shape", ValueError, "kv_cache must be"),
++        ("cache_dtype", TypeError, "kv_cache must be uint8"),
++        ("slot_dtype", TypeError, "1-D int32 or int64"),
++        ("short_source", ValueError, "must cover slot_mapping"),
++        ("record_stride", ValueError, "packed 528-byte semantic records"),
++        ("overlapping_pages", ValueError, "page stride must cover"),
++        ("cpu_device", ValueError, "all tensors must be on CUDA"),
++        ("cpu_device_int32", ValueError, "all tensors must be on CUDA"),
++    ],
++)
++def test_glm_next_cache_writer_rejects_invalid_contracts(
++    case: str,
++    error: type[Exception],
++    match: str,
++) -> None:
++    kv_c, cache, slots = _valid_glm_next_writer_args()
++    if case == "source_shape":
++        kv_c = torch.empty((2, 511), dtype=torch.bfloat16)
++    elif case == "source_dtype":
++        kv_c = kv_c.float()
++    elif case == "cache_shape":
++        cache = torch.empty((2, 64, 527), dtype=torch.uint8)
++    elif case == "cache_dtype":
++        cache = torch.empty((2, 64, 528), dtype=torch.bfloat16)
++    elif case == "slot_dtype":
++        slots = slots.to(torch.int16)
++    elif case == "short_source":
++        kv_c = kv_c[:1]
++    elif case == "record_stride":
++        storage = torch.empty((2, 64, 544), dtype=torch.uint8)
++        cache = torch.as_strided(
++            storage,
++            size=(2, 64, 528),
++            stride=(64 * 544, 544, 1),
++        )
++    elif case == "overlapping_pages":
++        semantic_page_bytes = 64 * 528
++        storage = torch.empty(2 * semantic_page_bytes, dtype=torch.uint8)
++        cache = torch.as_strided(
++            storage,
++            size=(2, 64, 528),
++            stride=(semantic_page_bytes - 16, 528, 1),
++        )
++    elif case == "cpu_device_int32":
++        slots = slots.to(torch.int32)
++    elif case != "cpu_device":
++        raise AssertionError(f"unknown case {case}")
++
++    with pytest.raises(error, match=match):
++        concat_and_cache_glm_next_mla(kv_c, cache, slots)
++
++
++@pytest.mark.parametrize("slot_dtype", [torch.int32, torch.int64])
++@torch.inference_mode()
++def test_glm_next_cache_writer_preserves_padded_tail_and_record_abi(
++    slot_dtype: torch.dtype,
++) -> None:
++    device = require_sm120()
++    torch.manual_seed(20260826)
++    page_size = 64
++    num_pages = 3
++    semantic_page_bytes = page_size * 528
++    pooled_tail_bytes = (page_size // 4) * 128 * 2
++    page_stride = semantic_page_bytes + pooled_tail_bytes
++    sentinel = 0xA5
++    backing = torch.full(
++        (num_pages, page_stride),
++        sentinel,
++        dtype=torch.uint8,
++        device=device,
++    )
++    cache = torch.as_strided(
++        backing,
++        size=(num_pages, page_size, 528),
++        stride=(page_stride, 528, 1),
++    )
++    kv_c = (torch.randn((6, 512), device=device) / 4).to(torch.bfloat16)
++    capacity = num_pages * page_size
++    huge_slot = 2**30 + 17 if slot_dtype == torch.int32 else 2**40 + 17
++    slots = torch.tensor(
++        [0, -1, capacity, 65, huge_slot, 130],
++        dtype=slot_dtype,
++        device=device,
++    )
++
++    sparse_mla.concat_and_cache_glm_next_mla(kv_c, cache, slots)
++    torch.cuda.synchronize(device)
++
++    assert torch.all(backing[:, semantic_page_bytes:] == sentinel)
++    changed = (cache != sentinel).any(dim=-1).nonzero(as_tuple=False)
++    expected_changed = torch.tensor(
++        [[0, 0], [1, 1], [2, 2]], dtype=torch.int64, device=device
++    )
++    assert torch.equal(changed, expected_changed)
++
++    records = torch.stack((cache[0, 0], cache[1, 1], cache[2, 2])).cpu()
++    dequantized = unpack_mla_kv_cache_reference(records.unsqueeze(1))[:, 0]
++    source = kv_c.index_select(
++        0, torch.tensor([0, 3, 5], dtype=torch.int64, device=device)
++    ).float().cpu()
++    cosine = torch.nn.functional.cosine_similarity(
++        dequantized.flatten(), source.flatten(), dim=0
++    )
++    assert float(cosine) > 0.999
++
++    actual_scales = records[:, 512:].contiguous().view(torch.float32)
++    expected_scales = source.reshape(3, 4, 128).abs().amax(dim=-1) / 448.0
++    expected_scales = torch.where(
++        expected_scales > 0,
++        expected_scales,
++        torch.ones_like(expected_scales),
++    )
++    torch.testing.assert_close(actual_scales, expected_scales, rtol=1e-6, atol=0.0)
++
++
++def test_glm_next_public_cpu_reference_path_preserves_model_identity() -> None:
++    torch.manual_seed(20260826)
++    rows, heads, cache_tokens, width = 2, 8, 16, 8
++    latent = torch.randn((cache_tokens, 512), dtype=torch.bfloat16) / 4
++    cache = pack_mla_kv_cache_reference(latent)
++    q = torch.randn((rows, heads, 512), dtype=torch.bfloat16) / 4
++    selected = torch.stack(
++        [torch.randperm(cache_tokens)[:width].sort().values for _ in range(rows)]
++    ).to(torch.int32)
++    cache_seqlens = torch.full((rows,), cache_tokens, dtype=torch.int32)
++    active = torch.full((rows,), width, dtype=torch.int32)
++
++    plan = sparse_mla.plan(
++        sparse_mla.Caps(
++            device="cpu",
++            num_q_heads=heads,
++            max_q_rows=rows,
++            max_width=width,
++            kv_dtype=torch.uint8,
++            head_dim=512,
++            v_head_dim=512,
++            page_size=1,
++            model_type=ModelType.GLM_NEXT,
++        )
++    )
++    spec = plan.scratch_specs()[0]
++    binding = sparse_mla.bind(
++        plan,
++        scratch=torch.empty(spec.shape, dtype=spec.dtype),
++        q=q,
++        selected_indices=selected,
++        cache_seqlens_int32=cache_seqlens,
++        nsa_cache_seqlens_int32=active,
++    )
++
++    actual = sparse_mla.run_decode(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=256**-0.5,
++    )
++    expected = sparse_mla_reference(
++        q_all=q,
++        kv_cache=cache,
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=256**-0.5,
++        v_head_dim=512,
++    )
++    torch.testing.assert_close(actual, expected)
++
++    assert sparse_mla.ModelType.GLM_NEXT == ModelType.GLM_NEXT
++    assert callable(sparse_mla.compile_glm_next_mla_cache_writer)
++    assert callable(sparse_mla.concat_and_cache_glm_next_mla)
++    with pytest.raises(ValueError, match="does not match its plan"):
++        sparse_mla.run_decode(
++            binding=binding,
++            kv_cache=cache,
++            sm_scale=256**-0.5,
++            model_type=ModelType.GLM_NSA,
++        )
++    with pytest.raises(ValueError, match="no RoPE cache payload"):
++        sparse_mla.run_decode(
++            binding=binding,
++            kv_cache=cache,
++            sm_scale=256**-0.5,
++            fp8_rope=True,
++        )
++
++
++@pytest.mark.parametrize("container_width", [2051, 2112])
++def test_glm_next_prefill_routes_exact_or_aligned_selector_width(
++    monkeypatch: pytest.MonkeyPatch,
++    container_width: int,
++) -> None:
++    import b12x.attention._shared.mla.prefill_mg as prefill_mg
++    from b12x.attention._shared.mla.prefill import run_unified_prefill
++
++    calls: list[dict] = []
++
++    def fake_run_unified_prefill_mg(**kwargs):
++        calls.append(kwargs)
++        return kwargs["output"], kwargs["lse_out"]
++
++    monkeypatch.setattr(
++        prefill_mg,
++        "run_unified_prefill_mg",
++        fake_run_unified_prefill_mg,
++    )
++
++    q = torch.empty((2, 8, 512), dtype=torch.bfloat16)
++    cache = torch.empty((4, 528), dtype=torch.uint8)
++    selected = torch.full((2, container_width), -1, dtype=torch.int32)
++    selected[:, :2051] = 0
++    active = torch.full((2,), 2051, dtype=torch.int32)
++
++    output, lse = run_unified_prefill(
++        q=q,
++        kv_cache=cache,
++        topk_indices=selected,
++        topk_length=active,
++        sm_scale=256**-0.5,
++        page_block_size=64,
++        model_type=ModelType.GLM_NEXT,
++    )
++
++    assert output.shape == (2, 8, 512)
++    assert lse.shape == (2, 8)
++    assert len(calls) == 1
++    assert calls[0]["model_type"] == ModelType.GLM_NEXT
++    assert calls[0]["scale_format"] == ScaleFormat.ARBITRARY_FP32
++    assert calls[0]["fp8_rope"] is False
++    torch.testing.assert_close(calls[0]["topk_length"], active)
++
++
++@torch.inference_mode()
++def test_glm_next_production_decode_matches_packed_record_oracle() -> None:
++    device = require_sm120()
++    generator = torch.Generator(device=device).manual_seed(20260827)
++    rows, heads, num_records, width = 2, 8, 3 * _GLM_NEXT_PAGE_SIZE, 129
++    latent = (
++        torch.randn(
++            (num_records, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    cache = torch.empty(
++        (
++            num_records // _GLM_NEXT_PAGE_SIZE,
++            _GLM_NEXT_PAGE_SIZE,
++            _GLM_NEXT_RECORD_BYTES,
++        ),
++        dtype=torch.uint8,
++        device=device,
++    )
++    slots = torch.arange(num_records, dtype=torch.int64, device=device)
++    sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++
++    q = (
++        torch.randn(
++            (rows, heads, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    selected = torch.stack(
++        [
++            torch.randperm(num_records, generator=generator, device=device)[:width]
++            for _ in range(rows)
++        ]
++    ).to(torch.int32)
++    active = torch.tensor([width, 65], dtype=torch.int32, device=device)
++    cache_seqlens = torch.full(
++        (rows,), num_records, dtype=torch.int32, device=device
++    )
++    _, binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q,
++        selected=selected,
++        active=active,
++        cache_seqlens=cache_seqlens,
++    )
++
++    actual, actual_lse = sparse_mla.run_decode(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        return_lse=True,
++        forced_num_splits=2,
++    )
++    expected, expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=cache.view(num_records, 1, _GLM_NEXT_RECORD_BYTES),
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    torch.cuda.synchronize(device)
++
++    _assert_glm_next_attention_close(actual, expected)
++    assert bool(torch.isfinite(actual_lse).all().item())
++    torch.testing.assert_close(actual_lse, expected_lse, rtol=0.0, atol=0.05)
++
++
++@torch.inference_mode()
++def test_glm_next_hybrid_manager_page_replays_across_page_boundary() -> None:
++    device = require_sm120()
++    generator = torch.Generator(device=device).manual_seed(20260829)
++    page_size = 2304
++    num_pages = 2
++    page_stride = (
++        page_size * _GLM_NEXT_RECORD_BYTES
++        + page_size // 4 * 128 * torch.bfloat16.itemsize
++    )
++    backing = torch.zeros(
++        (num_pages, page_stride), dtype=torch.uint8, device=device
++    )
++    cache = torch.as_strided(
++        backing,
++        size=(num_pages, page_size, _GLM_NEXT_RECORD_BYTES),
++        stride=(page_stride, _GLM_NEXT_RECORD_BYTES, 1),
++    )
++    slots = torch.tensor(
++        [63, 64, 2302, 2303, 2304, 2305, 4607],
++        dtype=torch.int64,
++        device=device,
++    )
++    latent = (
++        torch.randn(
++            (slots.numel(), _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++
++    q = (
++        torch.randn(
++            (1, 8, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    selected = slots.to(torch.int32).unsqueeze(0).contiguous()
++    active = torch.full(
++        (1,), slots.numel(), dtype=torch.int32, device=device
++    )
++    cache_seqlens = torch.full(
++        (1,), num_pages * page_size, dtype=torch.int32, device=device
++    )
++    _, binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q,
++        selected=selected,
++        active=active,
++        cache_seqlens=cache_seqlens,
++        page_size=page_size,
++    )
++
++    actual, actual_lse = sparse_mla.run_decode(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        return_lse=True,
++        lse_scale="natural",
++        forced_num_splits=1,
++    )
++    flat_cache = cache.contiguous().view(
++        num_pages * page_size, 1, _GLM_NEXT_RECORD_BYTES
++    )
++    expected, expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=flat_cache,
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    expected_lse.mul_(0.6931471805599453)
++    torch.cuda.synchronize(device)
++
++    assert cache.stride(0) == page_stride
++    _assert_glm_next_attention_close(actual, expected)
++    torch.testing.assert_close(actual_lse, expected_lse, rtol=0.0, atol=0.05)
++
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++        captured_output, captured_lse = sparse_mla.run_decode(
++            binding=binding,
++            kv_cache=cache,
++            sm_scale=_GLM_NEXT_SM_SCALE,
++            return_lse=True,
++            lse_scale="natural",
++            forced_num_splits=1,
++        )
++    assert captured_output.data_ptr() == actual.data_ptr()
++    assert captured_lse.data_ptr() == actual_lse.data_ptr()
++
++    for _ in range(2):
++        q.copy_(
++            (
++                torch.randn(q.shape, generator=generator, device=device) / 4
++            ).to(torch.bfloat16)
++        )
++        latent.copy_(
++            (
++                torch.randn(
++                    latent.shape,
++                    generator=generator,
++                    device=device,
++                )
++                / 4
++            ).to(torch.bfloat16)
++        )
++        sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++        flat_cache.copy_(
++            cache.contiguous().view(
++                num_pages * page_size, 1, _GLM_NEXT_RECORD_BYTES
++            )
++        )
++        replay_expected, replay_expected_lse = sparse_mla_reference(
++            q_all=q,
++            kv_cache=flat_cache,
++            page_table_1=selected,
++            active_token_counts=active,
++            sm_scale=_GLM_NEXT_SM_SCALE,
++            v_head_dim=_GLM_NEXT_HEAD_DIM,
++            return_lse=True,
++        )
++        replay_expected_lse.mul_(0.6931471805599453)
++        allocated_before = torch.cuda.memory_allocated(device)
++        reserved_before = torch.cuda.memory_reserved(device)
++        graph.replay()
++        torch.cuda.synchronize(device)
++
++        assert torch.cuda.memory_allocated(device) == allocated_before
++        assert torch.cuda.memory_reserved(device) == reserved_before
++        _assert_glm_next_attention_close(captured_output, replay_expected)
++        torch.testing.assert_close(
++            captured_lse, replay_expected_lse, rtol=0.0, atol=0.05
++        )
++
++
++@torch.inference_mode()
++def test_glm_next_production_prefill_2051_replays_without_allocation() -> None:
++    device = require_sm120()
++    generator = torch.Generator(device=device).manual_seed(20260828)
++    rows, heads = 1, 8
++    active_width = 2051
++    container_width = 2112
++    num_records = container_width
++    latent = (
++        torch.randn(
++            (num_records, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    cache = torch.empty(
++        (
++            num_records // _GLM_NEXT_PAGE_SIZE,
++            _GLM_NEXT_PAGE_SIZE,
++            _GLM_NEXT_RECORD_BYTES,
++        ),
++        dtype=torch.uint8,
++        device=device,
++    )
++    slots = torch.arange(num_records, dtype=torch.int64, device=device)
++    sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++
++    q = (
++        torch.randn(
++            (rows, heads, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    selected = torch.full(
++        (rows, container_width), -1, dtype=torch.int32, device=device
++    )
++    selected[0, :active_width] = torch.randperm(
++        num_records, generator=generator, device=device
++    )[:active_width].to(torch.int32)
++    active = torch.full((rows,), active_width, dtype=torch.int32, device=device)
++    cache_seqlens = torch.full(
++        (rows,), num_records, dtype=torch.int32, device=device
++    )
++    _, binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q,
++        selected=selected,
++        active=active,
++        cache_seqlens=cache_seqlens,
++        mode="extend",
++    )
++
++    actual, actual_lse = sparse_mla.run_extend(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        return_lse=True,
++    )
++    expected, expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=cache.view(num_records, 1, _GLM_NEXT_RECORD_BYTES),
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    torch.cuda.synchronize(device)
++    _assert_glm_next_attention_close(actual, expected)
++    torch.testing.assert_close(actual_lse, expected_lse, rtol=0.0, atol=0.05)
++
++    assert actual.data_ptr() == binding.scratch.output_buffer.data_ptr()
++    assert binding.scratch.final_lse is not None
++    assert actual_lse.data_ptr() == binding.scratch.final_lse.data_ptr()
++
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++        captured_output, captured_lse = sparse_mla.run_extend(
++            binding=binding,
++            kv_cache=cache,
++            sm_scale=_GLM_NEXT_SM_SCALE,
++            return_lse=True,
++        )
++    assert captured_output.data_ptr() == actual.data_ptr()
++    assert captured_lse.data_ptr() == actual_lse.data_ptr()
++
++    q.copy_(
++        (
++            torch.randn(
++                q.shape,
++                generator=generator,
++                device=device,
++            )
++            / 4
++        ).to(torch.bfloat16)
++    )
++    replay_expected, replay_expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=cache.view(num_records, 1, _GLM_NEXT_RECORD_BYTES),
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    allocated_before = torch.cuda.memory_allocated(device)
++    reserved_before = torch.cuda.memory_reserved(device)
++    graph.replay()
++    torch.cuda.synchronize(device)
++
++    assert torch.cuda.memory_allocated(device) == allocated_before
++    assert torch.cuda.memory_reserved(device) == reserved_before
++    _assert_glm_next_attention_close(captured_output, replay_expected)
++    torch.testing.assert_close(
++        captured_lse, replay_expected_lse, rtol=0.0, atol=0.05
++    )
++
++
++@torch.inference_mode()
++def test_glm_next_tp4_hybrid_page_prefill_matches_oracle_and_replays() -> None:
++    device = require_sm120()
++    generator = torch.Generator(device=device).manual_seed(20260830)
++    rows, heads = 26, 16
++    page_size = 2176
++    num_pages = 3
++    container_width = 2051
++    semantic_page_bytes = page_size * _GLM_NEXT_RECORD_BYTES
++    pooled_tail_bytes = page_size // 4 * 128 * torch.bfloat16.itemsize
++    page_stride = semantic_page_bytes + pooled_tail_bytes
++    sentinel = 0xA5
++    backing = torch.full(
++        (num_pages, page_stride), sentinel, dtype=torch.uint8, device=device
++    )
++    cache = torch.as_strided(
++        backing,
++        size=(num_pages, page_size, _GLM_NEXT_RECORD_BYTES),
++        stride=(page_stride, _GLM_NEXT_RECORD_BYTES, 1),
++    )
++    latent = (
++        torch.randn(
++            (rows, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    slots = 2 * page_size + torch.arange(rows, dtype=torch.int64, device=device)
++    sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++
++    q = (
++        torch.randn(
++            (rows, heads, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    selected = torch.full(
++        (rows, container_width), -1, dtype=torch.int32, device=device
++    )
++    for row in range(rows):
++        selected[row, : row + 1] = slots[: row + 1].to(torch.int32)
++    active = torch.arange(1, rows + 1, dtype=torch.int32, device=device)
++    cache_seqlens = active.clone()
++    _, binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q,
++        selected=selected,
++        active=active,
++        cache_seqlens=cache_seqlens,
++        mode="extend",
++        page_size=page_size,
++    )
++
++    actual, actual_lse = sparse_mla.run_extend(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        return_lse=True,
++    )
++    flat_cache = cache.contiguous().view(
++        num_pages * page_size, 1, _GLM_NEXT_RECORD_BYTES
++    )
++    expected, expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=flat_cache,
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    torch.cuda.synchronize(device)
++
++    assert cache.stride(0) == page_stride
++    assert torch.all(backing[:, semantic_page_bytes:] == sentinel)
++    _assert_glm_next_attention_close(actual, expected)
++    per_row_cosine = torch.nn.functional.cosine_similarity(
++        actual.float().reshape(rows, -1),
++        expected.float().reshape(rows, -1),
++        dim=1,
++    )
++    assert float(per_row_cosine.min()) > 0.995
++    torch.testing.assert_close(actual_lse, expected_lse, rtol=0.0, atol=0.05)
++
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++        captured_output, captured_lse = sparse_mla.run_extend(
++            binding=binding,
++            kv_cache=cache,
++            sm_scale=_GLM_NEXT_SM_SCALE,
++            return_lse=True,
++        )
++    assert captured_output.data_ptr() == actual.data_ptr()
++    assert captured_lse.data_ptr() == actual_lse.data_ptr()
++
++    q.copy_(
++        (
++            torch.randn(q.shape, generator=generator, device=device) / 4
++        ).to(torch.bfloat16)
++    )
++    latent.copy_(
++        (
++            torch.randn(latent.shape, generator=generator, device=device) / 4
++        ).to(torch.bfloat16)
++    )
++    sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++    flat_cache.copy_(
++        cache.contiguous().view(
++            num_pages * page_size, 1, _GLM_NEXT_RECORD_BYTES
++        )
++    )
++    replay_expected, replay_expected_lse = sparse_mla_reference(
++        q_all=q,
++        kv_cache=flat_cache,
++        page_table_1=selected,
++        active_token_counts=active,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        v_head_dim=_GLM_NEXT_HEAD_DIM,
++        return_lse=True,
++    )
++    allocated_before = torch.cuda.memory_allocated(device)
++    reserved_before = torch.cuda.memory_reserved(device)
++    graph.replay()
++    torch.cuda.synchronize(device)
++
++    assert torch.cuda.memory_allocated(device) == allocated_before
++    assert torch.cuda.memory_reserved(device) == reserved_before
++    assert torch.all(backing[:, semantic_page_bytes:] == sentinel)
++    _assert_glm_next_attention_close(captured_output, replay_expected)
++    torch.testing.assert_close(
++        captured_lse, replay_expected_lse, rtol=0.0, atol=0.05
++    )
++
++
++@torch.inference_mode()
++def test_glm_next_composed_prefill_matches_physical_mha_and_replays() -> None:
++    device = require_sm120()
++    generator = torch.Generator(device=device).manual_seed(20260831)
++    rows, heads = 26, 16
++    physical_head_dim = 256
++    page_size = 2176
++    num_pages = 3
++    selection_width = 2051
++    physical_page = 2
++    semantic_page_bytes = page_size * _GLM_NEXT_RECORD_BYTES
++    pooled_tail_bytes = page_size // 4 * 128 * torch.bfloat16.itemsize
++    page_stride_bytes = semantic_page_bytes + pooled_tail_bytes
++    sentinel = 0xA5
++
++    backing = torch.full(
++        (num_pages, page_stride_bytes),
++        sentinel,
++        dtype=torch.uint8,
++        device=device,
++    )
++    cache = torch.as_strided(
++        backing,
++        size=(num_pages, page_size, _GLM_NEXT_RECORD_BYTES),
++        stride=(page_stride_bytes, _GLM_NEXT_RECORD_BYTES, 1),
++    )
++    compressed_cache = torch.as_strided(
++        backing.view(torch.bfloat16),
++        size=(num_pages, page_size // 4, 128),
++        stride=(page_stride_bytes // 2, 128, 1),
++        storage_offset=semantic_page_bytes // 2,
++    )
++    block_table = torch.tensor(
++        [[physical_page]], dtype=torch.int32, device=device
++    )
++
++    selector_plan = glm_pooled_indexer.plan(
++        glm_pooled_indexer.Caps(
++            device=device,
++            max_batch=1,
++            max_raw_state_slots=1,
++            max_q_rows=rows,
++            max_seq_len=page_size,
++            num_compressed_cache_pages=num_pages,
++            compressed_page_size=page_size // 4,
++        )
++    )
++    (selector_spec,) = selector_plan.scratch_specs()
++    selector_binding = glm_pooled_indexer.bind(
++        selector_plan,
++        scratch=torch.empty(
++            selector_spec.shape, dtype=selector_spec.dtype, device=device
++        ),
++        compressed_k_cache=compressed_cache,
++        compressed_block_table=block_table,
++        raw_k_ring=torch.empty(
++            (1, selector_plan.caps.raw_ring_capacity, 128),
++            dtype=torch.bfloat16,
++            device=device,
++        ),
++        raw_gate_ring=torch.empty(
++            (1, selector_plan.caps.raw_ring_capacity, 128),
++            dtype=torch.bfloat16,
++            device=device,
++        ),
++        raw_logical_positions=torch.full(
++            (1, selector_plan.caps.raw_ring_capacity),
++            -1,
++            dtype=torch.int64,
++            device=device,
++        ),
++        raw_interval_start_positions=torch.full(
++            (1,), -1, dtype=torch.int64, device=device
++        ),
++        raw_state_slot_ids=torch.zeros((1,), dtype=torch.int32, device=device),
++        position_embedding=(
++            torch.randn((4, 128), generator=generator, device=device) / 4
++        ).to(torch.bfloat16),
++        selected_positions=torch.full(
++            (rows, selection_width), -1, dtype=torch.int32, device=device
++        ),
++    )
++
++    index_query = (
++        torch.randn((rows, 32, 128), generator=generator, device=device) / 4
++    ).to(torch.bfloat16)
++    normalized_index_key = (
++        torch.randn((rows, 128), generator=generator, device=device) / 4
++    ).to(torch.bfloat16)
++    index_gate_logits = (
++        torch.randn((rows, 128), generator=generator, device=device) / 4
++    ).to(torch.bfloat16)
++    index_head_weights = (
++        torch.randn((rows, 32), generator=generator, device=device) / 4
++    ).to(torch.bfloat16)
++    request_ids = torch.zeros((rows,), dtype=torch.int32, device=device)
++    query_positions = torch.arange(rows, dtype=torch.int64, device=device)
++    sequence_lengths = torch.tensor([rows], dtype=torch.int32, device=device)
++    query_start_loc = torch.tensor([0, rows], dtype=torch.int32, device=device)
++    reset_mask = torch.ones((1,), dtype=torch.bool, device=device)
++    prefix_lengths = torch.zeros((1,), dtype=torch.int32, device=device)
++
++    latent = (
++        torch.randn(
++            (rows, _GLM_NEXT_HEAD_DIM), generator=generator, device=device
++        )
++        / 4
++    ).to(torch.bfloat16)
++    q_physical = (
++        torch.randn(
++            (rows, heads, physical_head_dim),
++            generator=generator,
++            device=device,
++        )
++        / 4
++    ).to(torch.bfloat16)
++    w_uk_t = (
++        torch.randn(
++            (heads, physical_head_dim, _GLM_NEXT_HEAD_DIM),
++            generator=generator,
++            device=device,
++        )
++        * (_GLM_NEXT_HEAD_DIM**-0.5)
++    ).to(torch.bfloat16)
++    w_uv = (
++        torch.randn(
++            (heads, _GLM_NEXT_HEAD_DIM, physical_head_dim),
++            generator=generator,
++            device=device,
++        )
++        * (_GLM_NEXT_HEAD_DIM**-0.5)
++    ).to(torch.bfloat16)
++    q_absorbed = torch.empty(
++        (rows, heads, _GLM_NEXT_HEAD_DIM),
++        dtype=torch.bfloat16,
++        device=device,
++    )
++    physical_output = torch.empty(
++        (rows, heads, physical_head_dim),
++        dtype=torch.bfloat16,
++        device=device,
++    )
++    selected_physical = torch.full(
++        (rows, selection_width), -1, dtype=torch.int32, device=device
++    )
++    active_counts = torch.arange(1, rows + 1, dtype=torch.int32, device=device)
++    cache_seqlens = active_counts.clone()
++    slots = physical_page * page_size + query_positions
++    _, attention_binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q_absorbed,
++        selected=selected_physical,
++        active=active_counts,
++        cache_seqlens=cache_seqlens,
++        mode="extend",
++        page_size=page_size,
++    )
++
++    def run_composed() -> torch.Tensor:
++        glm_pooled_indexer.reset_state(
++            selector_binding,
++            reset_mask=reset_mask,
++            prefix_lengths=prefix_lengths,
++        )
++        glm_pooled_indexer.run_prefill(
++            selector_binding,
++            index_query=index_query,
++            normalized_index_key=normalized_index_key,
++            index_gate_logits=index_gate_logits,
++            index_head_weights=index_head_weights,
++            request_ids=request_ids,
++            query_positions=query_positions,
++            sequence_lengths=sequence_lengths,
++            query_start_loc=query_start_loc,
++        )
++        logical_selected = selector_binding.selected_positions
++        active_counts.copy_(
++            (logical_selected >= 0).sum(dim=1, dtype=torch.int32)
++        )
++        # All 26 rows occupy one 2176-token logical page, so this is the exact
++        # request-relative block-table remap used by the serving path.
++        selected_physical.copy_(logical_selected)
++        selected_physical.add_(block_table[0, 0] * page_size)
++        selected_physical.masked_fill_(logical_selected < 0, -1)
++
++        sparse_mla.concat_and_cache_glm_next_mla(latent, cache, slots)
++        torch.bmm(
++            q_physical.transpose(0, 1),
++            w_uk_t,
++            out=q_absorbed.transpose(0, 1),
++        )
++        latent_output = sparse_mla.run_extend(
++            binding=attention_binding,
++            kv_cache=cache,
++            sm_scale=_GLM_NEXT_SM_SCALE,
++        )
++        torch.bmm(
++            latent_output.transpose(0, 1),
++            w_uv,
++            out=physical_output.transpose(0, 1),
++        )
++        return physical_output
++
++    def assert_causal_selection() -> None:
++        logical_selected = selector_binding.selected_positions
++        for row in range(rows):
++            logical_prefix = logical_selected[row, : row + 1]
++            torch.testing.assert_close(
++                logical_prefix.sort().values.cpu(),
++                torch.arange(row + 1, dtype=torch.int32),
++            )
++            assert torch.all(logical_selected[row, row + 1 :] == -1)
++            torch.testing.assert_close(
++                selected_physical[row, : row + 1].cpu(),
++                (physical_page * page_size + logical_prefix).cpu(),
++            )
++            assert torch.all(selected_physical[row, row + 1 :] == -1)
++        torch.testing.assert_close(
++            active_counts,
++            torch.arange(1, rows + 1, dtype=torch.int32, device=device),
++        )
++
++    def assert_physical_output(
++        actual_output: torch.Tensor, expected_output: torch.Tensor
++    ) -> None:
++        _assert_glm_next_attention_close(actual_output, expected_output)
++        per_row_cosine = torch.nn.functional.cosine_similarity(
++            actual_output.float().reshape(rows, -1),
++            expected_output.float().reshape(rows, -1),
++            dim=1,
++        )
++        assert float(per_row_cosine.min()) > 0.995
++
++    expected = _glm_next_dense_physical_reference(
++        q_physical, latent, w_uk_t, w_uv
++    )
++    actual = run_composed()
++    torch.cuda.synchronize(device)
++    assert cache.stride(0) == page_stride_bytes
++    assert compressed_cache.stride(0) == page_stride_bytes // 2
++    assert torch.all(backing[:physical_page] == sentinel)
++    assert torch.all(cache[physical_page, rows:] == sentinel)
++    assert_causal_selection()
++    assert_physical_output(actual, expected)
++
++    graph = torch.cuda.CUDAGraph()
++    with torch.cuda.graph(graph):
++        captured_output = run_composed()
++    assert captured_output.data_ptr() == physical_output.data_ptr()
++    torch.cuda.synchronize(device)
++    assert_causal_selection()
++    assert_physical_output(captured_output, expected)
++
++    q_physical.copy_(
++        (
++            torch.randn(q_physical.shape, generator=generator, device=device) / 4
++        ).to(torch.bfloat16)
++    )
++    latent.copy_(
++        (
++            torch.randn(latent.shape, generator=generator, device=device) / 4
++        ).to(torch.bfloat16)
++    )
++    index_query.copy_(
++        (
++            torch.randn(index_query.shape, generator=generator, device=device) / 4
++        ).to(torch.bfloat16)
++    )
++    normalized_index_key.copy_(
++        (
++            torch.randn(
++                normalized_index_key.shape, generator=generator, device=device
++            )
++            / 4
++        ).to(torch.bfloat16)
++    )
++    index_gate_logits.copy_(
++        (
++            torch.randn(
++                index_gate_logits.shape, generator=generator, device=device
++            )
++            / 4
++        ).to(torch.bfloat16)
++    )
++    index_head_weights.copy_(
++        (
++            torch.randn(
++                index_head_weights.shape, generator=generator, device=device
++            )
++            / 4
++        ).to(torch.bfloat16)
++    )
++    replay_expected = _glm_next_dense_physical_reference(
++        q_physical, latent, w_uk_t, w_uv
++    )
++    backing.fill_(sentinel)
++    selector_binding.selected_positions.fill_(-777)
++    selected_physical.fill_(-777)
++    active_counts.zero_()
++    physical_output.fill_(torch.nan)
++    allocated_before = torch.cuda.memory_allocated(device)
++    reserved_before = torch.cuda.memory_reserved(device)
++    graph.replay()
++    torch.cuda.synchronize(device)
++
++    assert torch.cuda.memory_allocated(device) == allocated_before
++    assert torch.cuda.memory_reserved(device) == reserved_before
++    assert torch.all(backing[:physical_page] == sentinel)
++    assert torch.all(cache[physical_page, rows:] == sentinel)
++    assert_causal_selection()
++    assert bool(torch.isfinite(captured_output).all())
++    assert_physical_output(captured_output, replay_expected)
++
++
++@torch.inference_mode()
++def test_glm_next_writer_and_reader_use_int64_for_live_high_page() -> None:
++    device = require_sm120()
++    page_size = _GLM_NEXT_PAGE_SIZE
++    semantic_page_bytes = page_size * _GLM_NEXT_RECORD_BYTES
++    pooled_tail_bytes = (page_size // 4) * 128 * torch.bfloat16.itemsize
++    page_stride_bytes = semantic_page_bytes + pooled_tail_bytes
++    int32_max = torch.iinfo(torch.int32).max
++    high_page = int32_max // page_stride_bytes + 2
++    num_pages = high_page + 1
++    required_bytes = num_pages * page_stride_bytes
++    free_bytes, _ = torch.cuda.mem_get_info(device)
++    reserve_bytes = 2 * 1024**3
++    if free_bytes < required_bytes + reserve_bytes:
++        pytest.skip(
++            "live GLM_NEXT high-page test requires "
++            f"{required_bytes + reserve_bytes} bytes free, found {free_bytes}"
++        )
++    try:
++        backing = torch.empty(
++            (num_pages, page_stride_bytes), dtype=torch.uint8, device=device
++        )
++    except torch.OutOfMemoryError:
++        pytest.skip(
++            "CUDA allocator could not reserve the required mostly-uninitialized "
++            f"{required_bytes}-byte GLM_NEXT cache"
++        )
++    cache = torch.as_strided(
++        backing,
++        size=(num_pages, page_size, _GLM_NEXT_RECORD_BYTES),
++        stride=(page_stride_bytes, _GLM_NEXT_RECORD_BYTES, 1),
++    )
++    local_slot = 7
++    high_slot = high_page * page_size + local_slot
++    assert high_page * page_stride_bytes > int32_max
++    assert high_slot < int32_max
++
++    live_latent = (
++        torch.linspace(
++            -0.75,
++            0.75,
++            _GLM_NEXT_HEAD_DIM,
++            dtype=torch.float32,
++            device=device,
++        )
++        .unsqueeze(0)
++        .to(torch.bfloat16)
++    )
++    sources = torch.cat((torch.zeros_like(live_latent), live_latent))
++    slots = torch.tensor([0, high_slot], dtype=torch.int64, device=device)
++    sparse_mla.concat_and_cache_glm_next_mla(sources, cache, slots)
++
++    q = torch.randn(
++        (1, 8, _GLM_NEXT_HEAD_DIM), dtype=torch.bfloat16, device=device
++    )
++    selected = torch.tensor([[high_slot]], dtype=torch.int32, device=device)
++    active = torch.ones((1,), dtype=torch.int32, device=device)
++    cache_seqlens = torch.tensor(
++        [high_slot + 1], dtype=torch.int32, device=device
++    )
++    _, binding = _glm_next_plan_and_binding(
++        device=device,
++        q=q,
++        selected=selected,
++        active=active,
++        cache_seqlens=cache_seqlens,
++    )
++    actual = sparse_mla.run_decode(
++        binding=binding,
++        kv_cache=cache,
++        sm_scale=_GLM_NEXT_SM_SCALE,
++        forced_num_splits=1,
++    )
++    expected_value = unpack_mla_kv_cache_reference(
++        cache[high_page, local_slot].reshape(1, 1, _GLM_NEXT_RECORD_BYTES)
++    )[0, 0]
++    expected = expected_value.view(1, 1, -1).expand_as(actual)
++    torch.cuda.synchronize(device)
++
++    assert _glm_next_cache_byte_offset(
++        high_slot,
++        block_size=page_size,
++        block_stride=page_stride_bytes,
++    ) > int32_max
++    _assert_glm_next_attention_close(actual, expected)

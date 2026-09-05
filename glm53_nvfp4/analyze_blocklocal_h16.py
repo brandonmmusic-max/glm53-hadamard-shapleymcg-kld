@@ -34,6 +34,12 @@ def main() -> None:
         inputs.append({"path": str(path), "sha256": sha256_file(path)})
     by_expert = {}
     for row in rows:
+        key = (row["expert"], row["arm"])
+        if row["expert"] in by_expert and row["arm"] in by_expert[row["expert"]]:
+            raise ValueError(f"duplicate expert/arm row: {key}")
+        value = row.get("evaluation_full_expert_nmse")
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"invalid positive finite NMSE for {key}: {value!r}")
         by_expert.setdefault(row["expert"], {})[row["arm"]] = row
     if sorted(by_expert) != sorted(plan["experts"]):
         raise ValueError("expert coverage mismatch")

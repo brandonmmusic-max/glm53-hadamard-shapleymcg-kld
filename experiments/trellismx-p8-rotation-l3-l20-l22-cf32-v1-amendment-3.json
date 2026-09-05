@@ -1,0 +1,27 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 3,
+  "parent_amendment": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-2.json",
+    "sha256": "bdba08ad6201d20fc4a3a846a00c9a68754e7bc1e5e96ff7e9c6fa2c661ed0ae"
+  },
+  "trigger": "The amendment-2 hard gate rejected all four reconstructed files. Each tensor payload had the expected byte count, but the current closure decoder added role=decoded-device-closure-reference to the original codec metadata, growing every safetensors container by exactly 40 bytes and changing its file SHA-256. Target KLD remained unopened and production was restored.",
+  "preserved_failure": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/failures/layer3-reference-metadata-mismatch-v1",
+  "change": "Add an explicit source-metadata-exact decoder mode and rerun the same four physical codec shards. This mode preserves the codec metadata exactly, matching the historical builder that wrote the original dense and codec files with the same metadata dictionary. Retain the amendment-2 historical byte counts and SHA-256 values as hard gates.",
+  "diagnosis": {
+    "observed_extra_bytes_per_shard": 40,
+    "observed_new_role": "decoded-device-closure-reference",
+    "historical_builder": "glm53_nvfp4/quantize_hessian_trellis_layer.py at commit 39abf06",
+    "historical_behavior": "save_file(dense_tensors, metadata=metadata); save_file(codec_tensors, metadata=metadata)",
+    "target_kld_opened": false
+  },
+  "unchanged": [
+    "codec bits, codebook, trellis state, scales, and decoder arithmetic",
+    "all tensor names, dtypes, shapes, and values",
+    "layer set 3,20,22",
+    "three KLD arms, order, role, metric, decision rules, and stopping",
+    "14.5 GB storage ceiling and NVMe-only output",
+    "no LDLQ and no protected role opening"
+  ],
+  "interpretation": "Serialization-only correction after a pre-KLD hard-gate failure. It does not alter reconstructed tensor values or any experimental variable. The experiment remains blocked until all four historical file hashes match."
+}

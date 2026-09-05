@@ -1,0 +1,90 @@
+{
+  "schema": "glm53-p8-uniform-all42-vs-exl3-speed-plan.v1",
+  "written_at": "2026-09-04T20:12:00-04:00",
+  "status": "preregistered-before-all-layer-checkpoint-and-kld-completion",
+  "prerequisite": {
+    "service": "glm53-uniform-p8-all42-kld-v1a1.service",
+    "requirement": "successful complete finite n=32 full-model KLD analysis; no KLD threshold is imposed before the speed measurement"
+  },
+  "question": "Is uniform all-layer native P8 faster than the exact local EXL3 K4 checkpoint/runtime in a matched target-only TP4 serving regime?",
+  "candidate": {
+    "name": "p8",
+    "model_name": "glm53-p8-uniform-all42-native",
+    "image_id": "sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe",
+    "runtime_commit": "efd250b002e8da5a0e603253e0cd07ba6249c7b4",
+    "runtime_patch_manifest_sha256": "e1cf316e8e969625eac6749866a12c298b5ae7fef3dde6ebba37b53ed74dc873",
+    "sidecar_manifest": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1/manifest.json",
+    "layers": [3, 44],
+    "payload_bpw": 4.25,
+    "mma": "mxf8f6f4 m16n8k32; twice NVFP4 MMA issues per equal logical K"
+  },
+  "baseline": {
+    "name": "exl3",
+    "model_name": "GLM-5.3-Flash-EXL3-4bpw",
+    "model_root": "/home/brandonmusic/models/GLM-5.3-Flash-EXL3-4bpw",
+    "model_index_sha256": "2f64d21c67c90bbafeb36c4e9b2f06f54063ed439e9f7cf95962d425a1d8515d",
+    "materialization_receipt_sha256": "afe588284702c0676b7af5df48bc0e0568bb42b1821808ab71c6dfa1f0c48b61",
+    "image_id": "sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf",
+    "reference_compose_sha256": "5558cb276b964e78571e71ffad82c9830c3a602b559c9472bbe92e1f050860d7",
+    "codec": "uniform K4 EXL3/MCG routed experts"
+  },
+  "common_serving_regime": {
+    "purpose": "target-weight codec comparison, not speculative-decoder product throughput",
+    "topology": "TP4, expert parallelism off, DCP1, one sequence",
+    "language_only": true,
+    "speculation": "disabled in both arms",
+    "attention_backend": "B12X_MLA_SPARSE",
+    "kv_cache_dtype": "nvfp4_ds_mla",
+    "mla_scale_sha256": "f10b6ee1116d71c4b61c4603d38cb257b3f0dcfde9bcc0847839e48ac9baeb1d",
+    "cuda_graphs": "enabled in both arms; engine config and completed graph capture required in logs",
+    "prefix_cache": false,
+    "chunked_prefill": true,
+    "max_model_len": 131072,
+    "max_num_batched_tokens": 2048,
+    "max_num_seqs": 1,
+    "gpu_memory_utilization": 0.94,
+    "power_and_clocks": "do not mutate; record every run and require the same four physical GPUs",
+    "thermal_start_max_c": 75,
+    "thermal_abort_max_c": 94
+  },
+  "benchmark": {
+    "tool_commit": "42c38fdd0476cf86940268f4e098581e5b61542e",
+    "tool_tree": "86544a01e1e0faeb870cfff7ea751a000c9c6e98",
+    "tool_sha256": "c1d9b66dbf70df23545a71451b5bc2ecaaa746ed2441312e4fb77a8bf476504a",
+    "cold_process_runs_per_arm": 5,
+    "arm_order_by_round": [
+      ["exl3", "p8"],
+      ["p8", "exl3"],
+      ["exl3", "p8"],
+      ["p8", "exl3"],
+      ["exl3", "p8"]
+    ],
+    "concurrency": [1],
+    "contexts": [32768, 65536],
+    "duration_seconds_per_decode_cell": 20,
+    "decode_warmup_seconds": 3,
+    "max_tokens": 4096,
+    "standalone_prefill": true,
+    "prefill_metric": "auto; client headline plus uncontaminated Prometheus validation",
+    "resume": false,
+    "primary_prefill": "32K Prometheus-validated server input tokens/s; client tokens/s also reported",
+    "primary_decode": "C1 32K aggregate output tokens/s from OpenAI continuous usage",
+    "secondary_cells": "64K prefill and C1 64K decode; report but do not redefine the gate"
+  },
+  "analysis": {
+    "module": "glm53_nvfp4.analyze_p8_vs_exl3_speed",
+    "code_sha256": "dae589bbf84fcedf221c926957c7ae65684d29012ca436c997eb9478f4f1036f"
+  },
+  "decision_before_result": {
+    "pass": "median of five P8 cold runs must be strictly greater than median of five EXL3 cold runs for both primary 32K prefill and primary C1 32K decode",
+    "fail": "a tie, regression, non-finite value, missing backend/graph evidence, fewer than five valid cold runs per arm, or topology/request mismatch stops the native6 Shapley allocation game",
+    "secondary": "report every run and both 64K cells without changing the primary decision",
+    "claim_boundary": "the images differ because each codec requires its exact local runtime; this is an end-product serving comparison, not a causal kernel-only attribution"
+  },
+  "operational_policy": {
+    "failures": "preserve every failed attempt; an operational retry retains the same round and arm identity and is never substituted silently",
+    "cold_definition": "new server container and worker processes for every arm/run; compiled caches remain warm and are outside the cold definition, while image, source, tool, and exact cache paths are recorded",
+    "service_restore": "preserve and restore prior production timer/backend state",
+    "protected_roles_opened": []
+  }
+}

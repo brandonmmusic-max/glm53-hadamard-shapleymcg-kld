@@ -577,6 +577,978 @@ confirmation, and final roles remained unopened for this redesign branch.
   KLD-aware marginal values; local routed-output NMSE cannot be assumed to
   cover the mismatch. No LDLQ or BlockLDLQ was used.
 
+## 2026-09-04: Decision 23 — uniform P8 product gate before native6 allocation
+
+- **Decision before result:** do not execute the 84-coalition native6-v2 game.
+  First encode and install K4 procedural-MCG P8 on every routed layer 3–44,
+  using the pinned domain-balanced REAP fit capture, GPTQ-style output-error
+  feedback with static within-group activation order, jointly refitted
+  UE8M0/32 scales, and no LDLQ or BlockLDLQ. Require every TP4 sidecar to bind
+  to the corrected native6-v2 design hash and to carry exactly 4.25 payload
+  bpw.
+- Measure full-model teacher KLD on the already-opened, domain-balanced 32
+  conditional-fit windows. This is developmental evidence; no selection,
+  confirmation, final, or reserved confirmation logits may be opened.
+- Then measure TP4 prefill and single-request decode tokens/s against the exact
+  locally served EXL3 checkpoint and runtime, with matched request shapes,
+  attention/KV settings, CUDA-graph mode, and five cold runs per arm. P8 must
+  be strictly faster than EXL3 on both median prefill and median decode to
+  advance. Any tie or regression stops the allocation game.
+- If P8 passes, estimate the necessary game size from the existing pilot's
+  observed main effects and pair interactions and preregister that power-based
+  design. The superseded fixed 84-endpoint count is not an execution target.
+- **ISA boundary:** P8 decodes directly to E4M3 plus physical UE8M0/32 scales
+  in the fused prologue and uses `mxf8f6f4`; it has twice the MMA issue count
+  of NVFP4. This gate does not claim the unfinished P4/`mxf4nvf4` product.
+
+### Thermal-control amendment during the all-layer build
+
+- The initial runner paused a worker at 89 C and resumed at 78 C. Live layer-3
+  telemetry showed repeated stop/resume cycling, and the operator explicitly
+  directed that 89 C is acceptable.
+- The resumable build runner now defaults to an emergency pause at 94 C and
+  resume at 88 C, while leaving NVIDIA's own thermal throttling active. These
+  values are configurable and are not asserted as hardware specifications.
+- This changes build scheduling only. It does not change source weights,
+  calibration samples, encoder objective, sidecar format, KLD roles, or any
+  performance-benchmark thermal-matching requirement. The exact amendment is
+  preserved in
+  `evidence/opened/codec-v2/native6-v2/all42-thermal-amendment-v1.json`.
+
+## 2026-09-04: Decision 24 — P4 must close inside GLM serving
+
+- **Hard product gate:** a standalone CUDA launch seam is not a P4 product.
+  P4 must be selected by the actual B12X GLM MoE runtime for both gate/up FC1
+  and down FC2, preserve routed top-k and TP4 behavior, and consume the physical
+  codec sidecars without a dense BF16/FP16 weight materialization or matmul.
+- The independent CPU codec commit uses alpha-1 procedural MCG projected to
+  E2M1 with native round-to-nearest-even and signed-zero preservation. The
+  first kernel commit instead retained the legacy ties-to-lower-magnitude,
+  zero-canonicalizing law. An exhaustive census found `5,477 / 65,536` nibble
+  mismatches: `45` numerical midpoint choices plus `5,432` signed-zero choices.
+  These commits are preserved as structural building blocks but are not an
+  interoperable ABI and must not be used for device or KLD closure as-is.
+- Freeze one new versioned RNE ABI, add the missing one-matrix-to-TP4 sidecar
+  bridge, and require exhaustive state, packed-byte, scale-address, FC1/FC2,
+  dispatch, and fail-closed tests before a GPU run. Static SASS containing
+  `mxf4nvf4 m16n8k64` proves instruction selection only; it does not prove
+  device arithmetic, integrated serving, KLD, graph safety, or speed.
+- Protected evaluation roles remain unopened, and no LDLQ or BlockLDLQ is
+  introduced. Device closure waits for a reconciled serving commit and an
+  available GPU boundary that does not corrupt the all-layer P8 build.
+
+## 2026-09-04: Decision 25 — full-model P8 KLD is the critical path
+
+- **Decision before result:** complete the uniform K4 procedural-MCG P8
+  checkpoint for every routed layer 3–44, verify all 168 TP4 sidecars and
+  receipts at exactly 4.25 payload bpw, and then execute one resumable KLD run
+  on the exact 32-window domain-balanced conditional-fit role. Do not reroll,
+  exclude, or replace windows. Plan SHA-256:
+  `86b415ad76b80adc8dd983edcf17d2c0b371b32ccc921643ed8a0e112aeb98d2`.
+- Report the absolute full-model mean KLD, all window values, four domain
+  summaries, and paired window-bootstrap intervals. The already-opened
+  decoded-GPTQ result is retained as a directional context row only: its rate
+  and transformed layer set do not match uniform P8, so it cannot establish a
+  strict product win.
+- The KLD run uses an immutable runtime worktree at
+  `bb45c5bc35b218f810c667698940b06d71ba1b21`, its content-addressed patch
+  manifest, TP4 with expert parallelism disabled, DCP1, fixed-order routed
+  summation, and the physical all-layer P8 sidecars. The analyzer is frozen by
+  SHA-256 before the target result.
+- P4 encoder, kernel, and GLM serving integration remain CPU/static side work
+  until the P8 build releases the GPUs. A complete finite P8 KLD measurement
+  advances to the preregistered five-cold-run TP4 speed comparison against the
+  exact EXL3 system; Shapley allocation remains blocked on that speed gate.
+- This conditional-fit result is developmental opened-role evidence, not
+  untouched final qualification. No selection, confirmation, final, or
+  reserved 28 confirmation logits may be opened. No LDLQ or BlockLDLQ is used.
+- **Pre-result runtime amendment 1:** the prior layer-3 proof used the BF16
+  overlay method and did not exercise layers 4–44's ModelOpt pre-forward
+  quant-config hook. Exact source inspection showed that hook would rebuild a
+  ModelOpt config from carrier scales already released by native P8. Runtime
+  commit `efd250b002e8da5a0e603253e0cd07ba6249c7b4` bypasses that builder only
+  for selected P8 methods; all experimental inputs and decisions are unchanged.
+  The amendment is separately sealed and preserves the original plan.
+
+## 2026-09-04: Decision 26 — reconcile P4 structurally without delaying P8
+
+- The P4 encoder/TP4 bridge and GLM serving/kernel lines were composed only
+  after resolving their independent decoder-law and container mismatch. The
+  canonical ABI is procedural MCG alpha-1, RNE E2M1, signed zero, positive
+  physical E4M3/16 scales, six TP-rank tensors, and exact per-layer capture
+  identities. No LDLQ or BlockLDLQ is present.
+- The opt-in backend now enters through the actual GLM `FusedMoEFactory` and
+  `RoutedExperts.forward_modular` call path for both routed projections while
+  leaving router, shared-expert, and TP-reduction behavior with the stock
+  runner. It fails closed on unsupported topology, malformed sidecars,
+  DBO/microbatching, duplicate model ownership, and overlapping host dispatch.
+- After integration, 185 combined CPU/static tests passed with CUDA hidden.
+  Offline assembly retains 15 `mxf4nvf4` E2M1 K64 sites, 62 registers, 1,728
+  bytes shared memory, and zero spills. These are structural/compiler receipts,
+  not device, KLD, graph, determinism, or speed evidence.
+- P4 remains side work. No P4 GPU run may contend with the all-42-layer P8
+  build or its sealed 32-window full-model KLD follow-on. Device closure begins
+  only after that critical path releases the GPUs. Exact reconciliation:
+  `docs/P4_V2_INTEGRATION_RECONCILIATION.md`.
+
+## 2026-09-04: Decision 27 — freeze the post-KLD P8 versus EXL3 speed gate
+
+- Before checkpoint or KLD completion, freeze a target-only serving comparison
+  using the exact local P8 and EXL3 images/checkpoints: TP4, EP off, DCP1,
+  B12X sparse attention, calibrated NVFP4 MLA KV, speculation off, prefix cache
+  off, CUDA graphs on, one sequence, and matched 32K/64K requests.
+- Run five new server containers and worker-process sets per arm, alternating
+  order by round. Compiled caches remain warm and outside the cold-process
+  definition; image, runtime, model, tool, request, and cache-path identities
+  are recorded. Do not mutate power limits or clocks, start each arm at or
+  below 75 C, and reject a measured cell reaching 94 C.
+- **Decision before result:** P8 must be strictly faster than EXL3 on both the
+  five-run median 32K Prometheus-validated prefill throughput and the five-run
+  median C1 32K continuous-usage decode throughput. Any tie, regression,
+  incomplete arm, graph/backend mismatch, or non-finite result stops the
+  native6 allocation game. Report 64K cells as secondary evidence.
+- The two codec products require different exact local images. This answers
+  the end-product serving question and is not a causal kernel-only attribution.
+  The sealed plan is
+  `experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json` (SHA-256
+  `907882659d687043c52549ae39490c0b935982d2dc3c0f81681ee70d1ed313d8`).
+
+## 2026-09-04: Decision 28 — correct P8 image before full-model execution
+
+- GPU-free inspection found the queued base image lacked the explicit
+  `trellis_codebook`, `trellis_scaled`, and `trellis_identity_boundary`
+  constructor arguments used by P8. The mounted runtime does not replace the
+  installed b12x package. Thus the queue was not executable as written.
+- Before checkpoint completion or target results, amendment 2 pins both P8
+  follow-ons to image `5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8`,
+  the exact image recorded for native deterministic layer-3 conditional-fit v2.
+  Require image/source hashes and explicit constructor ABI before GPU launch.
+- Preserve the original plans and amendment 1. No encoder, sidecar, calibration,
+  role, metric, analyzer, topology, decision rule, or protected boundary changes.
+  Keep the current build uninterrupted; only replace waiting follow-on services.
+- Receipt: `experiments/p8-all42-runtime-image-amendment-2.json` and the
+  GPU-free `glm53_nvfp4.preflight_p8_runtime_image` check. This establishes
+  source compatibility, not all-layer device closure or KLD quality. P8 uses
+  twice NVFP4's MMA issue count; its speed remains unmeasured.
+
+## 2026-09-05: Decision 29 — report the completed native all-layer measurement
+
+- Outcome of pre-result Decisions 25/28, not a retroactive gate: all 42 routed
+  layers and 168 TP4 sidecars completed; native all-layer KLD is
+  `0.04002139481676188`, window BCa 95% CI `[0.03377817, 0.04825257]`.
+- Audit passed 32 windows, 65,504 causal positions, and 168/168 native
+  weight-ready and forward pairs. No protected roles or LDLQ were used.
+- Historical contextual comparison: 24.957189% lower, 28/32 wins, paired delta
+  `-0.01331002`, BCa 95% CI `[-0.02010227, -0.00757892]`. Different rate,
+  quantized-layer coverage and EP/DCP topology prevent a matched codec claim.
+- Preserve the predeclared speed gate. Its first EXL3 arm failed before
+  measurement with checkpoint TP2/runtime TP4 mismatch. No speed win exists;
+  allocation stays stopped. Preserve the failed logs before any compatibility
+  amendment or rerun. P8 remains a twice-NVFP4-MMA-issue quality path.
+- Receipts and limitations: `results/P8_FULLMODEL_CF32.md` and
+  `evidence/opened/codec-v2/uniform-p8-all42-v1/`.
+
+## 2026-09-05: Decision 30 — preregister the existing-topology EXL3 product trial
+
+- Source inspection of the exact EXL3 image shows the checkpoint is unsliced;
+  `_configure_glm53_unsliced_routed_experts` synthesizes `tp=2`. The working
+  four-GPU service uses EP4/DCP4, whose explicit unsliced-EP path bypasses that
+  TP guard. Do not misrepresent this as physically TP2-only checkpoint data.
+- No speed measurement exists from v1. Preserve that failed trial; do not
+  relax or remove the reader's guard to invent a new comparison runtime.
+- Before any v2 speed result, freeze `p8-uniform-all42-tp4-vs-exl3-speed-v2.json`:
+  P8 TP4/no-EP/DCP1 versus existing EXL3 TP4/EP4/DCP4. Speculation remains off
+  in both, so this is not the production MTP5 throughput comparison.
+- Same images, models, four GPUs, requests, graph requirements, repetitions,
+  numerical speed rule and thermal limits. The exact original protocol is
+  retained; v2 explicitly abandons the matched-topology estimand. No causal
+  kernel/codec attribution from the resulting product-speed difference.
+- New output `speed-v2` and container identity; v1 is never overwritten.
+  Allocation remains stopped unless both five-run primary speed medians pass.
+  No new EXL3 kernel or P8 weight change is introduced by this amendment.
+
+## 2026-09-05: Decision 31 — preserve speed failures and repair receipt checks
+
+- V2 failed at the CPU audit because its new worktree path differed from the
+  existing receipt. A1 uses a fresh audit destination without weakening the
+  audit. A1 then failed in DCP profile forward; A2 restores the pinned EXL3
+  compose's B12X DCP flags, with no kernel source or weight change.
+- A2 measured EXL3 but its wrapper required the wrong graph progress label.
+  All four ranks actually completed FULL graph capture. A3 accepts the two
+  runtime label spellings and additionally requires 100% FULL capture and
+  completion on every TP rank; it rejects profiling or partial capture.
+- A2's 32K baseline row (6,519 server prefill tokens/s, 91.198066 C1 decode
+  tokens/s) is retained as an operational diagnostic, not silently substituted
+  or erased. Missing post-run receipts require a fresh full five-round series.
+- Before any P8 speed result, preserve the original thresholds, requests,
+  repetitions, images, topology and serving environment. No speed pass or
+  allocation authorization is inferred. See `results/P8_SPEED_ATTEMPTS.md`.
+
+## 2026-09-05: Decision 32 — profile P8 decode after the frozen speed series
+
+- The first completed v2a3 pair shows faster P8 prefill but substantially
+  slower C1 decode. It is not the five-run result. Keep all five pairs,
+  thresholds, topology and runtime unchanged; no concurrent GPU profiling.
+- A read-only Astra source audit identifies sparse deterministic scheduling,
+  scratch clearing and procedural decoder work as testable candidates, not
+  established causes. Pin its source references and first-pair hashes in
+  `results/P8_DECODE_CPU_AUDIT.md`.
+- After the series, retain the existing allocation stop rule and use a
+  separately identified synthetic/fit-only profile to choose any runtime
+  optimization. Preserve decoder bytes, BF16 accumulation order and graph
+  isolation. No LDLQ, no protected logits, no implied KLD transfer to a
+  changed serving path. P8 remains a 2x-MMA-issue E4M3 quality product.
+
+## 2026-09-05: Decision 33 — queue the isolated diagnostic behind all ten speed runs
+
+- Freeze the synthetic profile plan and implementation before collection.
+  Commit `ddc22a09858ebb4091f97fcc7700ee6296b0460b` is executed from a
+  separate clean worktree. The queue receipt is
+  `experiments/p8-decode-profile-v1-queue.json`.
+- The follow-on is live only as a waiter while speed-v2a3 runs. It cannot
+  acquire the model-stack lock or launch GPUs until terminal success and
+  the complete receipt audit. A numerical speed-gate failure remains a
+  failure and stops allocation; it does not prohibit this declared diagnosis.
+- Use a new synthetic 32K request, not conditional-fit or protected logits.
+  Same weights/runtime, declared profiler-only changes, CID-owned cleanup,
+  fail-closed thermal telemetry and verified restoration. Seventy-nine CPU
+  tests pass; no device or trace validity is inferred from that result.
+
+## 2026-09-05: Decision 34 — product speed fails; preserve and diagnose decode
+
+- Speed-v2a3 completed five cold processes per arm with ten unique containers,
+  complete FULL graph-capture receipts on four ranks, stable within-arm
+  configurations, start temperatures at most 68 C and measured peaks at most
+  90 C. The complete receipt audit passed.
+- Frozen primary medians: P8/EXL3 32K prefill `6940/6252` tokens/s
+  (**+11.0045%**), and C1 32K decode `20.6937/91.2645` tokens/s
+  (**-77.3256%**). Both metrics had to win, so the product gate fails and the
+  native6 Shapley allocation game stops. Secondary 64K cells and every run are
+  retained in `results/P8_SPEED_V2A3.md`.
+- This is a different-topology system comparison: P8 TP4/no-EP/DCP1 versus
+  EXL3 TP4/EP4/DCP4, target-only and no MTP. Do not attribute the full decode
+  gap to the codec or transfer eager/FP8-KV KLD to graph/NVFP4-KV serving.
+- Read-only Astra audits establish genuine fusion: procedural MCG decoding
+  produces E4M3 register fragments inside the same kernel that issues
+  `mxf8f6f4`; no decoded-weight global buffer exists. At C1, deterministic
+  scheduling exposes only eight useful all-slice tasks, alongside graph-replayed
+  scratch clears and routing barriers. These are source-backed hypotheses,
+  not measured attribution. Continue the isolated Nsight diagnostic while
+  preserving this speed failure and allocation stop.
+
+## 2026-09-05: Decision 35 — measured P8 decode bottleneck is the fused small-M schedule
+
+- The frozen synthetic profile completed successfully, opened no experiment
+  role, restored the prior backend/timer state and stayed below the 94 C abort
+  boundary. Its four TP workers each recorded 16 generation ranges, 16
+  `cudaGraphLaunch` calls and the same 2,433-node graph inventory. FULL graph
+  replay is measured, not merely inferred from startup logs.
+- The deterministic top-k launch has `grid.x=16`, proving true M1. On critical
+  workers 2992 and 2994, the 42 fused P8 MoE kernels consume median 39.520 and
+  39.313 ms of 47.597 and 47.594 ms graph spans (83.03% and 82.60%). The two
+  faster workers spend their saved time in NCCL. Explicit fill kernels consume
+  only 0.69-0.83 ms and the separate top-k reduction about 0.03 ms.
+- Port the existing B12X M1 route/slice work decomposition before optimizing
+  workspace clears. Preserve P8 procedural MCG to E4M3, physical UE8M0/32,
+  `mxf8f6f4`, BF16 rounding boundaries and deterministic fixed-order reduction.
+  Do not enable the existing M1 FC2 unchanged: it is E2M1 MMA plus BF16 atomic
+  scatter and therefore is not the P8 arithmetic contract.
+- Require identical-payload bit-exact closure and five-run determinism before
+  an integrated serving benchmark. Nsight Systems does not prove occupancy or
+  instruction causality inside the fused kernel; use a targeted NCU comparison
+  only after a closed candidate exists. The failed product gate and allocation
+  stop remain immutable. See `results/P8_DECODE_NSYS_V1.md`.
+
+## 2026-09-05: Decision 36 — P8 M1 route/slice candidate clears its first device A/B
+
+- The opt-in candidate uses eight M16 route tiles, 32 route/K128 FC1 tasks and
+  128 route/N256 FC2 tasks while retaining K4 procedural MCG, E4M3
+  `mxf8f6f4`, physical UE8M0/32, ordered BF16 slice boundaries and the existing
+  deterministic top-k reduction. M2/M3 fall back to the frozen path.
+- On rank 0 / layer 3 at full E288 geometry, baseline and candidate produced
+  identical BF16 hashes across five repeats. Separately seeded M2 and M3
+  fallback hashes also matched the separately frozen baseline exactly.
+- After 20 warmups, 100 CUDA-event samples measured median 1.134288 ms for the
+  frozen monolithic M1 layer call and 0.313248 ms for the candidate: a 72.3837%
+  reduction or 3.6211x speedup. This is a single-GPU eager developmental A/B,
+  not graph-replayed serving throughput or product qualification.
+- Advance to poisoned scratch, captured-graph and four-rank integration gates.
+  Attribute the timing to the combined routing/decomposition/capacity candidate,
+  not to one isolated mechanism. The completed product failure and allocation
+  stop remain unchanged until a newly frozen integrated comparison passes.
+  See `results/P8_SMALLM_DEVICE_V1.md`.
+
+## 2026-09-05: Decision 37 — freeze captured-graph and four-GPU closure before serving
+
+- Compare the pinned monolithic P8 image and opt-in small-M candidate on the
+  same rank-0/layer-3 E288 sidecar, dense reference, seed and M1 route payload
+  on each physical GPU. Each arm gets five eager outputs, five graph warmups,
+  five fixed-address graph replays and 100 CUDA-event graph timing samples.
+- Closure requires every arm/GPU cell to capture, remain bitwise identical for
+  all graph replays and match its eager output. The candidate must be faster on
+  every GPU; advancement to integrated TP4 serving additionally requires at
+  least 50% lower median graph time on every GPU.
+- This is a synthetic single-layer graph gate, not serving tokens/s or KLD.
+  Protected experiment roles remain unopened, LDLQ remains excluded, and the
+  original P8 product failure/allocation stop cannot change here. The frozen
+  machine-readable plan is
+  `evidence/opened/codec-v2/p8-smallm-graph-v1/analysis-plan.json`.
+
+## 2026-09-05: Decision 38 — corrected graph closure advances to integrated TP4
+
+- The first command used the probe's forced-materialized default for the
+  scheduler-off arm. That is not the deployed monolithic M1 path and has a
+  different full-K rounding graph. Preserve those results as invalid for the
+  serving decision; do not reinterpret their 16.6-17.8% timing delta.
+- The corrected pinned-image comparison used explicit monolithic scheduler-off
+  versus small-M scheduler-on. Payload and BF16 output hashes matched across
+  arms on every GPU; each graph also matched eager and was deterministic across
+  five replays.
+- Across GPUs 0-3, 100-replay medians fell from 0.956304/0.771760/0.961824/
+  0.775776 ms to 0.144832/0.116480/0.145120/0.118288 ms. Reductions of
+  84.7523-84.9120% clear the frozen 50% threshold on every device.
+- Advance the fail-closed `GLM53_P8_SMALL_M=1` path to one integrated TP4/no-EP/
+  DCP1 GLM serving diagnostic with FULL CUDA graphs. This gate does not amend
+  the original product failure or restart Shapley allocation. See
+  `results/P8_SMALLM_GRAPH_V1.md`.
+
+## 2026-09-05: Decision 39 — integrated small-M recovers most decode, not the product gate
+
+- One frozen TP4/no-EP/DCP1 run loaded all 42 P8 layers through the opt-in
+  small-M path. FULL CUDA graph audit passed on ranks 0-3 and the log contains
+  all 168 layer/rank first-forward receipts with `small_m_scheduler=true`.
+- At 32K C1, sustained decode measured 75.5962 tok/s versus the old P8 20.6937:
+  +265.31%, 3.653x, and 77.798% of the old P8-to-EXL3 deficit closed. Standalone
+  prefill measured 7,166 client tok/s.
+- The frozen EXL3 reference remains 91.2645 tok/s. Small-M is still 17.168%
+  slower, so this single diagnostic does not pass the product rule, does not
+  replace five cold runs, and does not restart Shapley allocation.
+- The production backend was restored to its prior active state, the timer to
+  its prior inactive state, maximum measured GPU temperature was 71 C, and no
+  protected roles were opened. Advance kernel optimization to an integrated
+  profile, especially B12X N256 FC2 A reuse on the critical Max-Q ranks. See
+  `results/P8_SMALLM_INTEGRATED_V1.md`.
+
+## 2026-09-05: Decision 40 — size the N256 device gate to the remaining product gap
+
+- Compare the closed N128x2 small-M image with the independently audited N256
+  A-reuse image on identical M1 payloads across all four GPUs. Require identical
+  payload and BF16 output hashes, five graph replays matching eager and 100
+  graph-timing samples per arm/device.
+- N256 must be faster on every GPU and reduce median graph time at least 35% on
+  every GPU before paying for another integrated TP4 run. This is intentionally
+  sized to the measured 2.27 ms/token deficit to EXL3; a cosmetic FC2 gain
+  cannot satisfy the product objective.
+- Preserve procedural MCG, E4M3, physical UE8M0/32, native `mxf8f6f4` and the
+  monolithic per-K128 BF16 boundary. Protected roles stay closed and allocation
+  stays stopped. See `experiments/p8-smallm-n256-device-v1.json`.
+
+## 2026-09-05: Decision 41 — N256 A reuse is valid but not the bottleneck
+
+- The independently audited candidate compiled and matched the N128x2 control
+  bit for bit on identical payloads across all four GPUs. Five graph replays
+  matched eager for each arm/device.
+- N256 reduced 100-replay medians by only 1.3766%, 1.7949%, 1.5025% and 1.6857%
+  on GPUs 0-3. It fails the frozen 35% threshold by a wide margin.
+- Stop this candidate before integrated serving. Preserve it as evidence that
+  duplicate FC2 A/SFA staging was not the material remaining bottleneck. Move
+  to an integrated trace of the closed N128x2 small-M path; allocation remains
+  stopped. See `results/P8_SMALLM_N256_DEVICE_V1.md`.
+
+## 2026-09-05: Decision 42 — profile the integrated small-M path before another change
+
+- Clone the authenticated 75.5962 tok/s run with its measured N128x2 image and
+  unchanged runtime tree. Change only profiler instrumentation, model name,
+  port and trace destination. Capture 16 decode iterations on all four ranks
+  with the existing synthetic 32K client.
+- Account separately for dynamic FC1, small-M FC2, top-k reduction, native dense
+  MMA/GEMV, attention, communication, fills and other work. Attribute graph
+  nodes to launch correlation IDs; report interval unions and per-rank sums.
+- Select the next optimization from the largest actionable cost on critical
+  ranks. The old non-MoE timing estimate is a hypothesis until this trace
+  measures it. One server is one experimental unit; graph iterations are
+  subsamples. Plan: `experiments/p8-smallm-profile-v1.json` with SHA256 seal.
+- Use only synthetic inputs, preserve the failed product gate and stopped
+  allocation, and restore prior service states after the capture.
+
+## 2026-09-05: Decision 43 — preserve failed count gate; localize complete-prefix costs
+
+- The integrated small-M trace completed and restored service states, but the
+  frozen exact16 count gate failed: one corrupt NVTX range and two trailing
+  partial graph captures remain in the raw receipt. Preserve the strict error.
+- Separately label the 16-complete-replay subset as diagnostic, not a pass.
+  Require same-thread generation/launch containment, four distinct GPUs,
+  stable node/symbol/geometry inventories and explicit trailing exclusions.
+  This interpretation was selected after inspecting capture metadata; it is
+  not a pre-registered replacement gate or independent throughput replicate.
+- Independent complete-prefix analysis localizes critical-rank FC1 at about
+  4.96 ms versus FC2 about 0.52 ms. Focus the next design on increasing FC1
+  output-tile parallelism without splitting its K reduction. Gate/up already
+  share A; the generic M1 kernel already bypasses histogram/prefix work.
+- No allocation restart, new KLD claim or product qualification. P8 still
+  measured 75.5962 versus EXL3 91.2645 tokens/s. P8 remains twice NVFP4's MMA
+  issue count. See `results/P8_SMALLM_PROFILE_V1.md` and immutable raw trace.
+
+## 2026-09-05: Decision 44 — test narrower FC1 output ownership
+
+- Compare N128/N64/N32 FC1 on identical synthetic activations, expert routes,
+  weights and scales. Each output retains its full K4096 reduction; FC2 comes
+  unchanged from the measured c9edde image. Narrow candidates retain N128
+  carrier staging initially, an explicit rival to task-parallelism gains.
+- Require exact eager/graph intermediate and output hashes, including high
+  amplitude clipping stress, sparse input boundaries and M2/M3 fallback.
+  Five executions/replays are subsamples, not full-model numerical proof.
+- Only after closure measure five cyclic-order rounds of 100 graph samples.
+  Require at least 35% lower total block median on all four GPUs before an
+  integrated serving run. Preserve failures; no timing after closure failure.
+- Plan: `experiments/p8-fc1-tiles-device-v1.json`. No protected role opens,
+  no LDLQ, no allocation restart. P8 remains twice NVFP4 MMA issue count.
+
+## 2026-09-05: Decision 45 — canonicalize fallback input rows, preserve V1 failure
+
+- V1 GPU0 compiled and all eight M1 cases matched all buffers bit-for-bit.
+  M2 also matched. M3 failed physical input/scale hash determinism even for
+  the N128 control; route outputs, final outputs and intermediate buffers
+  remained identical across all arms and repeats. Timing was skipped and
+  the remaining GPUs were not launched. Preserve the original failed gate.
+- Independent source audit identifies atomic per-expert row allocation in
+  generic M>1 routing. Physical input/scale rows can permute while token_map
+  preserves the logical pair id. All tile requests resolve to unchanged
+  N128 monolithic code for M>1.
+- V2 keeps the same kernel image and synthetic cases, but compares fallback
+  packed input/scale bytes after CPU canonicalization by logical pair id.
+  Validate row counts, prefix bases, capacity and exact route permutation;
+  retain raw hashes. M1 still checks all raw bytes. Require explicit resolved
+  dispatch metadata. No arithmetic tolerance or output waiver is introduced.
+- Plan: `experiments/p8-fc1-tiles-device-v2.json`; fresh output and source seals.
+  Original V1 remains failed. No KLD claim, protected opening or allocation.
+
+## 2026-09-05: Decision 46 — retain the narrow-FC1 near miss; remove duplicate copies
+
+- V2 passes all 30 exact-closure cells on each of four GPUs, including
+  canonical fallback input bytes. N64 reduces total block median by 34.13%,
+  34.60%, 34.95%, 34.76%; N32 by 31.29%, 31.41%, 32.16%, 31.25%.
+  Neither meets 35% on every GPU. Do not round the near miss into a pass or
+  launch integrated serving under that failed gate.
+- The next candidate crops B/SFB asynchronous copies to each owner's N64/N32
+  range, preserving absolute N128 shared-memory addresses, A/SFA staging,
+  grid, decoder, MMA order, activation seams, scale stores and FC2. This tests
+  the known duplicated-staging rival without relaxing the numerical gate.
+- Reuse identical synthetic cases and timing protocol under a fresh source/
+  image seal and output version. GPU runs remain serialized and all failed
+  attempts preserved. No protected opening, KLD claim or allocation restart.
+
+## 2026-09-05: Decision 47 — combine scratch clears without omitting initialization
+
+- V3 cropped-copy kernels remain bit-exact on all four GPUs, but N64 reductions
+  are 34.11%, 34.60%, 34.06%, 34.72%. N32 is 32.76–33.35%. Both still fail
+  the 35% all-device gate; no integrated serving is launched for those arms.
+- Test one aligned uint8 zero arena with typed disjoint views instead of many
+  individual zero allocations, only for opted-in M1 candidates. Preserve every
+  buffer byte, shape, dtype, alignment and fallback behavior. The control keeps
+  the existing allocation path. This follows the measured fill-node cost, not
+  an assumption that uninitialized padding is safe.
+- Require unchanged strict M1 and canonical fallback bytes plus the same
+  frozen speed threshold in a fresh V4 plan. No threshold relaxation, protected
+  role opening, KLD claim or allocation restart.
+
+## 2026-09-05: Decision 48 — advance N64 with fused scratch to integrated diagnostic
+
+- V4 passes all 30 exact-closure cells per GPU, including every strict M1
+  buffer and canonical fallback inputs. N64 reduces total block medians by
+  44.11%, 45.31%, 44.74%, 45.42%; N32 also clears 35% on all GPUs.
+- Select N64: it is at least as fast as N32 on every tested GPU. Freeze it
+  before one integrated 32K C1/standalone-prefill TP4 pilot. Require native
+  forward and actual M1 dispatch receipts for all 42 layers x 4 ranks and
+  completed FULL graph capture. Preserve exact prior serving regime except
+  the candidate image, explicit FC1/scratch flags, name and port.
+- This is device-gate advancement only. No serving speed, five-cold product
+  pass, full-model numerical closure or allocation restart follows from it.
+  Observe the arena's output-storage lifetime in serving. P8 remains native
+  mxf8f6f4 at twice NVFP4 MMA issue count.
+
+## 2026-09-05: Decision 49 — seal one N64/fused-scratch serving pilot
+
+- Freeze `experiments/p8-fc1-integrated-v1.json` before launch. Recompute the
+  V4 all-device analysis and authenticate the previous 75.5962 tok/s serving
+  recipe, image, runtime sources, benchmark and raw prerequisite receipts.
+- Run one TP4 32K C1 decode plus standalone-prefill diagnostic, with N64 and
+  fused scratch enabled. Require exactly 168 native-forward and 168 actual
+  M1-dispatch layer/rank pairs, FULL graph capture, correct model endpoint,
+  thermal limits and independent restoration of prior service states.
+- Compare historical speeds descriptively only. This is not a five-cold-run
+  qualification or a codec-only EXL3 comparison. Allocation remains stopped.
+  No protected data is opened and no new KLD claim follows from this pilot.
+
+## 2026-09-05: Decision 50 — preserve the successful pilot without promoting it to qualification
+
+- Sealed N64/fused-scratch pilot measured 100.566716 tok/s C1 decode and
+  7,176 tok/s client prefill. All 168 native-forward and M1-dispatch pairs,
+  FULL captures, benchmark integrity, thermal and restoration gates passed.
+- Decode is descriptively 33.03% above the prior P8 pilot and 10.19% above
+  the historical EXL3 median. This authorizes designing the separate
+  five-cold-run comparison, not restarting allocation or claiming a product
+  win. The prior failed five-run gate remains historical evidence.
+- Preserve raw and sanitized portable receipts in
+  `evidence/opened/codec-v2/p8-fc1-integrated-v1/` and report exact topology,
+  context, rate source, repetition count and P8 ISA cost. A full-model M1
+  numerical-closure test is still needed; ordinary prefill KLD does not
+  exercise the changed M1 path. No protected roles are opened.
+
+## 2026-09-05: Decision 51 — fresh five-cold speed comparison
+
+- The successful 100.57 tok/s pilot advances to ten new serving processes:
+  five P8 N64/fused-scratch and five EXL3, in the fixed alternating order in
+  `experiments/p8-fc1-cold-comparison-v1.json`. No historical sample enters
+  the primary medians. Both arms use server-validated 32K prefill and
+  continuous-usage C1 decode with the same benchmark protocol.
+- Both P8 medians must strictly exceed the corresponding EXL3 medians.
+  This qualifies speed only, not quality or allocation. Different EP/DCP
+  topologies remain explicitly a system comparison.
+- Fresh byte verification passed for all 168 P8 routed sidecars and 120
+  EXL3 weight shards (337,357,865,080 bytes). The receipt is
+  `weights-identity-v1.json`, SHA-256
+  `8ce9c07dd89e307ad50aa7c4af93ffbdac51e0637a143ceb64add47f8651eefb`.
+  P8 carrier provenance is unchanged, not newly full-shard hashed. Per-run
+  stat checks detect changes after this payload audit.
+- Preserve any failure, stop the comparison without a silent rerun, and
+  withhold production restoration if an owned test container remains live
+  or uncertain. No protected role is opened.
+
+## 2026-09-05: Decision 52 — require complete single-row causal replay
+
+- Plan numerical closure for all 65,504 causal rows of the same fixed
+  conditional-fit32 panel, not just a favorable tail subset. One-token
+  prompts followed by 2,047 forced original token IDs produce one
+  one-token-prefill row and 2,046 true decode rows per window. Pre-mask logits
+  stored as FP32, with original dtype recorded, must align to teacher rows
+  0 through 2,046 without shifting.
+- Compare N128/no-fused-scratch and N64/fused-scratch in the same current
+  image and Model Runner V2/FULL-graph topology. First require exact logits
+  across the complete inventory, then report teacher KLD. Preserve a failed
+  exact gate rather than introducing post-hoc tolerance.
+- The standard custom-logits-processor interface would fall back to Model
+  Runner V1 in this vLLM revision. It is therefore not authorized as the
+  current-path closure endpoint. Develop an isolated V2 capture/force hook
+  and validate it before launching the full replay. The V1 component may
+  provide tested capture-storage logic, but is not serving-path proof.
+
+## 2026-09-05: Decision 53 — isolated V2 capture image and fail-closed archive
+
+- Build the correctness-only image as a child of the measured N64-capable
+  image `sha256:6c08dffb4184c2704173a12909f4bbfaaa866351e55cbf03a2182741baf81141`.
+  Authenticate and patch both editable and installed copies of the pinned V2
+  sampler. Leave the benchmark image and every cold-plan source unchanged.
+  Preserve the inherited FC2 kernel, rather than copying a different local donor.
+- The hook captures model logits before sampler mutation, outside the model
+  graph. FP32 storage may be an exact upcast of lower-precision head output;
+  record the original dtype without changing the head computation. Verify
+  consumed token IDs, causal positions, request mappings and nonpadding M1
+  geometry, and reject settings that could override the forced token.
+- A separately sealed full-2,047-row canary on the first conditional-fit
+  manifest window must pass exact N128/N64 closure before the full 32-window
+  replay. It is an implementation smoke test, not balanced-domain evidence.
+  The full panel remains eight windows per domain. No quality GPU launch is
+  authorized while the fresh cold comparison owns the model-stack lock.
+- Independent review of the terminal snapshot helper found and fixed a
+  packaging hazard: analysis from a failed/unreplayed attempt is retained
+  under `raw-unverified-analysis.json`, explicitly excluded from claims.
+  Normal `analysis.json` requires successful raw-analyzer replay. Do not run
+  this archiver against a still-active comparison.
+
+## 2026-09-05: Decision 54 — full forced-M1 replay and KLD analysis contract
+
+- After the fresh cold comparison completes its ten-run protocol, use the
+  reviewed capture image for four fresh starts in this order: canary N128,
+  canary N64, full-panel N128, full-panel N64. The first manifest window is
+  the fixed canary, with all 2,047 causal rows. Any canary bit mismatch stops
+  the full stage; no retry, tail substitution or tolerance change is allowed.
+- The full stage captures every row in all 32 conditional-fit windows, eight
+  per domain, with one-token input and the exact remaining 2,047 original
+  token IDs forced as output. Require matching original head dtype and width
+  across arms, all 168 native layer/rank dispatches, V2/FULL configuration,
+  exact forced-token responses and authenticated raw logits.
+- Score `KL(teacher || student)` in nats with the existing pinned CPU FP64
+  metric with eight Torch CPU threads, on all 65,504 positions without a row
+  shift. Report each window and
+  separate row-zero/true-decode diagnostics. The primary KLD aggregation is
+  the equal-window mean. Use 20,000 paired window bootstrap resamples with
+  seed 20260905 and the existing BCa implementation. These are panel-window
+  intervals, not independent quantization-pipeline replications.
+- If raw logits match bitwise, scoring one arm and reusing its metric values
+  for the other is permitted with explicit per-window identity receipts.
+  Identical window deltas have an undefined sampling interval, reported as
+  null with explanation, not an artificial zero-width BCa interval. A full
+  exact-logit failure remains a failure even if mean KLD decreases.
+- The cold protocol must complete successfully before capture, but a negative
+  speed result does not prevent measuring numerical correctness. Neither
+  capture timing nor a favorable quality diagnostic restarts allocation.
+  P8 remains E4M3 with twice NVFP4's MMA issue count, not the P4 endpoint.
+- Root-written capture artifacts may be made readable by the host only via
+  authenticated owned-container `chown -h` on explicit regular files under
+  the new capture directory. Preserve before/after ownership and identity
+  receipts; never recursively change model or cache ownership. On failure,
+  preserve partial outputs and withhold production restoration while owned
+  GPU containers remain live or their state is uncertain.
+
+## 2026-09-05: Decision 55 — fresh speed pass advances only to numerical closure
+
+- All ten fresh cold-process runs completed successfully, and the sealed raw
+  analyzer and portable snapshot replayed. P8 median C1 decode is
+  100.5501114546 tok/s versus EXL3 91.2199741959 (+10.2282%); primary
+  server-validated prefill is 6,959 versus 6,239 tok/s (+11.5403%). Both
+  predeclared median gates pass. Maximum sampled temperature was 84 C;
+  prior backend-active/timer-inactive states were restored without errors.
+- Preserve the full ten-run record under
+  `evidence/opened/codec-v2/p8-fc1-cold-comparison-v1/`. These are five new
+  processes per arm with retained compiled caches, not pilot reuse. P8
+  TP4/noEP/DCP1 versus EXL3 TP4/EP4/DCP4 remains a system comparison.
+- This speed pass does not establish new KLD or authorize allocation. Advance
+  only to `experiments/p8-forced-m1-v2-v1.json`, sealed SHA-256
+  `e3332469bc2ed9aec86eabb86b8dc57f76123542e1de309b9136893e4014725a`.
+  Its first canary is conditional-fit-0056 and its full stage retains all
+  32 domain-balanced windows and 65,504 causal positions. Planning freshly
+  verified all 32 teacher files and token identities. Protected data stays
+  unopened; exact failure cannot be replaced by a favorable average KLD.
+- The V2 request fields and token-return contract also passed a CPU-only
+  instantiation check in the exact capture image. This is interface evidence,
+  not GPU capture proof. P8 still carries twice NVFP4's MMA issue count;
+  the separate native P4 endpoint is not qualified by this speed result.
+
+## 2026-09-05: Decision 56 — preserve startup failure; scope the v2 warmup repair
+
+- The Decision-55 capture attempt stopped in `canary-n128` with zero requests
+  and zero captured rows. The pinned V2 warmup registers a synthetic two-token
+  prompt; the capture hook's one-token guard rejected it. Root/stage hashes,
+  all ten raw stage files, stopped-container state, and service restoration
+  independently verified. This is a startup instrumentation failure, not a
+  KLD result. Preserve the original plan, image, worktree, logs, and launch
+  observation; do not retry v1 or overwrite its evidence.
+- Failure snapshot SHA-256:
+  `cf4c013dd12267632e25cb0ddb8816690070610799801091e21d1fc9c002942a`.
+  See `results/P8_FORCED_M1_WARMUP_V2.md` and
+  `evidence/opened/codec-v2/p8-forced-m1-v2-v1-failure/`.
+- Before any further GPU measurement, prepare the fresh `v2-v2` protocol
+  with an explicit lexical scope around the pinned startup warmup function.
+  Validate exactly one synthetic registration, two sampler calls, exact
+  identity/geometry/parameters and cleanup; close via `finally`. Require four
+  rank-tagged closure markers before evaluation. Outside that scope, real
+  capture guards remain strict. Patch/hash both vLLM copies and bind the new
+  sealed runtime tree so PYTHONPATH cannot silently choose the old helper.
+- The numerical rule remains exact full-row canary agreement, then all32
+  conditional-fit windows, eight per domain, and paired full-row KLD. No
+  tolerance, window, estimator or stopping change; MDE is not used to replace
+  the exact-byte gate. No LDLQ, kernel arithmetic change, or protected role
+  opening. Allocation remains stopped. P8 retains twice NVFP4's MMA issue
+  count, and the separate five-cold speed pass is unchanged.
+- Outcome at preregistration: v1 failure preserved; v2 implementation and
+  CPU validation pending. No evaluation result has been observed for v2.
+- Prelaunch update, 08:13 UTC: implementation and independent CPU review
+  completed; 155 focused tests pass. Dedicated image
+  `sha256:0f1eae9329965d68713857e4a5a12e9c5440c866b532e7ba288dc2ae4067fad9`
+  built without GPU work; receipt SHA-256
+  `fdd57fa758d33f81d88706487232e2f68b89a24f5c1e398e83516e212f14ffd6`.
+  The exact image imports the patched warmup and accepts the actual pinned
+  synthetic sampling signature. These are structural checks only; the next
+  authorized action is sealing and executing the unchanged numerical gate.
+- Sealed at 08:13 UTC: `experiments/p8-forced-m1-v2-v2.json`, SHA-256
+  `0faf9049d5f565e887570a6eff6ceac431ad4b6d767f2a72ab4b324b348d29c3`.
+  All32 approved teachers freshly byte-verified; four domains retain eight
+  windows each, first canary conditional-fit-0056. Proceed under the existing
+  model-stack lock and restore prior service states. This entry precedes
+  execution; no canary pass or full KLD result is claimed by the seal.
+
+## 2026-09-05: Decision 57 — preserve real N128 capture; correct port preflight
+
+- V2 passed the registered startup warmup on all four ranks and captured all
+  2,047 canary rows for N128. Its raw capture SHA-256 is
+  `051ee7210a3321ec66c239022a7af9e0bd18ae54cf9d1bf2ed4775b7289932b9`.
+  N128 exited 0 with validated request/response, row metadata, runtime proofs
+  and cleanup. The N64 stage failed before container creation with Errno98
+  at the plain localhost port-bind probe. No pair comparison or KLD result.
+- Preserve the entire v2 attempt and successful N128 capture. Diagnostics
+  observed zero listeners, one local8023 TIME_WAIT socket, and successful
+  SO_REUSEADDR bind. Fix only the non-listening preflight probe to tolerate
+  that closed-connection state while still rejecting a real listener. Never
+  enable SO_REUSEPORT or stop an unrelated process to take the port.
+- Preregister fresh v3 source/plan/output/unit with unchanged image0f1eae,
+  weights, warmup code, arm order, exact-byte canary threshold, all32 balanced
+  conditional-fit windows and analysis. Repeat the complete pair rather
+  than silently substituting the prior N128 capture. No model result has
+  informed this infrastructure amendment; no tolerance or role relaxation.
+- At decision time: port-probe tests pass, prior unit terminal-failed and
+  restored. V3 has not launched. See `results/P8_FORCED_M1_PORT_V3.md`.
+  P8 still has twice NVFP4's MMA issue count; allocation remains stopped.
+
+- Prelaunch validation: 158 focused existing/port tests and 11 new terminal
+  snapshot tests pass. Independent review authenticated all 19 raw stage
+  files and N128's finite, aligned 2,047-row capture. Snapshot SHA-256
+  `8077d19f119c2bbb79e609b79ca484dfdb6ad04d41e06cc700f614ce93d59e6f`.
+  Fresh v3 plan SHA-256
+  `7b675117a4a2c8a5abe87056dae6a3b6bcd1db2d44d8d0b5c45ad0f33b219085`;
+  all32 teacher files byte-verified again. Proceed with the explicitly amended
+  attempt under the existing maintenance lock, preserving the previous run.
+
+## 2026-09-05: Decision 58 — exact canary fails; diagnose baseline repeatability
+
+- V3 completed both canary arms and passed the port transition. The primary
+  exact comparison fails: rows0–258 match, all1,788 rows259–2046 differ,
+  maximum absolute logit difference7.37451171875. Preserve the failed gate,
+  `canary-exact.json` SHA-256
+  `6d6a16679528bbe6890bfb4a1df1b88d7f4a37607e1902a5eae1995310e98bb2`.
+  Neither full stage started. Root exited1 with services restored and no
+  owned containers. No full KLD result or allocation advancement.
+- A separately labeled post-hoc comparison of the already captured v2 and
+  v3 N128 controls ALSO first differs at row259, through the remaining1,788
+  rows; max absolute difference7.9140625. Independent audit found identical
+  image, numerical config, runtime Python sources and forced token sequence.
+  The primary failure cannot therefore be attributed specifically to N64.
+- Next action: read-only trace of the shared serving path at260inputtokens.
+  Actual index_topk is2048, with compressed kpool4 and tail inclusion;65
+  completed pools is a candidate page boundary, not a proven cause. Keep
+  the current gate failed and do not silently restart or loosen it. Any GPU
+  localization diagnostic needs a new frozen plan; no teacher KLD scoring
+  or protected opening is authorized by this one-window post-hoc comparison.
+- See `results/P8_FORCED_M1_CANARY_V3.md`. P8 still has twice NVFP4's MMA
+  issue count. Existing speed measurements do not establish repeatability.
+- Terminal snapshot SHA-256
+  `25718eed8bfc87f42ac1cafc9001c11cbb3c12d2fc6f3f2bd1c2fb451e5e7f49`;
+  nine new snapshot tests pass and all51 current/prior-control stage-file
+  hashes verify. No raw logits were copied into GitHub.
+- The exact-image source audit identifies an arrival-ordered short-sequence
+  indexer relay:64-row virtual pool pages, a second page becoming nonempty
+  at65 pools, atomic CTA output allocation without canonical ordering, then
+  order-preserving token expansion and physical-slot mapping. Fused-indexer
+  SHA69110dcf9d54d4e14ee4d501990245a2cbad7621d0a3d84f035f93d368add7af.
+  This is a source-backed candidate, not device causation. The next frozen
+  diagnostic should observe index order/set/cache and layer3 attention seams
+  across same-N128 repeats near rows255–263, not change the failed gate or
+  blame the trellis law from aggregate logit differences.
+
+## 2026-09-05: Decision 59 — observe identical N128 runs before any ordering fix
+
+- Preserve v3's failed exact gate and repeated-control divergence. Authorize
+  only the bounded two-process index-order diagnostic described in
+  `results/P8_INDEX_ORDER_TRACE_V1.md`, under the existing local-work mandate.
+- Same N128/TP4/DCP1/V2/FULL image and P8 weights, same already-opened CF0056
+  full2047 forced rows; observe only positions255–263,11sparse layers,4ranks.
+  No teacher reads, protected roles, new quantization, KLD or speed scoring.
+- Decision: same recorded scorer inputs but different selected order/set
+  localizes selection divergence; same attention content/set with changed
+  order/output supports linkage, not an intervention-proven fix. Upstream
+  changes redirect diagnosis. Two runs without divergence are inconclusive.
+- The observer may perturb CTA scheduling:143copykernels/token. No automatic
+  reruns, no relaxation of the original closure gate, no allocation restart.
+- Source review corrected split-payload/scales addressing and distinguished
+  the expanded2051 logical columns from2048 physically consumed columns.
+  No runtime algorithm was changed.120focusedCPUtests passed; exact-image
+  interpreter/source receipts retained before seal. Full KLD stays pending.
+- Pre-launch amendment: original plan3e3534d9044d1e0d61fb9748beddb6d25cba4bc2569ee3b23aa35295e466d7f1
+  remains unlaunched. Review found numeric equality could conflate signed
+  zero and omit paired representation checks. The analyzer now compares raw
+  bytes;121focused tests pass. Only reviewed plan
+  7e21d7ad3d1edbb8c74df4cb85d8e82154c57b48d1d45e7754de1aa882ba0dbd
+  was superseded before launch by final diagnostic plan
+  a900b61096bd377a9430dea87127d2ebf6da6d4209f8b6cbe1b4f3ee7973b265:
+  same-input index divergence and downstream linkage must occur in the same
+  row.122tests pass. Only that last plan is authorized; both prior manifests
+  remain unlaunched. No GPU target result preceded these amendments.
+
+## 2026-09-05: Decision 60 — preserve import failure and repair compiler semantics
+
+- Index-trace-v1 ended before evaluation: root43f91db06306435eaacf4e0969349983bc3ee2b5bb23f26673495b5c2a4d1024,
+  stage77b496198a9bf591ab999f656f8a8bf277f677d641cd997d4feb47e1de69d451.
+  Zero requests/captures/traces; second repeat unstarted; prior services restored.
+- The observer loader inherited its own future-annotations flag into vLLM.
+  With actual worker breakable-graph mode, this reproduces the recorded
+  LayerNameType schema error on CPU. `dont_inherit=True` restores the original
+  annotation objects; final exact-image worker-mode schema/import test passes.
+- Explicitly amend to a fresh v2 plan/namespace/output, preserving v1 unchanged.
+  Require the original failure receipts and the new import/schema gate before
+  launching the same diagnostic.146focusedCPUtests pass. No codec math,
+  selection/attention rule or success threshold changes; no protected opening.
+- See `results/P8_INDEX_TRACE_IMPORT_V2.md`; original full KLD and allocation
+  remain pending, not waived by infrastructure repair.
+
+## 2026-09-05: Decision 61 — preserve observed index-order divergence
+
+- The two-process v2 diagnostic completed under plan
+  d8e814b5a25ea7d557d2efeb297914aad4c3d98d338e1ef816c68d7c1ecddd2d.
+  Root receipt cae40d0c7d10202fbb2a4251dcb44e795f2ff56facfa1323b520aace30d03a19;
+  comparison 29111348a0ac0b1d35c6c8613400bb55ac8a545e753c3e0adc4332f40ac3fdab.
+  Both2047-row captures completed; services restored and no owned containers
+  remain. No teacher or protected roles were opened.
+- The same N128 configuration diverged again at row259;1788 logit rows differ,
+  maximum absolute difference9.375. These are raw-logit differences, not KLD.
+- First trace divergence: row259/layer7/rank1. All recorded scorer inputs,
+  attention query/cache/length and page tables match bitwise. Pool selection
+  is the same set, ordered [64,0,...,63] versus [0,...,64]; physical selection
+  order and attention output differ. All earlier recorded rows and layer3
+  at row259 match. Four same-row observations satisfy the linkage criterion;
+  they are correlated subsamples of two processes, not four independent runs.
+- This supports the proposed index-order mechanism but is not an
+  intervention-proven fix. Instrumentation changes scheduling; hidden scratch
+  state remains a rival. Preserve the failed exact gate and do not advance
+  full-panel KLD or allocation based on diagnostic completion.
+- Next intervention must have a new frozen plan and source identity, changing
+  ordering alone before testing repeatability. A separate source-audited
+  incomplete-KPool-tail omission must not be bundled into the ordering test.
+  At first-difference sequence length260 there is no incomplete tail.
+- See results/P8_INDEX_TRACE_V2.md. P8 remains E4M3 mxf8f6f4 with twice
+  NVFP4's MMA issue count; this diagnostic supplies no new speed measurement.
+
+## 2026-09-05: Decision 62 — test deterministic short-pool placement first
+
+- Acting on Decision61's observed same-input order divergence, implement a
+  new opt-in source transform in a new worktree; do not edit the frozen trace.
+- Narrow the pre-launch proposal to actual32heads and group-uniform valid
+  page tables. Preserve negative/missing-page legacy behavior, local barriers,
+  empty-CTA ownership and score/index pairing. Keep the separate tail issue
+  unchanged. Positive out-of-range addresses remain an existing caller
+  precondition, not a safe GPU negative test.
+- Preserve original B12X69110d... source and emitted candidate655236be...
+  source separately, including inspect-visible CuTe source and new compile
+  cache key.92CPUtests and exact-image no-GPU import gate passed before seal;
+  independent review found and resolved cleanup/receipt validation gaps.
+- Authorize the bounded five-fresh-process GPU0 synthetic gate under the
+  standing local implementation mandate:380calls+80transitions/process,
+  exact analytic score pairs, short ascending order, counters and signatures.
+  Any failure stops without retry. No model/teacher/protected data are used.
+- Record this as kernel-level evidence only. No automatic full-model launch,
+  allocation restart or KLD qualification follows. See
+  results/P8_INDEX_ORDER_DEVICE_V1.md and the sealed device plan.
+
+## 2026-09-05: Decision 63 — preserve UUID-format stop, amend parsing only
+
+- V1 first probe passed all460 declared calls. Host identity validation then
+  rejected the optional `GPU-` prefix difference between NVIDIA and PyTorch
+  UUID strings. Root23b973... stays failed; resultfe6f56... stays preserved.
+  No second process ran; old services restored and no owned container remains.
+- New v2 worktree/plan/output uses strict UUID parsing with optional NVIDIA
+  prefix and authenticates all old source/failure/result receipts. Kernel,
+  probe inputs, case inventory, exact numerical rules and safety gates do not
+  change.99CPUtests pass. This correction is not a tolerance relaxation.
+- Authorize five new GPU0 processes under the existing bounded local mandate;
+  do not count v1's first process toward the new gate. Preserve any new failure
+  without retry. Full-model KLD/allocation remain gated separately.
+- See results/P8_INDEX_ORDER_DEVICE_V2.md.
+
+## 2026-09-05: Decision 64 — synthetic pass permits an integrated exact canary
+
+- Device-v2 passed five fresh GPU0 processes under planfa2b503...;
+  root251757... records2,300 checks and five matching short-output signatures
+  d7592d.... Independent analytic-hash replay passed; peak35C. No model,
+  teacher, protected role or speed measurement was involved.
+- Preserve candidate emitted source655236... and all kernel/probe sources.
+  Integrate only a one-time rank-tagged indexer-invocation receipt, without
+  the143-copy-kernel diagnostic observer, in a new worktree/plan.
+- Authorize three fresh CF0056 full2047 forced-M1 captures: correctedN128,
+  correctedN128 repeat, then correctedN64/consolidated scratch. Require exact
+  first-pair equality before starting the third; require exact equality of
+  the third with both controls. Any difference stops, with no retry/exclusion.
+- This is full-model canary closure, not conditional-fit32 KLD or final
+  five-run serving determinism. Tail omission remains a separate unchanged
+  defect; no final quality/allocation gate advances. See
+  results/P8_INDEX_ORDER_INTEGRATION_V1.md.
+
+## 2026-09-05: Decision 65 — corrected full-model canary passed; proceed to full32
+
+- Plan5514b3... completed all three new TP4 processes. Both N128 repeats and
+  optimized N64 produced the same complete2047x154880 raw logits, hash42b776....
+  Root4836ed... records clean restoration/source identity and no teacher or
+  protected-role access. Peak66C; independent artifact and array replay passed.
+- This passes the declared canary only. Preserve the prior failed runs and
+  the separate incomplete-KPool-tail omission; no new speed or KLD claim.
+- Next use two fresh full32 processes (N128 thenN64), authenticating these
+  passed canary receipts rather than rerunning/fabricating old schema stages.
+  Retain8 windows per domain,2047 rows each, exact closure and separate CPU
+  KL(teacher||student)/paired window BCa measurement. A mismatch remains a
+  closure failure even if its KLD is favorable. Freeze the full protocol
+  separately before collection. No allocation or protected qualification yet.
+
+## 2026-09-05: Decision 66 — freeze full-only corrected P8 KLD protocol
+
+- Authenticate and replay the passed external canary; do not repeat it or
+  create synthetic canary stages merely to fit the older four-stage schema.
+- Capture exactly two fresh CF32 processes in order: corrected N128/separate
+  scratch, then corrected N64/consolidated scratch. Retain eight windows per
+  domain and all2047x154880 logits. Require complete captures and clean
+  restoration before CPU scoring; preserve numerical mismatch as a closure
+  failure while still reporting valid KLD.
+- Primary quality report is absolute FP64 KL(teacher||student) for corrected
+  P8, equal-window mean, with paired20k-window BCa for N64-N128. This protocol
+  has no matched stock-NVFP4 arm and therefore cannot prove codec improvement.
+- Tail omission remains unchanged and blocks final quality qualification.
+  This is development conditional-fit evidence, opens no protected role,
+  measures no speed, uses no LDLQ, and does not restart allocation.
+- Three SOL-high reviews returned GO after removing an unenforced in-plan
+  wall-time claim. Plan6873cd1... freezes56sources and32windows. A duplicate
+  concurrent prepare failed on create-only output without modifying the plan.
+  See results/P8_INDEX_ORDER_FULL32_V1.md.
+
+## 2026-09-05: Decision 67 — preserve the full32 analyzer failure; score once by amendment
+
+- The two fresh full32 captures completed and are bitwise identical across all
+  32 windows and 65,504 causal rows. Preserve capture plan6873cd1..., root
+  execution3a0816..., and full-exact89b628...; do not spend another GPU run.
+- The chained V1 CPU analyzer failed before output creation or teacher scoring
+  because its receipt verifier reconstructed request model names after the
+  full-campaign prefix context was restored. Preserve failed systemd invocation
+  c6509947... and invocation-journal hash423aa90e... as failure evidence.
+- Permit one analysis-only amendment which scopes that prefix around the
+  unchanged frozen V1 verifier/scorer, restores it in all outcomes, and writes
+  a fresh output. It changes no capture, window, teacher, metric, aggregation,
+  decision, or tail boundary and controls no GPU service.
+- Plan79e958c... binds the amendment sources, V1 56-source inventory, capture
+  and failure receipts. This remains conditional-fit absolute P8 KLD, with no
+  matched NVFP4 improvement or protected-role claim. See
+  results/P8_INDEX_ORDER_FULL32_ANALYSIS_V2.md.
+- The one amended analysis completed: N128=N64 exactly at mean KLD0.1174756262,
+  absolute window-BCa95%[0.0926261913,0.1508711690]. This closes the N64
+  optimization with zero numerical/KLD cost, but not product quality. The old
+  prompt-prefill/eager/FP8-KV result0.0400213948 is not directly comparable to
+  the new serial-decode/FULL-graph/V2-runner/NVFP4-KV/corrected-runtime system.
+  Preserve the observed +193.53% cross-system difference and isolate those
+  causal-execution/runtime variables before attributing it. Both paths were
+  no-MTP; small-M `M1` is not MTP-1.
+
+## 2026-09-05: Decision 68 — corrected tail V2 supports a material cause
+
+- V1 is retained as inconclusive failed-method evidence: its selector placed
+  tail entries near column 2048 and did not selectively exercise tail rows.
+- Before KLD, the actual device expander passed all lengths 1 through 2047.
+  Exactly the 1,536 rows with length modulo four in 1, 2, or 3 changed; all
+  511 modulo-zero rows were bitwise unchanged.
+- On the same four conditional-fit windows, attention backend
+  `B12X_MLA_SPARSE`, KV dtype `nvfp4_ds_mla`, native P8 MoE with E4M3
+  activations, and exact 4.25 bpw, tail V2 reduced mean KLD from 0.1174741 to
+  0.0515686: 56.1021%, four of four wins, paired percentile interval
+  [-0.1271547,-0.0264585]. The intervention passes its material-support rule.
+- This is a four-window serving diagnostic, not full32 qualification or speed.
+  Preserve the 5,072,629,760 raw bytes on NVMe and write nothing to klcstore.
+  See results/P8_TAIL_OMISSION_REPAIR_V2.md.
+
+## 2026-09-05: Decision 69 — reprioritize tail shipping and prepare K5
+
+- The 08-29 ablation removed only the intra-tile LDLQ factor. It does not rule
+  out calibrated inter-block BlockLDLQ. Retain BlockLDLQ as an encoder-only,
+  P8-ABI-preserving three-layer fallback only if the fixed incoherence pilot
+  fails to close the tail-fixed P8 versus EXL3 quality gap.
+- Before incoherence encoding, run P8 and production EXL3 through the same
+  tail-V2 `B12X_MLA_SPARSE` plus `nvfp4_ds_mla` path on the balanced 32
+  conditional-fit windows. Add a determinism gate and matched speed check.
+  Every reported number must carry attention backend, KV dtype, MoE backend,
+  activation precision, and physical bpw.
+- FP8-NoPE rebase is low priority. The correct active NVFP4 NoPE record is 288
+  bytes and contains no RoPE payload. Treat the residual after tail V2 as an
+  NVFP4 scale-calibration target unless a subsequent matched test isolates a
+  reader or attention defect.
+- Prepare, but do not launch, K5: five trellis bits plus one UE8M0 byte per 32
+  weights, exact 5.25 bpw, procedural MCG to finite E4M3, direct fused decode.
+  Device bit-exact closure must precede an all-layer build. The overnight job
+  remains unscheduled and must be announced before start; its estimated full
+  checkpoint size exceeds the 30 GB unapproved storage cap.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
