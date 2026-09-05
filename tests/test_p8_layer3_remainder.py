@@ -38,3 +38,12 @@ def test_argument_replacement_does_not_mutate_other_inputs():
     command = ['python','--expert-start','0','--layer','3']
     module.replace_arg(command,'--expert-start',72)
     assert command == ['python','--expert-start','72','--layer','3']
+
+
+def test_explicit_layer_paths_do_not_alias_layer3():
+    module = load()
+    codec,receipt = module.paths(0,72,layer=20)
+    assert codec.name == 'p8-coupled-layer-020-experts-000-072.safetensors'
+    assert codec.parent.name == 'layer-020'
+    assert receipt.name == 'layer-020-experts-000-072.json'
+    assert codec != module.paths(0,72)[0]

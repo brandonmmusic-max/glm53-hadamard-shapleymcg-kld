@@ -17,15 +17,15 @@ def sha(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
-def paths(start, end):
-    return (OUT / f'chunks/layer-003/p8-coupled-layer-003-experts-{start:03d}-{end:03d}.safetensors',
-            OUT / f'receipts/chunks/layer-003-experts-{start:03d}-{end:03d}.json')
+def paths(start, end, layer=3):
+    return (OUT / f'chunks/layer-{layer:03d}/p8-coupled-layer-{layer:03d}-experts-{start:03d}-{end:03d}.safetensors',
+            OUT / f'receipts/chunks/layer-{layer:03d}-experts-{start:03d}-{end:03d}.json')
 
-def validate_chunk(start, end):
-    codec, receipt = paths(start, end)
+def validate_chunk(start, end, layer=3):
+    codec, receipt = paths(start, end, layer)
     item = json.loads(receipt.read_text())
     assert item['schema'] == 'glm53-hessian-trellis-p8-coupled-scale-layer-chunk-receipt.v1'
-    assert item['layer'] == 3 and item['expert_range'] == [start, end]
+    assert item['layer'] == layer and item['expert_range'] == [start, end]
     assert item['design_sha256'] == DESIGN and item['protected_roles_opened'] == []
     assert item['calibration']['role'] == 'fit' and item['calibration']['samples'] == 256
     assert item['algorithm']['ldlq'] is False
