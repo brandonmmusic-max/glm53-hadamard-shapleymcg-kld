@@ -33,12 +33,26 @@ def test_default_is_cpu_only_and_bounded_to_loader_abi() -> None:
     record = json.loads(completed.stdout)
     protocol = record["protocol"]
     assert record["protocol_sha256"] == _module().PROTOCOL_SHA256
+    assert record["protocol_sha256"] == (
+        "bd9dbf3273445152ad93e743c2d7ca229c458ed5254045b35d269e2ff32a2b5f"
+    )
     assert protocol["immutable_image"].startswith("sha256:")
     assert protocol["geometry"]["ranks"] == [0, 1, 2, 3]
     assert protocol["moe_mma_executed"] is False
     assert protocol["kld_tested"] is False
     assert "no MoE/MMA call" in protocol["claim_boundary"]
     assert "constructor scale repacking may use device kernels" in protocol["claim_boundary"]
+
+
+@pytest.mark.parametrize("layer", [3, 20, 22])
+def test_protocol_is_derived_from_explicit_supported_layer(layer: int) -> None:
+    module = _module()
+    protocol = module.protocol_for_layer(layer)
+    assert protocol["geometry"]["layer"] == layer
+    assert f"real layer-{layer} " in protocol["claim_boundary"]
+    assert module.protocol_sha256_for_layer(layer) == module.canonical_sha256(protocol)
+    with pytest.raises(ValueError, match="one of"):
+        module.protocol_for_layer(21)
 
 
 def _receipt(module, tmp_path: Path):
@@ -78,11 +92,13 @@ def _receipt(module, tmp_path: Path):
 def test_postwrite_binding_requires_four_ordered_real_file_hashes(tmp_path: Path) -> None:
     module = _module()
     sidecars, receipt = _receipt(module, tmp_path)
-    loaded = module._load_postwrite(receipt, sidecars)
+    loaded = module._load_postwrite(receipt, sidecars, layer=3)
     assert [row["rank"] for row in loaded["ranks"]] == [0, 1, 2, 3]
+    with pytest.raises(RuntimeError, match="postwrite receipt contract mismatch"):
+        module._load_postwrite(receipt, sidecars, layer=20)
     sidecars[2].write_bytes(b"changed")
     with pytest.raises(RuntimeError, match="rank 2 sidecar/postwrite identity"):
-        module._load_postwrite(receipt, sidecars)
+        module._load_postwrite(receipt, sidecars, layer=3)
 
 
 def _small_tensors():
@@ -131,12 +147,16 @@ def test_stored_sidecar_audits_every_tensor_and_external_pins(
     path = tmp_path / "rank-0.safetensors"
     save_file(tensors, path, metadata=metadata)
     row = {"tensor_sha256": tensor_hashes}
-    observed = module._inspect_sidecar(path, row, rank=0)
+    observed = module._inspect_sidecar(path, row, layer=3, rank=0)
     assert observed["tensor_sha256"] == tensor_hashes
+    with pytest.raises(RuntimeError, match="sidecar metadata mismatch"):
+        module._inspect_sidecar(path, row, layer=20, rank=0)
+    with pytest.raises(RuntimeError, match="sidecar metadata mismatch"):
+        module._inspect_sidecar(path, row, layer=3, rank=1)
     metadata["source_design_sha256"] = "c" * 64
     save_file(tensors, path, metadata=metadata)
     with pytest.raises(RuntimeError, match="sidecar metadata mismatch"):
-        module._inspect_sidecar(path, row, rank=0)
+        module._inspect_sidecar(path, row, layer=3, rank=0)
 
 
 def test_actual_wrapper_materializations_match_postwrite_hashes(monkeypatch) -> None:
@@ -188,9 +208,15 @@ def test_actual_wrapper_materializations_match_postwrite_hashes(monkeypatch) -> 
             ))
 
     runtime, result = module._inspect_runtime_rank(
-        P8NativeTPMoE, Path("/not-opened"), row, rank=2, device=torch.device("cpu")
+        P8NativeTPMoE,
+        Path("/not-opened"),
+        row,
+        layer=20,
+        rank=2,
+        device=torch.device("cpu"),
     )
-    assert runtime.tp_rank == 2
+    assert runtime.tp_rank == 2 and runtime.layer == 20
+    assert result["layer"] == 20
     assert result["identity_fallback"] is False
     assert result["moe_mma_executed"] is False
     assert result["runtime_loaded_tensor_sha256"] == {
@@ -204,6 +230,7 @@ def test_actual_wrapper_materializations_match_postwrite_hashes(monkeypatch) -> 
             P8NativeTPMoE,
             Path("/not-opened"),
             row,
+            layer=20,
             rank=2,
             device=torch.device("cpu"),
         )
@@ -219,6 +246,7 @@ def test_probe_command_is_v9_networkless_and_mounts_all_four_ranks(tmp_path: Pat
         postwrite=receipt,
         output=tmp_path / "output",
         sidecar=sidecars,
+        layer=20,
     )
     command = module.build_probe_command(args, ROOT)
     joined = " ".join(str(item) for item in command)
@@ -227,3 +255,15 @@ def test_probe_command_is_v9_networkless_and_mounts_all_four_ranks(tmp_path: Pat
     assert "docker build" not in joined and "systemctl" not in joined
     assert sum(f"/inputs/rank-{rank}.safetensors:ro" in joined for rank in range(4)) == 4
     assert "--postwrite-sha256" in command and "--harness-sha256" in command
+    layer_at = command.index("--layer")
+    assert command[layer_at + 1] == "20"
+
+
+def test_execute_and_probe_require_explicit_layer() -> None:
+    module = _module()
+    args = module.parse_args(["--execute"])
+    with pytest.raises(ValueError, match="layer"):
+        module._require(args, ("layer",))
+    source = SCRIPT.read_text()
+    assert "global LAYER" not in source
+    assert source.count('"layer": args.layer') >= 3

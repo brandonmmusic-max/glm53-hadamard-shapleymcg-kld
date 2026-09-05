@@ -27,7 +27,8 @@ V9_IMAGE = "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da2
 V9_RUNTIME_MANIFEST_SHA256 = "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1"
 V3_DESIGN_SHA256 = "4ebb96dd9d555fc18f24fb5f4d380216e1de30327a68d7aae89fc10f41878695"
 TRANSFORM_SHA256 = "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12"
-LAYER = 3
+LAYER = 3  # Legacy/default protocol only; execution always supplies --layer.
+SUPPORTED_LAYERS = (3, 20, 22)
 WORLD_SIZE = 4
 MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
 TENSOR_NAMES = (
@@ -75,51 +76,60 @@ def _load_helper():
 
 M1 = _load_helper()
 
-PROTOCOL = {
-    "schema": "glm53.p8-full-coupled-real-sidecar-loader-closure.v1",
-    "evidence_level": "gpu-loader-abi-closure",
-    "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
-    "immutable_image": V9_IMAGE,
-    "runtime_manifest_sha256": V9_RUNTIME_MANIFEST_SHA256,
-    "geometry": {
-        "layer": LAYER,
-        "ranks": list(range(WORLD_SIZE)),
-        "world_size": WORLD_SIZE,
-        "experts": 288,
-        "hidden": 4096,
-        "local_intermediate": 512,
-        "topk": 8,
-        "fc1_tile_n": 128,
-    },
-    "external_pins": {
-        "v3_design_sha256": V3_DESIGN_SHA256,
-        "transform_sha256": TRANSFORM_SHA256,
-    },
-    "execution_order": "ranks 0,1,2,3 sequentially on one visible GPU",
-    "exact_gates": [
-        "installed runtime sources equal the immutable v9 manifest",
-        "postwrite receipt is source-exact PASS and still retirement-false",
-        "four sidecar file hashes, metadata, shapes, dtypes and tensor hashes equal the postwrite receipt",
-        "actual v9 P8NativeTPMoE constructs for the matching real layer and rank",
-        "all seven runtime payload/scale tensor byte streams equal the postwrite tensor hashes",
-        "stored draw0 bytes and runtime-regenerated sign bytes equal their pinned hashes",
-        "wrapper resolves full_coupled K4 MCG, N128, deterministic TP4 with descriptor aliases and no identity fallback",
-    ],
-    "failure_policy": (
-        "any image/source/input/hash/schema/shape/dtype/rank/layer drift, partial coupling, "
-        "identity mode, alternate descriptor storage, missing runtime tensor, or CUDA allocation "
-        "failure is a loader closure failure"
-    ),
-    "claim_boundary": (
-        "real layer-3 all-four-rank sidecar load/repack/ABI closure only; no MoE/MMA call, "
-        "numerical closure, CUDA graph, KLD, throughput, serving, or full-model qualification; "
-        "constructor scale repacking may use device kernels"
-    ),
-    "moe_mma_executed": False,
-    "kld_tested": False,
-    "throughput_tested": False,
-    "ldlq": False,
-}
+
+def protocol_for_layer(layer: int) -> dict[str, object]:
+    if layer not in SUPPORTED_LAYERS:
+        raise ValueError(f"loader closure layer must be one of {SUPPORTED_LAYERS}")
+    return {
+        "schema": "glm53.p8-full-coupled-real-sidecar-loader-closure.v1",
+        "evidence_level": "gpu-loader-abi-closure",
+        "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
+        "immutable_image": V9_IMAGE,
+        "runtime_manifest_sha256": V9_RUNTIME_MANIFEST_SHA256,
+        "geometry": {
+            "layer": layer,
+            "ranks": list(range(WORLD_SIZE)),
+            "world_size": WORLD_SIZE,
+            "experts": 288,
+            "hidden": 4096,
+            "local_intermediate": 512,
+            "topk": 8,
+            "fc1_tile_n": 128,
+        },
+        "external_pins": {
+            "v3_design_sha256": V3_DESIGN_SHA256,
+            "transform_sha256": TRANSFORM_SHA256,
+        },
+        "execution_order": "ranks 0,1,2,3 sequentially on one visible GPU",
+        "exact_gates": [
+            "installed runtime sources equal the immutable v9 manifest",
+            "postwrite receipt is source-exact PASS and still retirement-false",
+            "four sidecar file hashes, metadata, shapes, dtypes and tensor hashes equal the postwrite receipt",
+            "actual v9 P8NativeTPMoE constructs for the matching real layer and rank",
+            "all seven runtime payload/scale tensor byte streams equal the postwrite tensor hashes",
+            "stored draw0 bytes and runtime-regenerated sign bytes equal their pinned hashes",
+            "wrapper resolves full_coupled K4 MCG, N128, deterministic TP4 with descriptor aliases and no identity fallback",
+        ],
+        "failure_policy": (
+            "any image/source/input/hash/schema/shape/dtype/rank/layer drift, partial coupling, "
+            "identity mode, alternate descriptor storage, missing runtime tensor, or CUDA allocation "
+            "failure is a loader closure failure"
+        ),
+        "claim_boundary": (
+            f"real layer-{layer} all-four-rank sidecar load/repack/ABI closure only; "
+            "no MoE/MMA call, numerical closure, CUDA graph, KLD, throughput, serving, "
+            "or full-model qualification; constructor scale repacking may use device kernels"
+        ),
+        "moe_mma_executed": False,
+        "kld_tested": False,
+        "throughput_tested": False,
+        "ldlq": False,
+    }
+
+
+# Keep the original layer-3 protocol and digest available for immutable prior
+# receipts. Execution paths derive a fresh protocol from their explicit layer.
+PROTOCOL = protocol_for_layer(LAYER)
 
 
 def canonical_sha256(value: object) -> str:
@@ -131,11 +141,17 @@ def canonical_sha256(value: object) -> str:
 PROTOCOL_SHA256 = canonical_sha256(PROTOCOL)
 
 
+def protocol_sha256_for_layer(layer: int) -> str:
+    return canonical_sha256(protocol_for_layer(layer))
+
+
 def _is_sha256(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) is not None
 
 
-def _load_postwrite(path: Path, sidecars: Sequence[Path]) -> dict[str, object]:
+def _load_postwrite(
+    path: Path, sidecars: Sequence[Path], *, layer: int
+) -> dict[str, object]:
     """Validate the closure receipt and bind its ordered ranks to four files."""
 
     if len(sidecars) != WORLD_SIZE or len({item.resolve() for item in sidecars}) != WORLD_SIZE:
@@ -145,7 +161,7 @@ def _load_postwrite(path: Path, sidecars: Sequence[Path]) -> dict[str, object]:
         "schema": "glm53-p8-coupled-tp4-postwrite-closure.v1",
         "status": "pass",
         "evidence_level": "postwrite-source-exact-structural-closure",
-        "layer": LAYER,
+        "layer": layer,
         "world_size": WORLD_SIZE,
         "runtime_loader_closure": "not tested",
         "retirement_authorized": False,
@@ -213,7 +229,9 @@ def _view_runtime_tensor(tensor, *, name: str):
     return tensor.view(expected_dtype).reshape(expected_shape)
 
 
-def _inspect_sidecar(path: Path, row: dict[str, object], *, rank: int) -> dict[str, object]:
+def _inspect_sidecar(
+    path: Path, row: dict[str, object], *, layer: int, rank: int
+) -> dict[str, object]:
     """Reopen every stored tensor and require its postwrite hash/ABI."""
 
     from safetensors import safe_open
@@ -222,7 +240,7 @@ def _inspect_sidecar(path: Path, row: dict[str, object], *, rank: int) -> dict[s
         metadata = handle.metadata() or {}
         required_metadata = {
             "schema": "glm53-p8-coupled-h512-h128-tp4-rank.v1",
-            "layer": str(LAYER),
+            "layer": str(layer),
             "rank": str(rank),
             "world_size": "4",
             "bits": "4",
@@ -261,7 +279,15 @@ def _inspect_sidecar(path: Path, row: dict[str, object], *, rank: int) -> dict[s
     return {"metadata": metadata, "tensor_sha256": hashes}
 
 
-def _inspect_runtime_rank(runtime_class, sidecar: Path, row: dict[str, object], *, rank: int, device):
+def _inspect_runtime_rank(
+    runtime_class,
+    sidecar: Path,
+    row: dict[str, object],
+    *,
+    layer: int,
+    rank: int,
+    device,
+):
     """Construct and byte-audit one real P8NativeTPMoE rank."""
 
     import torch
@@ -270,7 +296,7 @@ def _inspect_runtime_rank(runtime_class, sidecar: Path, row: dict[str, object], 
         sidecar,
         device=device,
         tp_rank=rank,
-        layer=LAYER,
+        layer=layer,
         expected_design_sha256=V3_DESIGN_SHA256,
         expected_transform_sha256=TRANSFORM_SHA256,
         topk=8,
@@ -286,7 +312,7 @@ def _inspect_runtime_rank(runtime_class, sidecar: Path, row: dict[str, object], 
     if (
         type(runtime).__name__ != "P8NativeTPMoE"
         or runtime.tp_rank != rank
-        or runtime.layer != LAYER
+        or runtime.layer != layer
         or runtime.experts != 288
         or runtime.hidden != 4096
         or runtime.intermediate != 512
@@ -345,7 +371,7 @@ def _inspect_runtime_rank(runtime_class, sidecar: Path, row: dict[str, object], 
     signs_sha256 = _tensor_sha256_chunked(runtime_signs)
     return runtime, {
         "rank": rank,
-        "layer": LAYER,
+        "layer": layer,
         "mode": "full-coupled",
         "identity_fallback": False,
         "moe_kernel_compiled": False,
@@ -383,12 +409,19 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
     sources = M1._verify_runtime_sources(
         args.runtime_manifest, V9_RUNTIME_MANIFEST_SHA256
     )
-    receipt = _load_postwrite(args.postwrite, args.sidecar)
+    protocol = protocol_for_layer(args.layer)
+    protocol_sha256 = canonical_sha256(protocol)
+    receipt = _load_postwrite(args.postwrite, args.sidecar, layer=args.layer)
     ranks = []
     for rank, (sidecar, row) in enumerate(zip(args.sidecar, receipt["ranks"], strict=True)):
-        stored = _inspect_sidecar(sidecar, row, rank=rank)
+        stored = _inspect_sidecar(sidecar, row, layer=args.layer, rank=rank)
         runtime, loaded = _inspect_runtime_rank(
-            P8NativeTPMoE, sidecar, row, rank=rank, device=torch.device("cuda")
+            P8NativeTPMoE,
+            sidecar,
+            row,
+            layer=args.layer,
+            rank=rank,
+            device=torch.device("cuda"),
         )
         if loaded["runtime_regenerated_signs_fp16_sha256"] != stored["metadata"].get(
             "sha256_coupled_signs_fp16"
@@ -409,10 +442,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
         torch.cuda.synchronize()
 
     return {
-        "schema": PROTOCOL["schema"],
+        "schema": protocol["schema"],
         "decision": "pass",
-        "protocol": PROTOCOL,
-        "protocol_sha256": PROTOCOL_SHA256,
+        "protocol": protocol,
+        "protocol_sha256": protocol_sha256,
+        "layer": args.layer,
         "image_id": args.image_id,
         "harness_sha256": args.harness_sha256,
         "identities": identities,
@@ -453,6 +487,7 @@ def build_probe_command(args: argparse.Namespace, repo: Path) -> list[str]:
         "--transform", "/inputs/transform.json",
         "--postwrite", "/inputs/postwrite.json",
         "--postwrite-sha256", M1.sha256_file(args.postwrite),
+        "--layer", str(args.layer),
         "--runtime-manifest", "/opt/p8-coupled-runtime/image-manifest.json",
         "--output", "/out/result.json",
     ))
@@ -474,7 +509,9 @@ def outer_execute(args: argparse.Namespace) -> None:
         raise ValueError("external V3 design identity differs")
     if M1.sha256_file(args.transform) != TRANSFORM_SHA256:
         raise ValueError("external transform identity differs")
-    postwrite = _load_postwrite(args.postwrite, args.sidecar)
+    protocol = protocol_for_layer(args.layer)
+    protocol_sha256 = canonical_sha256(protocol)
+    postwrite = _load_postwrite(args.postwrite, args.sidecar, layer=args.layer)
     actual_image = subprocess.check_output(
         ["docker", "image", "inspect", V9_IMAGE, "--format", "{{.Id}}"], text=True
     ).strip()
@@ -504,7 +541,8 @@ def outer_execute(args: argparse.Namespace) -> None:
     command = build_probe_command(args, ROOT)
     launch = {
         "schema": "glm53.p8-full-coupled-real-sidecar-loader-launch.v1",
-        "protocol_sha256": PROTOCOL_SHA256,
+        "protocol_sha256": protocol_sha256,
+        "layer": args.layer,
         "image_id": V9_IMAGE,
         "harness_sha256": M1.sha256_file(Path(__file__).resolve()),
         "postwrite_sha256": M1.sha256_file(args.postwrite),
@@ -531,9 +569,17 @@ def outer_execute(args: argparse.Namespace) -> None:
     if completed.returncode:
         raise RuntimeError("real-sidecar loader closure failed; logs and receipt preserved")
     result = json.loads((args.output / "result.json").read_text())
-    if result.get("decision") != "pass" or result.get("protocol_sha256") != PROTOCOL_SHA256:
+    if (
+        result.get("decision") != "pass"
+        or result.get("protocol_sha256") != protocol_sha256
+        or result.get("layer") != args.layer
+    ):
         raise RuntimeError("probe result did not satisfy the frozen loader protocol")
-    print(json.dumps({"decision": "pass", "result": str(args.output / "result.json")}))
+    print(json.dumps({
+        "decision": "pass",
+        "layer": args.layer,
+        "result": str(args.output / "result.json"),
+    }))
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -550,6 +596,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--postwrite", type=Path)
     parser.add_argument("--postwrite-sha256")
     parser.add_argument("--runtime-manifest", type=Path)
+    parser.add_argument("--layer", type=int, choices=SUPPORTED_LAYERS)
     parser.add_argument("--output", type=Path)
     return parser.parse_args(argv)
 
@@ -565,9 +612,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.execute and args.probe:
         raise ValueError("--execute and --probe are mutually exclusive")
     if not args.execute and not args.probe:
-        print(json.dumps({"protocol": PROTOCOL, "protocol_sha256": PROTOCOL_SHA256}, sort_keys=True))
+        layer = LAYER if args.layer is None else args.layer
+        protocol = protocol_for_layer(layer)
+        print(json.dumps({
+            "protocol": protocol,
+            "protocol_sha256": canonical_sha256(protocol),
+        }, sort_keys=True))
         return
-    common = ("sidecar", "design", "transform", "postwrite", "output")
+    common = ("sidecar", "design", "transform", "postwrite", "output", "layer")
     if args.probe:
         _require(args, (*common, "image_id", "harness_sha256", "postwrite_sha256", "runtime_manifest"))
         if len(args.sidecar) != WORLD_SIZE:
@@ -579,9 +631,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         try:
             result = run_probe(args)
         except BaseException as error:
+            protocol = protocol_for_layer(args.layer)
             result = {
-                "schema": PROTOCOL["schema"], "decision": "fail",
-                "protocol": PROTOCOL, "protocol_sha256": PROTOCOL_SHA256,
+                "schema": protocol["schema"], "decision": "fail",
+                "protocol": protocol,
+                "protocol_sha256": canonical_sha256(protocol),
+                "layer": args.layer,
                 "error": {"type": type(error).__name__, "message": str(error)},
                 "traceback": traceback.format_exc(), "gpu_used": True,
                 "moe_mma_executed": False, "kld_tested": False,

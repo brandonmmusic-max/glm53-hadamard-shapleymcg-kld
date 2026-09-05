@@ -1,4 +1,4 @@
-# P8 real layer-3 TP4 loader-ABI closure preflight
+# P8 real layers 3/20/22 TP4 loader-ABI closure preflight
 
 Date: 2026-09-05  
 Scope: CPU-only implementation and tests. No GPU, kernel, service, image build,
@@ -7,8 +7,15 @@ model encode, or large write was performed.
 ## Prepared gate
 
 `scripts/run_p8_coupled_real_sidecar_loader_closure.py` prepares one opt-in,
-sequential GPU probe of the four real layer-3 TP4 sidecars. The default command
-only prints its frozen protocol.
+sequential GPU probe of four real TP4 sidecars for an explicit fixed
+`--layer` in `{3,20,22}`. The default command only prints the original frozen
+layer-3 protocol. Its digest remains
+`bd9dbf3273445152ad93e743c2d7ca229c458ed5254045b35d269e2ff32a2b5f`,
+so the prior layer-3 result and launch receipts remain immutable evidence.
+Layer 20 and layer 22 each derive a separate protocol digest from the explicit
+layer: `a17482a6721c8f83872a429138eb8d7a56632d3b5ec881ee12d7d52062de68e5`
+and `ca8d5a391725d2cf1da058d54dca236de703f0716d04bad83d05edcc2605dec9`,
+respectively. Execution and probe modes reject a missing or unsupported layer.
 
 The probe uses immutable image
 `sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3`
@@ -61,6 +68,7 @@ is idle, and the parent execution authority allows the probe:
 python3 scripts/run_p8_coupled_real_sidecar_loader_closure.py --execute \
   --image sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3 \
   --gpu-device 0 \
+  --layer 3 \
   --sidecar /media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-003/p8-layer-003-tp4-rank-0.safetensors \
   --sidecar /media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-003/p8-layer-003-tp4-rank-1.safetensors \
   --sidecar /media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-003/p8-layer-003-tp4-rank-2.safetensors \
@@ -76,3 +84,9 @@ still writes `retirement_authorized: false`. Chunk retirement additionally
 requires a fresh under-30-GB storage ledger and an explicit receipt naming the
 exact chunk hashes being retired. It provides no permission to remove data by
 itself.
+
+For layer 20 or 22, change `--layer` and every zero-padded layer component in
+the four sidecar paths, postwrite receipt, and fresh output directory together.
+The selected layer is written into the protocol, launch receipt, probe result,
+and every per-rank result. A sidecar or postwrite metadata layer mismatch is a
+hard failure.
