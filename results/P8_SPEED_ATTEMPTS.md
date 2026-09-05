@@ -37,3 +37,18 @@ to overwrite changed evidence. Each source attempt and service remains local.
 Live attempt v2a3 runs from commit
 `33bc3de0e94dfaac49fc44c442ef4fea54f97936`; its results are pending and will
 be recorded separately, without rewriting the failed attempts.
+
+The separate read-only `glm53_nvfp4.audit_p8_speed_receipts` verifies
+receipt hashes, unique cold-container identities, within-arm configuration
+stability, ordered non-overlapping execution, graph/backend/dispatch evidence
+and thermal observations. It does not change the frozen speed estimator.
+`--allow-incomplete` reports a pending inventory as **incomplete**, never a
+pass. Docker environment and bind-list ordering is canonicalized only after
+rejecting duplicate keys/destinations; command ordering is preserved.
+The first three completed v2a3 slots passed these individual checks, while
+the overall series remained incomplete. Twenty-two focused CPU tests passed
+across this auditor, the frozen speed analyzer and graph verifier.
+
+After the service is terminal, run the auditor without `--allow-incomplete`
+and preserve its output as `speed-receipt-audit.json`. The snapshot tool now
+accepts v2a3 and its final analysis/audit, but still refuses active services.

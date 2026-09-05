@@ -8,7 +8,7 @@ import subprocess
 
 ROOT = Path('/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/uniform-p8-all42-v1')
 REPO = Path(__file__).resolve().parents[1]
-ALLOWED = ('speed-v1', 'speed-v2', 'speed-v2a1', 'speed-v2a2')
+ALLOWED = ('speed-v1', 'speed-v2', 'speed-v2a1', 'speed-v2a2', 'speed-v2a3')
 
 
 def save(path, data):
@@ -34,7 +34,8 @@ def main():
         source = ROOT / attempt
         dest = REPO / 'evidence/opened/codec-v2/p8-speed-attempts' / attempt
         paths = [source / name for name in ('followon.log', 'execution.json', 'server-final.log',
-                                            'fullmodel-completion-audit.json')]
+                                            'fullmodel-completion-audit.json', 'analysis.json',
+                                            'speed-receipt-audit.json')]
         for slot in sorted(source.glob('round-*')):
             paths.extend(slot / name for name in ('benchmark.json', 'benchmark.log', 'server.log',
                                                   'models.json', 'receipt.json',
