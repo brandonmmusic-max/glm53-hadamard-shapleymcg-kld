@@ -207,3 +207,25 @@ separate exact `5.25`-bpw quality lever. No LDLQ or protected role is added.
 
 Receipt: `results/P8_TAIL_OMISSION_REPAIR_V1.md` and
 `evidence/opened/codec-v2/p8-tail-omission-repair-v1/`.
+
+## Decision 26: freeze the only remaining proxy-selected rotation inside physical P8 (2026-09-05)
+
+Before encoding layers 20 or 22 or opening their target KLD, freeze exactly
+layers 3/20/22 and the already-selected `p00625` shared 16-lane middle
+butterfly.  Gate/up remain ordinary K4 procedural-MCG P8; each down projection
+is physically encoded as `W2 @ R` using the same full-Hessian GPTQ-style
+inter-group feedback, static in-group order, two scale refits, E4M3/UE8M0-K32,
+and exact `4.25` payload bpw.  No LDLQ, new angle, per-layer angle search, or
+proxy rotation work is permitted.
+
+Run fresh stock, matched unrotated three-layer P8, and matched rotated
+three-layer P8 once on all 32 already-opened domain-balanced conditional-fit
+windows.  The causal rotation comparison is rotated versus unrotated P8; the
+combined product comparison is rotated P8 versus stock.  Advance into the
+fused prologue only if both arithmetic means improve.  Paired BCa intervals
+and wins are required diagnostics but are nonblocking, as directed.  Keep all
+new build, transient capture, records, and sessions on the fast NVMe; klcstore
+is read-only for source, calibration, roles, and teacher inputs.  Keep K5
+separate at exactly `5.25` bpw.
+
+Receipt: `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1.json`.
