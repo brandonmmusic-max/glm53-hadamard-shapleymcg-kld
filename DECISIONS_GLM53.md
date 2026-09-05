@@ -271,3 +271,10 @@ absolute tolerance.  Codec hashes, tensor identities, source index, and byte
 counts remain pinned.  Superseded 14.5 GB failed reconstructions may be removed
 after their small receipts and logs are retained.  Receipt:
 `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-5.json`.
+
+Amendment 6 seals the execution immediately after semantic closure and overlay
+assembly but before target KLD: fixed run IDs and order, image digest, runtime
+patch tree, loader per arm, TP4/DCP4/no-EP/Humming/eager/no-MTP regime, overlay
+receipts, role file, and unrotated boundary inputs.  It changes no estimand or
+decision.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-6.json`.
