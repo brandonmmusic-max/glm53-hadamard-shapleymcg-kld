@@ -98,22 +98,23 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     design_sha256 = sha256_file(args.design) if args.design is not None else None
-    runtime = P8NativeTPMoE(
-        args.sidecar,
-        device=torch.device("cuda"),
-        tp_rank=args.rank,
-        layer=args.layer,
-        expected_design_sha256=design_sha256,
-        topk=8,
-        hidden=4096,
-        intermediate=512,
-        force_materialized=(
+    runtime_kwargs = {
+        "device": torch.device("cuda"),
+        "tp_rank": args.rank,
+        "layer": args.layer,
+        "expected_design_sha256": design_sha256,
+        "topk": 8,
+        "hidden": 4096,
+        "intermediate": 512,
+        "force_materialized": (
             None if args.small_m_scheduler else args.mode == "materialized"
         ),
-        mac_override=args.mac,
-        deterministic_output=args.deterministic_output,
-        small_m_scheduler=args.small_m_scheduler,
-    )
+        "mac_override": args.mac,
+        "deterministic_output": args.deterministic_output,
+    }
+    if args.small_m_scheduler:
+        runtime_kwargs["small_m_scheduler"] = True
+    runtime = P8NativeTPMoE(args.sidecar, **runtime_kwargs)
     gate, up, down = load_dense(
         args.dense, layer=args.layer, rank=args.rank, experts=args.experts
     )
