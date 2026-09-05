@@ -41,6 +41,11 @@ def _relative_l2(reference: torch.Tensor, actual: torch.Tensor) -> float:
     return float(torch.sqrt(numerator / denominator))
 
 
+def _linear_float(inputs: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Use the encoder's FP32 diagnostic path across mixed storage dtypes."""
+    return F.linear(inputs.float(), weight.float())
+
+
 def _prequant_middle(
     hidden: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> torch.Tensor:
@@ -107,6 +112,15 @@ def _validate_design(args: argparse.Namespace) -> tuple[dict, dict, float, torch
         or base.get("encoder_contract", {}).get("ldlq") is not False
     ):
         raise RuntimeError("rotated encoder requires the no-LDLQ P8 v2 base")
+    code_inputs = {
+        "encoder": Path(__file__),
+        "block_rotation": Path(__file__).with_name("block_rotation.py"),
+        "trellis_codec": Path(__file__).with_name("trellis_mxf.py"),
+    }
+    for name, path in code_inputs.items():
+        pinned = design.get("inputs", {}).get(name, {})
+        if pinned.get("sha256") != sha256_file(path):
+            raise RuntimeError(f"{name} code differs from integration design")
     actual_inputs = {
         "fit_roles": args.roles,
         "source_index": args.source_index,
@@ -248,8 +262,10 @@ def main() -> None:
             1.0,
             "amax",
         )
-        reference_output = F.linear(unrotated_middle, weights["down_proj"])
-        candidate_output = F.linear(middle, payloads["down_proj"].reconstruction)
+        reference_output = _linear_float(unrotated_middle, weights["down_proj"])
+        candidate_output = _linear_float(
+            middle, payloads["down_proj"].reconstruction
+        )
         metrics.append(
             {
                 "expert": expert,

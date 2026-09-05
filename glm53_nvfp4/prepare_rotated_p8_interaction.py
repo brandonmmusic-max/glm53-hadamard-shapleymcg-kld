@@ -37,6 +37,7 @@ def main() -> None:
     parser.add_argument("--train-analysis", type=Path, required=True)
     parser.add_argument("--tune-analysis", type=Path, required=True)
     parser.add_argument("--roles", type=Path, required=True)
+    parser.add_argument("--prior-preflight-failure", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
@@ -101,6 +102,16 @@ def main() -> None:
         "tune_analysis": _file(args.tune_analysis),
         "roles": _file(args.roles),
     }
+    prior_failure = None
+    if args.prior_preflight_failure is not None:
+        logs = sorted(args.prior_preflight_failure.glob("logs/chunk-*.log"))
+        if len(logs) != 4:
+            raise RuntimeError("prior preflight failure must contain four chunk logs")
+        prior_failure = {
+            "root": str(args.prior_preflight_failure.resolve()),
+            "logs": [_file(path) for path in logs],
+            "classification": "pre-output deterministic dtype mismatch in diagnostic metric; no codec, dense chunk, receipt, or KLD result written",
+        }
     payload = {
         "schema": "glm53-trellismx-p8.shared-mid-butterfly-design.v1",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -147,6 +158,7 @@ def main() -> None:
         "protected_boundary": "selection, confirmation, final, and 28 reserved confirmation logits remain unopened",
         "ldlq": False,
         "inputs": inputs,
+        "prior_preflight_failure": prior_failure,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
