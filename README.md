@@ -148,8 +148,9 @@ split/prefill run passed K3 and K4 at 33 and 64 tokens (cosine
 full GLM dimensions (cosine `0.998940`–`0.998948`, relative L2
 `0.045903`–`0.046079`). The former split failure was a missing mandatory K32
 MMA lane permutation, now fixed and preserved as an implementation diagnostic.
-This clears device arithmetic only: integrated end-to-end kernel KLD, speed,
-and five-run determinism remain unqualified. The earlier W6A8 activation
+This initial receipt cleared device arithmetic only. Subsequent layer-3 KLD
+and deterministic device tests are described below; all-layer KLD and speed
+remain pending. The earlier W6A8 activation
 failure remains a negative control, and neither the uniform nor expert-masked
 encoder has passed the strict matched-path end-to-end KLD claim gate.
 
@@ -160,9 +161,11 @@ pseudoquant carrier: delta `+0.0003951571` (`+0.7374%`), paired BCa 95% CI
 `[-0.001890,+0.002988]`, with 13/32 window wins. This passes the relaxed
 engineering margin (`|delta| <= 0.0014`) and proves the physical fused path is
 close enough to continue. It does **not** prove that the codec beats NVFP4.
-The current correctness run uses the materialized dynamic arm even at small M;
-the first E=288 small-M specialization emitted non-finite values and remains a
-preserved diagnostic, so decode speed is not yet qualified.
+That first correctness run used the materialized dynamic arm even at small M.
+The initial E=288 small-M specialization emitted non-finite values because its
+logical UE8M0 scale slots pointed at one-byte sentinels. The later runtime
+retains both logical and repacked physical scale planes and restored the
+monolithic small-M path. The original failure remains a preserved diagnostic.
 Against the already completed decoded-GPTQ NVFP4 control on the identical
 windows, the physical kernel is `+0.00065167` KLD (`1.22%` worse), with BCa
 95% CI `[-0.002540,+0.005982]`. That comparison is a null—not a demonstrated
@@ -170,6 +173,20 @@ loss—but it does not pass the strict quality gate.
 A checkpoint-family learned 4 KiB T12 law also failed on 16 disjoint experts
 (0/16 wins versus MCG), so it was stopped before another full-layer build. No
 LDLQ or BlockLDLQ path is implemented or used.
+
+The subsequent deterministic layer-3 run measured **0.0549650851** KLD over
+the same 32 windows, versus **0.0535879281** for decoded pseudoquant: delta
+`+0.0013771570`, paired BCa 95% CI `[-0.0005542253,+0.0039721173]`.
+It met the preregistered relaxed engineering rule of an absolute mean delta
+at most 0.0014 with zero inside the interval. That rule is an engineering
+continuation criterion; this interval does not establish statistical
+equivalence within a 0.0014 margin. Against the decoded-GPTQ context row it
+was **3.0632% worse** at the point estimate, with an interval crossing zero.
+This is the later runtime lineage used by the all-layer build. Five repeated
+device outputs were bitwise identical for each tested monolithic/materialized
+M3/M33 case; full-model five-run determinism and speed remain open.
+Receipts: [deterministic KLD closure](evidence/opened/codec-v2/p8-native-kld-closure-v2/analysis.json)
+and [contextual GPTQ comparison](evidence/opened/codec-v2/p8-native-kld-closure-v2/native-deterministic-vs-decoded-gptq-diagnostic.json).
 
 ### Native product boundary
 
