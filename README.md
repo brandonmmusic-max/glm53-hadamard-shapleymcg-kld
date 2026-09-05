@@ -172,11 +172,17 @@ materialization or BF16 weight matmul in that endpoint. This is one fused
 kernel path, not one machine instruction; `mxf8f6f4` has twice the MMA issue
 count of NVFP4 for the same logical K span.
 
-The **P4** endpoint has not yet achieved this status. Its prologue emitting
-packed E2M1 nibbles plus E4M3/16 scales into `mxf4nvf4` still requires device
-bit-exact and arithmetic closure. Therefore the current evidence supports a
-native Tensor Core P8 codec for one physical layer, not an all-layer native
-codec and not yet an NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
+The **P4** endpoint has now reached the actual GLM serving call path
+structurally: an opt-in adapter replaces both routed projections after carrier
+load, consumes deterministic TP4 sidecars, preserves router/shared-expert/TP
+ownership, and selects a fused prologue plus `mxf4nvf4`. Its native v2 law is
+RNE with signed-zero preservation, and its offline assembly contains 15
+native E2M1 K64 MMA sites at 62 registers and 1,728 bytes shared memory with
+zero spills. It still requires device bit-exact and arithmetic closure,
+coherent generation, KLD, graph parity, determinism, and speed. Therefore the
+current evidence supports a native Tensor Core P8 codec for one physical
+layer and an integrated structural P4 implementation, not yet a qualified
+NVFP4-speed-class trellis product. The four-layer Shapley pilot used matched
 BF16 overlays and must not be cited as native-kernel execution.
 
 An independent CPU P4 matrix contract and deterministic GPU-probe fixture
@@ -193,12 +199,14 @@ TP-local launch/probe seam. CPU bit-exact checks and offline SM120a ISA
 inspection are recorded under `evidence/opened/codec-v2/p4-astra/`. Device
 execution, integrated quality and speed remain untested; P8 is unchanged.
 
-These two building blocks are not yet interoperable: the matrix contract uses
-ties-to-even and one-matrix containers, while the kernel commit uses the legacy
-ties-to-lower-magnitude law and a six-tensor TP-rank container. A versioned
-bridge and exhaustive cross-check are required before any device-closure run.
-The independent findings and required gates are preserved in
-[docs/P4_RECONCILIATION_AUDIT.md](docs/P4_RECONCILIATION_AUDIT.md).
+The independent contract mismatch is preserved in
+[docs/P4_RECONCILIATION_AUDIT.md](docs/P4_RECONCILIATION_AUDIT.md). It is now
+resolved by the versioned six-tensor bridge and GLM adapter documented in
+[docs/P4_GLM_SERVING.md](docs/P4_GLM_SERVING.md). The composed CPU/static suite
+passes 185 tests, including an exhaustive 65,536-state law check and actual
+`RoutedExperts.forward_modular` host-path execution. The exact merge decisions,
+receipts, and remaining device gates are recorded in
+[docs/P4_V2_INTEGRATION_RECONCILIATION.md](docs/P4_V2_INTEGRATION_RECONCILIATION.md).
 
 The first version-2 non-layer-3 artifact now closes this contract at layer 20.
 All 288 experts were encoded from the pinned BF16 source and domain-balanced
