@@ -166,7 +166,7 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
     assert builder.TAG == "klc/glm53-p8-coupled:v4"
-    assert builder.INTEGRATION_BASE == "b1745f44c72fdd607733d892c6cbe58a1b61e8cb"
+    assert builder.INTEGRATION_BASE == "b1745f43e688ed25e9278488a93e684979086594"
     assert builder.load_manifest()["runtime_commit"] == builder.INTEGRATION_BASE
 
 

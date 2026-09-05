@@ -19,7 +19,7 @@ MANIFEST = REPO / "runtime_patch/p8_coupled_image/image_manifest.json"
 VERIFY_IN_IMAGE = "/opt/p8-coupled-runtime/verify_image.py"
 PARENT = "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745"
 TAG = "klc/glm53-p8-coupled:v4"
-INTEGRATION_BASE = "b1745f44c72fdd607733d892c6cbe58a1b61e8cb"
+INTEGRATION_BASE = "b1745f43e688ed25e9278488a93e684979086594"
 TAIL_V2_SHA256 = "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
 
 
