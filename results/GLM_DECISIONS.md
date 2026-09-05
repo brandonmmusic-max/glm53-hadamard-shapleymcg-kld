@@ -1215,6 +1215,35 @@ confirmation, and final roles remained unopened for this redesign branch.
   not GPU capture proof. P8 still carries twice NVFP4's MMA issue count;
   the separate native P4 endpoint is not qualified by this speed result.
 
+## 2026-09-05: Decision 56 — preserve startup failure; scope the v2 warmup repair
+
+- The Decision-55 capture attempt stopped in `canary-n128` with zero requests
+  and zero captured rows. The pinned V2 warmup registers a synthetic two-token
+  prompt; the capture hook's one-token guard rejected it. Root/stage hashes,
+  all ten raw stage files, stopped-container state, and service restoration
+  independently verified. This is a startup instrumentation failure, not a
+  KLD result. Preserve the original plan, image, worktree, logs, and launch
+  observation; do not retry v1 or overwrite its evidence.
+- Failure snapshot SHA-256:
+  `cf4c013dd12267632e25cb0ddb8816690070610799801091e21d1fc9c002942a`.
+  See `results/P8_FORCED_M1_WARMUP_V2.md` and
+  `evidence/opened/codec-v2/p8-forced-m1-v2-v1-failure/`.
+- Before any further GPU measurement, prepare the fresh `v2-v2` protocol
+  with an explicit lexical scope around the pinned startup warmup function.
+  Validate exactly one synthetic registration, two sampler calls, exact
+  identity/geometry/parameters and cleanup; close via `finally`. Require four
+  rank-tagged closure markers before evaluation. Outside that scope, real
+  capture guards remain strict. Patch/hash both vLLM copies and bind the new
+  sealed runtime tree so PYTHONPATH cannot silently choose the old helper.
+- The numerical rule remains exact full-row canary agreement, then all32
+  conditional-fit windows, eight per domain, and paired full-row KLD. No
+  tolerance, window, estimator or stopping change; MDE is not used to replace
+  the exact-byte gate. No LDLQ, kernel arithmetic change, or protected role
+  opening. Allocation remains stopped. P8 retains twice NVFP4's MMA issue
+  count, and the separate five-cold speed pass is unchanged.
+- Outcome at preregistration: v1 failure preserved; v2 implementation and
+  CPU validation pending. No evaluation result has been observed for v2.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
