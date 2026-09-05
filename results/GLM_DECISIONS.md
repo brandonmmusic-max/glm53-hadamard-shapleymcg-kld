@@ -912,6 +912,23 @@ confirmation, and final roles remained unopened for this redesign branch.
   the original product failure or restart Shapley allocation. See
   `results/P8_SMALLM_GRAPH_V1.md`.
 
+## 2026-09-05: Decision 39 — integrated small-M recovers most decode, not the product gate
+
+- One frozen TP4/no-EP/DCP1 run loaded all 42 P8 layers through the opt-in
+  small-M path. FULL CUDA graph audit passed on ranks 0-3 and the log contains
+  all 168 layer/rank first-forward receipts with `small_m_scheduler=true`.
+- At 32K C1, sustained decode measured 75.5962 tok/s versus the old P8 20.6937:
+  +265.31%, 3.653x, and 77.798% of the old P8-to-EXL3 deficit closed. Standalone
+  prefill measured 7,166 client tok/s.
+- The frozen EXL3 reference remains 91.2645 tok/s. Small-M is still 17.168%
+  slower, so this single diagnostic does not pass the product rule, does not
+  replace five cold runs, and does not restart Shapley allocation.
+- The production backend was restored to its prior active state, the timer to
+  its prior inactive state, maximum measured GPU temperature was 71 C, and no
+  protected roles were opened. Advance kernel optimization to an integrated
+  profile, especially B12X N256 FC2 A reuse on the critical Max-Q ranks. See
+  `results/P8_SMALLM_INTEGRATED_V1.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
