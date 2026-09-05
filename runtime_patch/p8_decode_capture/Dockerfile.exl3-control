@@ -1,0 +1,14 @@
+# The parent is the exact production EXL3 image used by the serving benchmark.
+FROM sha256:d1b6c021df11056cebde469cadc05f55cb21ec4ffc8b54ae6f08161df0c493bf
+COPY __init__.py processor.py v2_hook.py /opt/venv/lib/python3.12/site-packages/p8_decode_capture/
+COPY sampler-v2-hook.patch warmup-v2-hook.patch /opt/decode-path-control/
+RUN test "$(sha256sum /opt/infernal-invocation/vllm/vllm/v1/worker/gpu/sample/sampler.py | cut -d ' ' -f 1)" = "0b56a1c80e2823235fc7df202c6784fd11b83ecaf80af745dceef5a143307711" \
+    && test "$(sha256sum /opt/infernal-invocation/vllm/vllm/v1/worker/gpu/warmup.py | cut -d ' ' -f 1)" = "696cdd462f58908f3511e9983fe18aa3811acecdd6da1ff580bbab99aed08dcc" \
+    && cd /opt/infernal-invocation/vllm \
+    && git apply --check /opt/decode-path-control/sampler-v2-hook.patch \
+    && git apply /opt/decode-path-control/sampler-v2-hook.patch \
+    && git apply --check /opt/decode-path-control/warmup-v2-hook.patch \
+    && git apply /opt/decode-path-control/warmup-v2-hook.patch \
+    && cp vllm/v1/worker/gpu/sample/sampler.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/sampler.py \
+    && cp vllm/v1/worker/gpu/warmup.py /opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py \
+    && /opt/venv/bin/python -m py_compile /opt/venv/lib/python3.12/site-packages/p8_decode_capture/processor.py /opt/venv/lib/python3.12/site-packages/p8_decode_capture/v2_hook.py
