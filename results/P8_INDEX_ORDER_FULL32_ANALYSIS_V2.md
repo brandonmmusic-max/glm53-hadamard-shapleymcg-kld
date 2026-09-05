@@ -86,6 +86,14 @@ The second invocation also failed before destination creation because raw
 change-detection reads. The receipt now hashes a canonical projection of the
 unit, invocation, start command and ordered 32 progress events.
 
+The corrected create-only snapshot then passed. Its 45-file, 540 KiB sanitized
+bundle is `evidence/opened/codec-v2/p8-index-order-full-analysis-v2`; manifest
+SHA-256 is
+`7a990303ffc43bac1fe0198c4fd80cca28384bc0b9c9942b5622ad1cb466c7c6`.
+It contains the plans/seals, execution and exact receipts, analysis contract,
+aggregate and 32 window JSON records. Raw logits, NPZ scores, private logs,
+teacher payloads and token data are hash-referenced but not copied.
+
 This is worse in absolute KLD than the earlier `0.04002139481676188` run by a
 factor of `2.9353` (`+193.53%`). That difference is real between the two
 observed systems, but it is not attributable to N64: N128 is identical here.
