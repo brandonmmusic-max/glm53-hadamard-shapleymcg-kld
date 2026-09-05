@@ -78,6 +78,10 @@ must never be used for throughput claims. P8 remains the E4M3 compute product
 with twice NVFP4's MMA issue count, not the P4/NVFP4 speed-class endpoint.
 The [forced-M1 protocol](results/P8_FORCED_M1_PROTOCOL_V1.md) documents the
 pending real-device canary, full-panel capture and paired KLD analysis.
+The first capture attempt failed during registered synthetic startup warmup,
+before any evaluation request. Its failure is preserved; the narrowly scoped
+[v2 warmup amendment](results/P8_FORCED_M1_WARMUP_V2.md) keeps the numerical
+rule and data role unchanged. No optimized decode-path KLD is available yet.
 
 ### Earlier codec redesign results (2026-09-04)
 
