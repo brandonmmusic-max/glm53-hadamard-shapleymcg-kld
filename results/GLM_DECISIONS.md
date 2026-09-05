@@ -713,6 +713,24 @@ confirmation, and final roles remained unopened for this redesign branch.
   `experiments/p8-uniform-all42-tp4-vs-exl3-speed-v1.json` (SHA-256
   `907882659d687043c52549ae39490c0b935982d2dc3c0f81681ee70d1ed313d8`).
 
+## 2026-09-04: Decision 28 — correct P8 image before full-model execution
+
+- GPU-free inspection found the queued base image lacked the explicit
+  `trellis_codebook`, `trellis_scaled`, and `trellis_identity_boundary`
+  constructor arguments used by P8. The mounted runtime does not replace the
+  installed b12x package. Thus the queue was not executable as written.
+- Before checkpoint completion or target results, amendment 2 pins both P8
+  follow-ons to image `5da4ef3e814a71c6bcc47a7eb409a02fe4e3d5d867261f0b8e2e9b2d6ebb8ef8`,
+  the exact image recorded for native deterministic layer-3 conditional-fit v2.
+  Require image/source hashes and explicit constructor ABI before GPU launch.
+- Preserve the original plans and amendment 1. No encoder, sidecar, calibration,
+  role, metric, analyzer, topology, decision rule, or protected boundary changes.
+  Keep the current build uninterrupted; only replace waiting follow-on services.
+- Receipt: `experiments/p8-all42-runtime-image-amendment-2.json` and the
+  GPU-free `glm53_nvfp4.preflight_p8_runtime_image` check. This establishes
+  source compatibility, not all-layer device closure or KLD quality. P8 uses
+  twice NVFP4's MMA issue count; its speed remains unmeasured.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

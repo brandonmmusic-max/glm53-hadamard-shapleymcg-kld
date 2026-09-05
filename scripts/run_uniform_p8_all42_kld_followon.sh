@@ -10,6 +10,7 @@ PLAN=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.json
 PLAN_SEAL=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1.sha256
 AMENDMENT=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1-amendment-1.json
 AMENDMENT_SEAL=$REPO/experiments/p8-uniform-all42-fullmodel-kld-v1-amendment-1.sha256
+IMAGE_AMENDMENT=$REPO/experiments/p8-all42-runtime-image-amendment-2.json
 DESIGN=$RUNTIME_REPO/experiments/p8-kld-shapley-native6-v2.json
 RUNTIME_PATCH=$RUNTIME_REPO/runtime_patch
 RUNTIME_MANIFEST=$ROOT/runtime-patch-manifest-efd250b.json
@@ -36,6 +37,9 @@ done
 }
 (cd "$(dirname "$PLAN")" && sha256sum --check --strict "$(basename "$PLAN_SEAL")") | tee -a "$LOG"
 (cd "$(dirname "$AMENDMENT")" && sha256sum --check --strict "$(basename "$AMENDMENT_SEAL")") | tee -a "$LOG"
+(cd "$REPO/experiments" && sha256sum --check --strict p8-all42-runtime-image-amendment-2.sha256) | tee -a "$LOG"
+PYTHONPATH="$REPO" python3 -m glm53_nvfp4.preflight_p8_runtime_image --amendment "$IMAGE_AMENDMENT" | tee -a "$LOG"
+P8_IMAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_id"])' "$IMAGE_AMENDMENT")
 
 PYTHONPATH="$REPO" python3 - "$PLAN" "$AMENDMENT" "$DESIGN" "$RUNTIME_MANIFEST" "$ROLES" "$ROOT/manifest.json" "$EXECUTION" "$REPO/glm53_nvfp4/analyze_uniform_p8_fullmodel.py" "$RUNTIME_REPO" "$MODEL/BF16_LAYER_RECEIPT.json" "$CONTROL" <<'PY'
 import hashlib, json, subprocess, sys
@@ -118,6 +122,8 @@ static = {
     "schema": "glm53-p8-uniform-all42-kld-execution.v1",
     "plan_sha256": sha(plan_path),
     "amendment_sha256": sha(amendment_path),
+    "image_amendment_sha256": sha(plan_path.parent / "p8-all42-runtime-image-amendment-2.json"),
+    "image_id": json.loads((plan_path.parent / "p8-all42-runtime-image-amendment-2.json").read_text())["image_id"],
     "checkpoint_manifest_sha256": sha(checkpoint),
     "runtime_manifest_sha256": sha(runtime_manifest),
     "runtime_commit": runtime_commit,
@@ -145,7 +151,8 @@ GLM53_ROLES="$ROLES" \
 GLM53_REPO="$REPO" \
 GLM53_RUNTIME_PATCH_ROOT="$RUNTIME_PATCH" \
 GLM53_RUNTIME_PATCH_MANIFEST="$RUNTIME_MANIFEST" \
-GLM53_RUNTIME_IMAGE_ID=sha256:ed027a3a2ff93b9cf60c95f7adfaf676cabc8e040a28cffa7486a262c82fdfbe \
+GLM53_RUNTIME_IMAGE="$P8_IMAGE" \
+GLM53_RUNTIME_IMAGE_ID="$P8_IMAGE" \
 GLM53_LOAD_FORMAT=instanttensor \
 GLM53_P8_NATIVE=1 \
 GLM53_P8_NATIVE_SIDECAR_DIR="$ROOT/sidecars" \
