@@ -21,7 +21,14 @@ def _expert_bases(layer: int, start: int, stop: int) -> list[str]:
 
 def _load_rank(
     chunks: list[Path], *, layer: int, rank: int, world_size: int
-) -> tuple[dict[str, torch.Tensor], list[dict[str, object]], str, str | None]:
+) -> tuple[
+    dict[str, torch.Tensor],
+    list[dict[str, object]],
+    str,
+    str | None,
+    str,
+    float | None,
+]:
     gate_payload: list[torch.Tensor] = []
     up_payload: list[torch.Tensor] = []
     down_payload: list[torch.Tensor] = []
@@ -31,18 +38,26 @@ def _load_rank(
     sources: list[dict[str, object]] = []
     source_schemas: set[str] = set()
     source_designs: set[str] = set()
+    source_boundaries: set[str] = set()
+    source_angles: set[float] = set()
     expected_start = 0
     for chunk in chunks:
         with safe_open(chunk, framework="pt", device="cpu") as src:
             metadata = src.metadata() or {}
             schema = metadata.get("schema", "")
             source_schemas.add(schema)
+            boundary = metadata.get("boundary", "")
+            source_boundaries.add(boundary)
+            if metadata.get("angle_pi") is not None:
+                source_angles.add(float(metadata["angle_pi"]))
             if metadata.get("design_sha256"):
                 source_designs.add(metadata["design_sha256"])
+            rotated = schema == "glm53-rotated-hessian-trellis-p8-layer-chunk.v1"
             if (
                 schema not in {
                     "glm53-p8-identity-mcg-layer-chunk.v1",
                     "glm53-hessian-trellis-p8-layer-chunk.v2",
+                    "glm53-rotated-hessian-trellis-p8-layer-chunk.v1",
                 }
                 or metadata.get("role") != "physical-codec"
                 or metadata.get("bits") != "4"
@@ -50,7 +65,16 @@ def _load_rank(
                 or metadata.get("block_size") != "32"
                 or metadata.get("scale") not in {"ue8m0", "ue8m0-k32"}
                 or metadata.get("law") != "procedural-mcg-alpha2"
-                or metadata.get("boundary") != "identity"
+                or boundary
+                != ("shared-mid-butterfly-p00625" if rotated else "identity")
+                or (
+                    rotated
+                    and (
+                        float(metadata.get("angle_pi", "nan")) != 0.0625
+                        or metadata.get("rotation_arithmetic")
+                        != "bf16-input-fp32-four-stage-final-bf16"
+                    )
+                )
                 or metadata.get("ldlq") != "false"
                 or int(metadata.get("layer", -1)) != layer
             ):
@@ -102,8 +126,13 @@ def _load_rank(
         raise RuntimeError(f"expected 288 experts, found {expected_start}")
     if len(source_schemas) != 1:
         raise RuntimeError(f"mixed P8 chunk schemas are forbidden: {sorted(source_schemas)}")
+    if len(source_boundaries) != 1 or len(source_angles) > 1:
+        raise RuntimeError("mixed P8 boundary/angle chunks are forbidden")
     source_schema = next(iter(source_schemas))
-    if source_schema == "glm53-hessian-trellis-p8-layer-chunk.v2":
+    if source_schema in {
+        "glm53-hessian-trellis-p8-layer-chunk.v2",
+        "glm53-rotated-hessian-trellis-p8-layer-chunk.v1",
+    }:
         if len(source_designs) != 1:
             raise RuntimeError(
                 f"v2 P8 chunks require one immutable design: {sorted(source_designs)}"
@@ -124,7 +153,9 @@ def _load_rank(
         ).contiguous(),
         "w2_scale_ue8m0": torch.stack(down_scales).contiguous(),
     }
-    return tensors, sources, source_schema, source_design
+    source_boundary = next(iter(source_boundaries))
+    source_angle = next(iter(source_angles)) if source_angles else None
+    return tensors, sources, source_schema, source_design, source_boundary, source_angle
 
 
 def main() -> None:
@@ -150,14 +181,20 @@ def main() -> None:
         "law": "procedural-mcg-alpha2",
         "alphabet": "e4m3",
         "scale": "ue8m0-k32",
-        "boundary": "identity",
+        "boundary": None,
+        "angle_pi": None,
         "ldlq": False,
         "ranks": [],
     }
     for rank in range(args.world_size):
-        tensors, sources, source_schema, source_design = _load_rank(
+        tensors, sources, source_schema, source_design, source_boundary, source_angle = _load_rank(
             args.chunk, layer=args.layer, rank=rank, world_size=args.world_size
         )
+        if receipt["boundary"] is None:
+            receipt["boundary"] = source_boundary
+            receipt["angle_pi"] = source_angle
+        elif receipt["boundary"] != source_boundary or receipt["angle_pi"] != source_angle:
+            raise RuntimeError("TP ranks disagree on P8 boundary/angle")
         output = args.output_dir / f"p8-layer-{args.layer:03d}-tp4-rank-{rank}.safetensors"
         if output.exists():
             raise FileExistsError(f"refusing to overwrite {output}")
@@ -185,7 +222,8 @@ def main() -> None:
                 "alphabet": "e4m3",
                 "scale": "ue8m0-k32",
                 "law": "procedural-mcg-alpha2",
-                "boundary": "identity",
+                "boundary": source_boundary,
+                "angle_pi": "none" if source_angle is None else format(source_angle, ".17g"),
                 "ldlq": "false",
             },
         )
