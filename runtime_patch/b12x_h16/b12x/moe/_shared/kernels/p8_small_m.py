@@ -197,6 +197,11 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         lane = tid & Int32(31)
         q = lane >> Int32(2)
         c = lane & Int32(3)
+        # Same physical row origin as the inherited _stage_slice loader.
+        # Define before staged branches; grouped FC2 scatters via token_map.
+        physical_row_base = source_m_tile * Int32(self.source_tile_m) + m_half * Int32(
+            self.tile_m
+        )
         if cutlass.const_expr(self.w4a8_trellis):
             tr_ia, tr_ib, tr_s2 = _w4a8_trellis_lane_geom(
                 lane, self.trellis_bits

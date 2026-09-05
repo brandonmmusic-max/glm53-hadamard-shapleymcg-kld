@@ -32,3 +32,15 @@ This repairs the observed input carrier mismatch and validates the now-live
 coupled M1 path on this fixture. Earlier failures remain valid historical
 evidence. Prefill closure, CUDA graphs, integrated serving, three-layer KLD,
 all-layer KLD and performance remain unproven. Production remains off.
+
+## Subsequent prefill attempt
+
+The frozen M2/M64/M65 runner failed during DSL compilation before numerical
+checks: grouped FC2 referenced undefined `physical_row_base` in
+`p8_small_m.py:458`. Logs and failure result are retained at
+`prefill-device-closure-v7/` alongside the M1 receipts above. This does not
+invalidate M1, whose branch does not use grouped scatter, but blocks prefill.
+The source repair defines the row origin before staged control flow using
+the inherited parent loader formula, `source_m_tile * source_tile_m +
+m_half * tile_m`. It requires a new immutable image and device test; CPU
+syntax tests alone do not establish repair on device.
