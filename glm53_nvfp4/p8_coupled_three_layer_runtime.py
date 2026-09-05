@@ -31,6 +31,11 @@ CAPTURE_SOURCES = {
 }
 SAMPLER_PATCHED_SHA256 = "717bdd2203c8977205e16ca63385027f7e7ec8acd54afd962ada3e611cf7b958"
 WARMUP_PATCHED_SHA256 = "de321498f305e2f61d5cfe4701d19a066ebfec83147f527b2ec82bfb653ea8c7"
+STOCK_CONFIG_SHA256 = "676382abd1e90a6c85f0c8f33d45441ecd45fd514fd7b63ce5610e732d8e4996"
+STOCK_INDEX_SHA256 = "0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb"
+STOCK_RECEIPT_SHA256 = "30956ad8d85793431252f1711524d531ecbf10c1bb8073c3308a7de9696ce1a1"
+STOCK_EXTRAS_RECEIPT_SHA256 = "620a16f119d288e841c01f0ac8caf0699fed6ac429aa33cbb109a16b6d5b750e"
+STOCK_HUB_REVISION = "520de24eabf507659eaef7c70f14fd584527facc"
 
 
 def sha(path: Path) -> str:
@@ -174,6 +179,81 @@ def validate_capture_image_receipt(path: Path) -> dict:
                 "/opt/infernal-invocation/vllm/vllm/v1/worker/gpu/warmup.py",
                 "/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/warmup.py"))):
         raise ValueError("full installed v9 capture/runtime identity differs")
+    return value
+
+
+def validate_stock_carrier_receipt(path: Path, model_root: Path) -> dict:
+    """Reauthenticate every referenced stock shard, not merely receipt bytes."""
+    path, model_root = Path(path), Path(model_root)
+    value = json.loads(path.read_text())
+    config_path, index_path = model_root / "config.json", model_root / "model.safetensors.index.json"
+    config, index = value.get("config", {}), value.get("index", {})
+    provenance = value.get("source_provenance", {})
+    if (path != path.resolve() or sha(path) != STOCK_RECEIPT_SHA256
+            or model_root != model_root.resolve() or model_root.is_symlink()
+            or value.get("schema") != "glm53.stock-nvfp4-carrier.v1"
+            or value.get("status") != "complete" or Path(value.get("model_root", "")) != model_root
+            or Path(value.get("resolved_model_root", "")) != model_root
+            or value.get("all_referenced_shards_complete") is not True
+            or value.get("all_stats_unchanged") is not True or value.get("gpu_used") is not False
+            or value.get("protected_data_opened") is not False
+            or provenance.get("status") != "local-artifact-evidence-only"
+            or provenance.get("hub_revision") != STOCK_HUB_REVISION
+            or provenance.get("hf_metadata_revision_values") != [STOCK_HUB_REVISION]
+            or provenance.get("referenced_shard_metadata_count") != 44
+            or provenance.get("remote_verified") is not False
+            or config.get("sha256") != STOCK_CONFIG_SHA256 or index.get("sha256") != STOCK_INDEX_SHA256
+            or index.get("weight_entry_count") != 148498 or index.get("referenced_shard_count") != 44
+            or index.get("complete") is not True or index.get("missing_targets") != []):
+        raise ValueError("stock carrier receipt differs")
+    for receipt, actual in ((config, config_path), (index, index_path)):
+        if (Path(receipt.get("path", "")) != actual or Path(receipt.get("resolved_path", "")) != actual
+                or receipt.get("bytes") != actual.stat().st_size or receipt.get("sha256") != sha(actual)
+                or receipt.get("stat_unchanged") is not True
+                or receipt.get("before_stat") != receipt.get("after_stat")):
+            raise ValueError("stock carrier config/index bytes or stat receipt differs")
+    index_payload = json.loads(index_path.read_text())
+    weight_map = index_payload.get("weight_map", {})
+    names = sorted(set(weight_map.values()))
+    rows = value.get("shards", [])
+    by_name = {row.get("name"): row for row in rows}
+    if len(weight_map) != 148498 or len(names) != 44 or len(rows) != 44 or set(by_name) != set(names):
+        raise ValueError("stock carrier shard inventory differs")
+    total = 0
+    for name in names:
+        if Path(name).name != name:
+            raise ValueError("stock carrier index contains a nonlocal shard path")
+        actual, row = model_root / name, by_name[name]
+        if (Path(row.get("path", "")) != actual or Path(row.get("resolved_path", "")) != actual
+                or row.get("bytes") != actual.stat().st_size or row.get("sha256") != sha(actual)
+                or row.get("stat_unchanged") is not True or row.get("before_stat") != row.get("after_stat")):
+            raise ValueError(f"stock carrier shard bytes/stat differ: {name}")
+        total += actual.stat().st_size
+    if (index.get("resolved_total_bytes") != total
+            or index.get("declared_total_size") != index_payload.get("metadata", {}).get("total_size")):
+        raise ValueError("stock carrier total size differs")
+    return value
+
+
+def validate_stock_carrier_extras(path: Path, model_root: Path) -> dict:
+    path, model_root = Path(path), Path(model_root)
+    value = json.loads(path.read_text())
+    rows = value.get("files", [])
+    expected = {"amax.safetensors", "amax_checkpoint.safetensors", "model-00036-of-00036.safetensors"}
+    if (path != path.resolve() or sha(path) != STOCK_EXTRAS_RECEIPT_SHA256
+            or value.get("schema") != "glm53.stock-nvfp4-carrier-extras.v1"
+            or value.get("status") != "complete" or Path(value.get("model_root", "")) != model_root
+            or value.get("all_stats_unchanged") is not True or value.get("gpu_used") is not False
+            or value.get("protected_data_opened") is not False or len(rows) != 3
+            or {row.get("name") for row in rows} != expected):
+        raise ValueError("stock carrier extra-file receipt differs")
+    for row in rows:
+        actual = model_root / row["name"]
+        if (Path(row.get("path", "")) != actual or Path(row.get("resolved_path", "")) != actual
+                or row.get("referenced_by_index") is not False
+                or row.get("bytes") != actual.stat().st_size or row.get("sha256") != sha(actual)
+                or row.get("stat_unchanged") is not True or row.get("before_stat") != row.get("after_stat")):
+            raise ValueError(f"stock carrier extra-file bytes/stat differ: {row.get('name')}")
     return value
 
 

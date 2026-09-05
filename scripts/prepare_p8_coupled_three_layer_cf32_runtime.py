@@ -86,7 +86,8 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("output", "capture-image-receipt", "source-recipe", "model-root", "identity-root",
+    for name in ("output", "capture-image-receipt", "source-recipe", "model-root", "stock-carrier-receipt",
+                 "stock-carrier-extras-receipt", "identity-root",
                  "identity-manifest", "identity-design", "coupled-root", "coupled-design", "transform",
                  "roles", "teacher-root"):
         parser.add_argument("--" + name, type=Path, required=True)
@@ -102,6 +103,8 @@ def main() -> None:
         raise ValueError("output and seal must be fresh")
     production = production_off()
     image = runtime.validate_capture_image_receipt(args.capture_image_receipt)
+    stock = runtime.validate_stock_carrier_receipt(args.stock_carrier_receipt, args.model_root)
+    extras = runtime.validate_stock_carrier_extras(args.stock_carrier_extras_receipt, args.model_root)
     identity = runtime.validate_identity_sidecars(args.identity_root, args.identity_manifest, args.identity_design)
     def explicit_map(values: list[str], label: str) -> dict[int, Path]:
         result = {}
@@ -125,10 +128,6 @@ def main() -> None:
         raise ValueError("CF32 role identity differs")
     windows = protocol.load_role_inputs(args.roles, args.teacher_root, verify_teacher_bytes=True)
     recipe = json.loads(args.source_recipe.read_text())
-    if (not args.model_root.is_dir()
-            or runtime.sha(args.model_root / "config.json") != "676382abd1e90a6c85f0c8f33d45441ecd45fd514fd7b63ce5610e732d8e4996"
-            or runtime.sha(args.model_root / "model.safetensors.index.json") != "0d1d9e6b226e76520e182de10d4e7194cc885c5cb1bf885bb90de1916ce312cb"):
-        raise ValueError("stock NVFP4 carrier config/index differs")
     output_root = args.output.parent / (args.output.stem + "-captures")
     if output_root.exists():
         raise ValueError("fresh capture root required")
@@ -149,7 +148,14 @@ def main() -> None:
                                 "sha256": runtime.sha(args.capture_image_receipt)},
         "source_recipe": {"path": str(args.source_recipe), "sha256": runtime.sha(args.source_recipe)},
         "stock_carrier": {"path": str(args.model_root), "config_sha256": runtime.sha(args.model_root / "config.json"),
-                          "index_sha256": runtime.sha(args.model_root / "model.safetensors.index.json")},
+                          "index_sha256": runtime.sha(args.model_root / "model.safetensors.index.json"),
+                          "receipt": {"path": str(args.stock_carrier_receipt),
+                                      "sha256": runtime.sha(args.stock_carrier_receipt)},
+                          "extras_receipt": {"path": str(args.stock_carrier_extras_receipt),
+                                             "sha256": runtime.sha(args.stock_carrier_extras_receipt)},
+                          "referenced_shard_count": len(stock["shards"]),
+                          "resolved_total_bytes": stock["index"]["resolved_total_bytes"],
+                          "unreferenced_safetensors": [row["name"] for row in extras["files"]]},
         "roles": {"path": str(args.roles), "sha256": runtime.ROLE_SHA256, "window_ids": ids,
                   "teacher_root": str(args.teacher_root), "teacher_bytes_verified": True},
         "identity_inputs": {"root": str(args.identity_root),

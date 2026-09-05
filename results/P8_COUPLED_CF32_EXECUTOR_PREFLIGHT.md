@@ -10,14 +10,27 @@ or `restore_if_safe`; the production user service, system timer and port 8000
 are observed inactive before execution, before every arm/window, and after the
 attempt. The root lock is acquired nonblocking for the whole attempt.
 
-The execution seal binds the v9 image/attestation, stock carrier config and
-index, all identity and coupled rank sidecars, explicit postwrite and real
-loader receipts for layers 3/20/22, CF32 role and teacher bytes, launch argv,
-source hashes, and the retained global capture inventory. It reserves a
-30,000,000,000-byte global future-capture budget before execution. This is a
-global retained-inventory gate, not an output-directory reset.
+The execution seal binds the v9 image/attestation, the stock carrier receipt
+and all 44 referenced shard hashes plus the three unindexed safetensors, all
+identity and coupled rank sidecars, explicit postwrite and real loader receipts
+for layers 3/20/22, CF32 role and teacher bytes, exactly regenerated launch
+argv, source hashes, and the retained global capture inventory.
 
-Each window is forced-decode captured and scored immediately. Acceptance
+Storage authorization is a separately sealed, fresh external ledger generated
+by `scripts/prepare_p8_coupled_cf32_storage_ledger.py`. It measures fixed
+campaign-wide paths: all coupled worktrees, common Git growth, coupled files
+outside those worktrees, Docker/containerd growth, image/build directories,
+the fixture, three-layer output, historical quality root, and this capture
+output. Growth is monotonic over projected component sizes. The historical
+1,310,510,246-byte quality peak can cover only the unused portion after live
+quality-root bytes, and only the active raw's actual capture-output overage.
+The exact 1,268,157,440-byte next raw is prospectively charged before every
+request, then the written peak is checked again before scoring. The ceiling is
+30,000,000,000 bytes; there is no output-directory budget reset.
+
+Each token file and its decoded token-value sequence are rehashed immediately
+before every request and again during scoring. Each window is forced-decode
+captured and scored immediately. Acceptance
 requires exactly 2047 finite aligned KLD rows. Row 0 is recorded separately as
 one-token prefill and only rows 1..2046 enter true-decode KLD. The exact raw
 size and SHA-256 are durably bound by the score receipt before the sole
@@ -48,8 +61,9 @@ Result: 66 passed. The destructive-path tests use a four-byte synthetic raw.
 They prove durable score-before-retire ordering and that a receipt-write error
 leaves the raw intact. A mocked lifecycle test injects an identity-arm failure,
 proves coupled is never entered, and makes any restoration call fail the test.
-The broader `PYTHONPATH=$PWD python3 -m pytest -q tests/test_p8*.py` regression
-suite also passed: 821 passed in 24.74 seconds.
+The final broad `PYTHONPATH=$PWD python3 -m pytest -q tests/test_p8*.py`
+regression suite passed 824 tests in 24.96 seconds. The three adjacent Tail-V2
+capture/protocol files added another 39 passes in 0.95 seconds.
 
 Remaining device gate: after all 12 sidecars and their real-loader receipts are
 present, generate the prepared manifest and execution seal, review both hashes,
