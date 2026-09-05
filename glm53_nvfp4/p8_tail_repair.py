@@ -33,7 +33,7 @@ IMAGE_RECEIPT = ROOT / "p8-tail-repair-image-v1a/receipt.json"
 RECIPE = ROOT / "p8-smallm-scheduler-v1/fc1-integrated-v1/container-final.private.json"
 RECIPE_SHA256 = "c7f5832af2244926ebf0f2d481efbe7461bee85afb18cc4d85dd3769d44ffdf8"
 PREREG = REPO / "experiments/p8-tail-omission-repair-v1-prereg.json"
-AMENDMENT = REPO / "experiments/p8-tail-omission-repair-v1a-amendment.json"
+AMENDMENT = REPO / "experiments/p8-tail-omission-repair-v1b-amendment.json"
 ROLES = control.ROLES
 TEACHER = control.TEACHER
 WINDOW_IDS = control.WINDOW_IDS
@@ -54,6 +54,7 @@ def source_files() -> set[str]:
         "runtime_patch/p8_tail_repair/kpool-tail-consumed-v1.patch",
         "experiments/p8-tail-omission-repair-v1-prereg.json",
         "experiments/p8-tail-omission-repair-v1a-amendment.json",
+        "experiments/p8-tail-omission-repair-v1b-amendment.json",
     }
 
 
@@ -151,6 +152,8 @@ def make_plan(path: Path, output: Path) -> dict:
         "baseline_mean_kld": BASELINE_MEAN,
         "raw_capture_bytes": RAW_BYTES,
         "headroom_bytes": HEADROOM,
+        "ready_timeout_seconds": 2400,
+        "request_timeout_seconds": 900,
         "capture_artifact_owner": {"uid": os.getuid(), "gid": os.getgid()},
         "runtime": {
             "tp": 4,
@@ -200,6 +203,8 @@ def authenticate(path: Path) -> dict:
         or plan.get("baseline_mean_kld") != BASELINE_MEAN
         or plan.get("raw_capture_bytes") != RAW_BYTES
         or plan.get("headroom_bytes") != HEADROOM
+        or plan.get("ready_timeout_seconds") != 2400
+        or plan.get("request_timeout_seconds") != 900
         or plan.get("opened_roles") != ["conditional-fit"]
         or plan.get("protected_roles_opened") != []
         or plan.get("runtime", {}).get("physical_bpw") != 4.25
