@@ -1,0 +1,33 @@
+{
+  "schema": "glm53-trellismx-p8.rotation-three-layer-cf32-amendment.v1",
+  "amendment": 5,
+  "parent_amendment": {
+    "path": "experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-4.json",
+    "sha256": "dc094ffd1dfd9e356f4840c4272b582a5d18949d4b391b0d06864885298fc5e7"
+  },
+  "trigger": "Historical tensor insertion order again reproduced all four byte counts but not the file SHA-256 values. Repeated files with identical tensor values and sizes produced different hashes because safetensors metadata map ordering is not stable across independent writer processes. Target KLD remained unopened.",
+  "preserved_failure_receipts": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/rotation-l3-l20-l22-cf32-v1/failures/layer3-reference-container-hash-mismatch-v3",
+  "change": "Replace only the non-reproducible reconstructed-container SHA gate with exhaustive semantic closure. For every one of the 864 layer-3 expert projection tensors, recompute weight NMSE against the pinned BF16 source using the historical formula and require absolute agreement with its immutable original encoder receipt within 1e-15. Also require exact tensor identities, exact historical byte counts, exact source-index identity, and the original physical codec hashes. Preserve the new reconstructed hashes as receipts rather than claiming they equal the historical containers.",
+  "pilot_validation": {
+    "surviving_artifact": "layer-20 expert-0 gate projection",
+    "historical_nmse": 0.006972281391789485,
+    "recomputed_from_original_dense_nmse": 0.006972281391789484,
+    "absolute_error": 8.673617379884035e-19
+  },
+  "acceptance": {
+    "expected_tensors": 864,
+    "nmse_absolute_tolerance": 1e-15,
+    "historical_dense_byte_counts_still_required": true,
+    "historical_dense_file_sha_required": false,
+    "physical_codec_sha_required": true
+  },
+  "storage_cleanup": "After semantic closure, retain receipts, logs, hashes, and the one accepted dense reconstruction; remove the two superseded 14.5 GB failed dense copies because they are not inputs and klcstore is already 96 percent full.",
+  "unchanged": [
+    "decoder arithmetic and reconstructed tensor values",
+    "layer set 3,20,22 and all three KLD arms",
+    "run order, role, metric, decision rules, and stopping",
+    "NVMe-only output and minimum free-space margin",
+    "no LDLQ and no protected role opening"
+  ],
+  "interpretation": "A stronger content-level reconstruction gate replaces a writer-process-dependent container identity. It uses immutable pre-existing receipts and a pinned source, not target KLD, and therefore does not alter the causal comparison."
+}

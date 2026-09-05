@@ -261,3 +261,13 @@ decoder arithmetic remains tensor-exact.  A separate historical-order mode is
 now required together with source-exact metadata, with the original four
 hashes still mandatory.  Receipt:
 `experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-4.json`.
+
+Amendment 5 records that independent safetensors writers do not preserve
+metadata-map byte ordering, so historical whole-file SHA is not a reproducible
+content invariant even when byte counts and tensor values agree.  It replaces
+only that gate with exhaustive closure of all 864 tensor NMSE values against
+the pinned BF16 source and immutable original encoder receipts at `1e-15`
+absolute tolerance.  Codec hashes, tensor identities, source index, and byte
+counts remain pinned.  Superseded 14.5 GB failed reconstructions may be removed
+after their small receipts and logs are retained.  Receipt:
+`experiments/trellismx-p8-rotation-l3-l20-l22-cf32-v1-amendment-5.json`.
