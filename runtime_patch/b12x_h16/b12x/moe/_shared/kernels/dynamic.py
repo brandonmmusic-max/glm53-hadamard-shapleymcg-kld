@@ -822,6 +822,7 @@ class MoEDynamicKernelBackend:
         direct_routing: bool = False,
         materialize_intermediate: bool = False,
         p8_small_m: bool = False,
+        p8_fc1_tile_n: int = 128,
         work_source: str = _WORK_SOURCE_MATERIALIZED_QUEUE,
         swiglu_limit: float | None = None,
         swiglu_alpha: float | None = None,
@@ -995,6 +996,11 @@ class MoEDynamicKernelBackend:
         self.direct_routing = bool(direct_routing)
         self.materialize_intermediate = bool(materialize_intermediate)
         self.p8_small_m = bool(p8_small_m)
+        self.p8_fc1_tile_n = int(p8_fc1_tile_n)
+        if self.p8_fc1_tile_n not in (32, 64, 128):
+            raise ValueError("P8 FC1 N must be 32, 64, or 128")
+        if self.p8_fc1_tile_n != 128 and not self.p8_small_m:
+            raise ValueError("Narrow FC1 requires P8 small-M")
         if self.p8_small_m and not (
             quant_recipe == "w4a8_trellis" and trellis_codebook == "mcg"
             and trellis_bits == 4 and trellis_scaled and trellis_identity_boundary
@@ -1029,7 +1035,9 @@ class MoEDynamicKernelBackend:
         # removes both GEMM bodies from the routing kernel's register/shared
         # union and is graph-safe: every grid is fixed from preplanned launch
         # capacity and no host value is read between launches.
-        self.external_materialized_fc1 = self.w4a8_split_materialized
+        self.external_materialized_fc1 = (
+            self.w4a8_split_materialized or self.p8_fc1_tile_n != 128
+        )
         self.external_materialized_fc2 = self.w4a8_split_materialized or self.p8_small_m
         if int(num_topk) <= 0:
             raise ValueError(f"num_topk must be positive, got {num_topk}")
@@ -1088,6 +1096,9 @@ class MoEDynamicKernelBackend:
         if self.p8_small_m:
             from b12x.moe._shared.kernels.p8_small_m import P8SmallMPhase2Kernel
             self.materialized_phase2_kernel = P8SmallMPhase2Kernel()
+        if self.p8_fc1_tile_n != 128:
+            from b12x.moe._shared.kernels.p8_narrow_fc1 import P8NarrowFC1Kernel
+            self.materialized_phase1_kernel = P8NarrowFC1Kernel(self.p8_fc1_tile_n)
         if self.w4a8_repacked and quant_recipe not in ("w4a8_mx", "w4a8_trellis"):
             raise ValueError(
                 "repacked W4A8 weights are only valid for w4a8_mx or w4a8_trellis"
@@ -2645,6 +2656,9 @@ class MoEDynamicKernelBackend:
             stream=stream,
         )
         if cutlass.const_expr(self.external_materialized_fc1):
+            phase1_experts = task_expert
+            if cutlass.const_expr(self.p8_fc1_tile_n != 128):
+                phase1_experts = topk_ids
             self.materialized_phase1_kernel(
                 packed_a_storage,
                 scale_storage,
@@ -2652,7 +2666,7 @@ class MoEDynamicKernelBackend:
                 w13_sfb_rp,
                 intermediate_u32,
                 token_map,
-                task_expert,
+                phase1_experts,
                 task_valid_rows,
                 expert_tile_base,
                 alpha,
