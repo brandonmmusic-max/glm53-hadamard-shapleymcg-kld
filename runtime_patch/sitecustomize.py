@@ -14,6 +14,16 @@ import hashlib
 from pathlib import Path
 
 
+if os.environ.get("GLM53_P8_INDEX_ORDER", ""):
+    try:
+        from p8_index_order import install as _install_index_order
+        _install_index_order()
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        os._exit(78)
+
+
 if os.environ.get("GLM53_P8_INDEX_TRACE", ""):
     try:
         from p8_index_trace import install as _install_index_trace

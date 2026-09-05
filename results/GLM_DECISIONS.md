@@ -1397,6 +1397,27 @@ confirmation, and final roles remained unopened for this redesign branch.
 - See results/P8_INDEX_TRACE_V2.md. P8 remains E4M3 mxf8f6f4 with twice
   NVFP4's MMA issue count; this diagnostic supplies no new speed measurement.
 
+## 2026-09-05: Decision 62 — test deterministic short-pool placement first
+
+- Acting on Decision61's observed same-input order divergence, implement a
+  new opt-in source transform in a new worktree; do not edit the frozen trace.
+- Narrow the pre-launch proposal to actual32heads and group-uniform valid
+  page tables. Preserve negative/missing-page legacy behavior, local barriers,
+  empty-CTA ownership and score/index pairing. Keep the separate tail issue
+  unchanged. Positive out-of-range addresses remain an existing caller
+  precondition, not a safe GPU negative test.
+- Preserve original B12X69110d... source and emitted candidate655236be...
+  source separately, including inspect-visible CuTe source and new compile
+  cache key.92CPUtests and exact-image no-GPU import gate passed before seal;
+  independent review found and resolved cleanup/receipt validation gaps.
+- Authorize the bounded five-fresh-process GPU0 synthetic gate under the
+  standing local implementation mandate:380calls+80transitions/process,
+  exact analytic score pairs, short ascending order, counters and signatures.
+  Any failure stops without retry. No model/teacher/protected data are used.
+- Record this as kernel-level evidence only. No automatic full-model launch,
+  allocation restart or KLD qualification follows. See
+  results/P8_INDEX_ORDER_DEVICE_V1.md and the sealed device plan.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
