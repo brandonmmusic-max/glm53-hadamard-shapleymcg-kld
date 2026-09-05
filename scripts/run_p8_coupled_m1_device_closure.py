@@ -449,6 +449,43 @@ def _verify_runtime_sources(manifest_path: Path, expected_sha256: str):
     return receipts
 
 
+def _save_carrier_failure(directory: Path, pairs, extras) -> dict[str, object]:
+    """Preserve bounded diagnostic data without changing any acceptance gate."""
+    import numpy as np
+    import torch
+
+    arrays = {}
+    summary = {}
+    for name, (actual, expected) in pairs.items():
+        actual, expected = actual.detach().cpu(), expected.detach().cpu()
+        if actual.shape != expected.shape:
+            raise RuntimeError(f"diagnostic shape mismatch for {name}")
+        indices = torch.nonzero(actual.reshape(-1) != expected.reshape(-1)).flatten()
+        sample = indices[:32]
+        summary[name] = {
+            "elements": actual.numel(), "mismatches": indices.numel(),
+            "first_flat_indices": sample.tolist(),
+            "actual_at_first": actual.reshape(-1)[sample].tolist(),
+            "expected_at_first": expected.reshape(-1)[sample].tolist(),
+        }
+        arrays[name + "_actual"] = actual.numpy()
+        arrays[name + "_expected"] = expected.numpy()
+    for name, value in extras.items():
+        arrays[name] = value.detach().float().cpu().numpy()
+    if sum(value.nbytes for value in arrays.values()) > 4 * 1024 * 1024:
+        raise RuntimeError("carrier diagnostic exceeds frozen 4 MiB limit")
+    npz = directory / "carrier-failure.npz"
+    with npz.open("xb") as stream:
+        np.savez(stream, **arrays)
+    record = {"schema": "glm53.p8-carrier-failure-diagnostic.v1",
+              "protocol_sha256": PROTOCOL_SHA256, "gate_changed": False,
+              "carriers": summary, "npz_sha256": sha256_file(npz)}
+    with (directory / "carrier-failure.json").open("x") as stream:
+        json.dump(record, stream, indent=2)
+        stream.write("\n")
+    return record
+
+
 def run_probe(args: argparse.Namespace) -> dict[str, object]:
     import torch
     from p8_native_kernel import P8NativeTPMoE
@@ -546,6 +583,16 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
             "middle_scale": torch.equal(middle_sf, reference["middle_scale"]),
         }
         if not all(exact.values()):
+            _save_carrier_failure(args.output.parent, {
+                "input_payload": (input_payload, reference["input_payload"]),
+                "input_scale": (input_sf, reference["input_scale"]),
+                "middle_payload": (middle_payload, reference["middle_payload"]),
+                "middle_scale": (middle_sf, reference["middle_scale"]),
+            }, {"input": x_cpu, "routes_actual": route_actual,
+                "routes_expected": reference["routes"], "final_actual": final_actual,
+                "final_expected": reference["final"],
+                "token_map": debug["token_map"], "row_counts": debug["row_counts"],
+                "expert_tile_base": debug["expert_tile_base"]})
             raise RuntimeError(f"observable activation carrier byte mismatch: {exact}")
         route_metric = _metric(route_actual, reference["routes"])
         final_metric = _metric(final_actual, reference["final"])
