@@ -18,6 +18,7 @@ MOE_BACKEND=${10:-auto}
 ROTATION_SCOPE=${11:-gate-up}
 ROTATION_PLACEMENT=${GLM53_ROTATION_PLACEMENT:-runner}
 LOAD_FORMAT=${GLM53_LOAD_FORMAT:-safetensors}
+MODEL_AUX_MOUNT_ROOT=${GLM53_MODEL_AUX_MOUNT_ROOT:-}
 HUMMING_ACT=${GLM53_HUMMING_ACT:-bf16}
 DCP_SIZE=${GLM53_DCP_SIZE:-4}
 ROUTE_CAPTURE_OUTPUT=${GLM53_ROUTE_CAPTURE_OUTPUT:-}
@@ -48,6 +49,7 @@ DISABLE_EP=${GLM53_DISABLE_EP:-0}
 [ "$ROTATION_PLACEMENT" = runner ] || [ "$ROTATION_PLACEMENT" = humming-inner ] || { echo "invalid GLM53_ROTATION_PLACEMENT" >&2; exit 2; }
 [ "$ROTATION_PLACEMENT" = runner ] || [ "$MOE_BACKEND" = humming ] || { echo "humming-inner placement requires humming backend" >&2; exit 2; }
 [ "$LOAD_FORMAT" = safetensors ] || [ "$LOAD_FORMAT" = instanttensor ] || { echo "invalid GLM53_LOAD_FORMAT" >&2; exit 2; }
+[ -z "$MODEL_AUX_MOUNT_ROOT" ] || [ -d "$MODEL_AUX_MOUNT_ROOT" ] || { echo "model auxiliary mount root is missing: $MODEL_AUX_MOUNT_ROOT" >&2; exit 2; }
 [ "$HUMMING_ACT" = bf16 ] || [ "$HUMMING_ACT" = nvfp4 ] || { echo "invalid GLM53_HUMMING_ACT" >&2; exit 2; }
 [ "$HUMMING_ACT" = bf16 ] || [ "$MOE_BACKEND" = humming ] || { echo "NVFP4 Humming activations require humming backend" >&2; exit 2; }
 [ "$DCP_SIZE" = 1 ] || [ "$DCP_SIZE" = 4 ] || { echo "GLM53_DCP_SIZE must be 1 or 4" >&2; exit 2; }
@@ -205,6 +207,11 @@ if [ -n "$P4_NATIVE" ]; then
   )
   ENDPOINT_TAG=p4-native
 fi
+model_aux_mount=()
+if [ -n "$MODEL_AUX_MOUNT_ROOT" ]; then
+  MODEL_AUX_MOUNT_ROOT=$(readlink -f "$MODEL_AUX_MOUNT_ROOT")
+  model_aux_mount+=( -v "$MODEL_AUX_MOUNT_ROOT:$MODEL_AUX_MOUNT_ROOT:ro" )
+fi
 [ -z "${GLM53_B12X_FAST_MATH:-}" ] || rotation_env+=( -e B12X_FAST_MATH="$GLM53_B12X_FAST_MATH" )
 [ -z "${GLM53_B12X_DYNAMIC_DOWN_SCALE:-}" ] || rotation_env+=( -e B12X_ENABLE_DYNAMIC_DOWN_SCALE="$GLM53_B12X_DYNAMIC_DOWN_SCALE" )
 [ -z "${GLM53_B12X_DETERMINISTIC_OUTPUT:-}" ] || rotation_env+=( -e B12X_DYNAMIC_DETERMINISTIC_OUTPUT="$GLM53_B12X_DETERMINISTIC_OUTPUT" )
@@ -249,7 +256,7 @@ docker run -d --name "$TEST" --gpus all --network host --shm-size 32g --restart 
   -e VLLM_PCIE_ALLREDUCE_BACKEND=cpp -e VLLM_CPP_AR_1STAGE_NCCL_CUTOFF=56KB \
   -e VLLM_CPP_AR_IGNORE_CUTOFF_MAX_ROWS=0 -e KV_FP8_ROPE=0 -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
   -e CUBLAS_WORKSPACE_CONFIG=:4096:8 -e NVIDIA_TF32_OVERRIDE=0 -e VLLM_KLD_CAPTURE_DIR="$CAPTURES" \
-  "${rotation_env[@]}" -v "$MODEL_DIR:/model:ro" \
+  "${rotation_env[@]}" -v "$MODEL_DIR:/model:ro" "${model_aux_mount[@]}" \
   -v /home/brandonmusic/models/GLM-5.3-Flash-NVFP4:/home/brandonmusic/models/GLM-5.3-Flash-NVFP4:ro \
   -v "$LEARNED_CHUNK_ROOT:$LEARNED_CHUNK_ROOT:ro" \
   -v "$FULL_H16_CHUNK_ROOT:$FULL_H16_CHUNK_ROOT:ro" \

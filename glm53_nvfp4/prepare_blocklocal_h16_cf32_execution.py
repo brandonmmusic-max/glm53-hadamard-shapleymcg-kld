@@ -36,23 +36,28 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         raise RuntimeError("all-expert candidate build is not closed")
     candidate_receipt_path = args.candidate / "BF16_LAYER_RECEIPT.json"
     candidate_receipt = json.loads(candidate_receipt_path.read_text())
+    mount_root = args.model_aux_mount_root.resolve()
     if (
         sha256_file(candidate_receipt_path) != build_receipt.get("candidate_receipt_sha256")
         or candidate_receipt.get("bf16_layers") != [3]
         or candidate_receipt.get("redirected_tensors") != 864
         or Path(candidate_receipt.get("carrier", "")).resolve() != args.stock.resolve()
         or candidate_receipt.get("required_load_format") != "instanttensor"
+        or not all(
+            Path(item["path"]).resolve().is_relative_to(mount_root)
+            for item in candidate_receipt.get("chunks", [])
+        )
     ):
         raise RuntimeError("candidate overlay does not close against the all-expert build")
 
     return {
-        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v1",
+        "schema": "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v2",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decision_before_result": True,
         "run_order": ["stock", "candidate"],
         "run_ids": {
-            "stock": "rotation-v6-blocklocal-h16-l3-stock-cf32-v1",
-            "candidate": "rotation-v6-blocklocal-h16-l3-candidate-cf32-v1",
+            "stock": "rotation-v6-blocklocal-h16-l3-stock-cf32-v2",
+            "candidate": "rotation-v6-blocklocal-h16-l3-candidate-cf32-v2",
         },
         "stopping_rule": "one fresh complete run per arm; no resume, reroll, exclusion, or substitution",
         "decision_rule": (
@@ -75,6 +80,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "cuda_graphs": "disabled/enforce-eager",
             "mtp": "disabled",
             "rotation_runtime": "identity; inverse rotation is baked into BF16 effective weights",
+            "model_aux_mount_root": str(args.model_aux_mount_root.resolve()),
         },
         "models": {
             "stock": str(args.stock.resolve()),
@@ -114,6 +120,7 @@ def main() -> None:
     parser.add_argument("--runtime-manifest", type=Path, required=True)
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--image-id", required=True)
+    parser.add_argument("--model-aux-mount-root", type=Path, required=True)
     parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--run-kld", type=Path, required=True)
     parser.add_argument("--role-eval", type=Path, required=True)

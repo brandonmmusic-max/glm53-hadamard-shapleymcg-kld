@@ -12,7 +12,7 @@ from pathlib import Path
 from .shard_index import sha256_file
 
 
-SCHEMA = "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v1"
+SCHEMA = "glm53-rotation-v6.blocklocal-h16-layer3-cf32-execution.v2"
 
 
 def _verify_file(item: dict[str, object]) -> None:
@@ -89,6 +89,7 @@ def main() -> None:
             "GLM53_RUNTIME_IMAGE": str(plan["runtime"]["image"]),
             "GLM53_RUNTIME_IMAGE_ID": str(plan["runtime"]["image_id"]),
             "GLM53_RUNTIME_PATCH_MANIFEST": str(plan["inputs"]["runtime_manifest"]["path"]),
+            "GLM53_MODEL_AUX_MOUNT_ROOT": str(plan["runtime"]["model_aux_mount_root"]),
         }
     )
     started = datetime.now(timezone.utc).isoformat()
