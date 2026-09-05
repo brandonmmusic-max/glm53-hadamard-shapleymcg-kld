@@ -767,6 +767,23 @@ confirmation, and final roles remained unopened for this redesign branch.
   Allocation remains stopped unless both five-run primary speed medians pass.
   No new EXL3 kernel or P8 weight change is introduced by this amendment.
 
+## 2026-09-05: Decision 31 — preserve speed failures and repair receipt checks
+
+- V2 failed at the CPU audit because its new worktree path differed from the
+  existing receipt. A1 uses a fresh audit destination without weakening the
+  audit. A1 then failed in DCP profile forward; A2 restores the pinned EXL3
+  compose's B12X DCP flags, with no kernel source or weight change.
+- A2 measured EXL3 but its wrapper required the wrong graph progress label.
+  All four ranks actually completed FULL graph capture. A3 accepts the two
+  runtime label spellings and additionally requires 100% FULL capture and
+  completion on every TP rank; it rejects profiling or partial capture.
+- A2's 32K baseline row (6,519 server prefill tokens/s, 91.198066 C1 decode
+  tokens/s) is retained as an operational diagnostic, not silently substituted
+  or erased. Missing post-run receipts require a fresh full five-round series.
+- Before any P8 speed result, preserve the original thresholds, requests,
+  repetitions, images, topology and serving environment. No speed pass or
+  allocation authorization is inferred. See `results/P8_SPEED_ATTEMPTS.md`.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded

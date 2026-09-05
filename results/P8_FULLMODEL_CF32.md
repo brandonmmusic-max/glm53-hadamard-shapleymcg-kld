@@ -66,6 +66,8 @@ TP2 restriction. The existing four-GPU EXL3 service uses its explicit EP path.
 therefore preregisters P8 TP4/no-EP/DCP1 versus EXL3 TP4/EP4/DCP4, target-only
 in both, retaining the same five-run speed thresholds. This is explicitly a
 different-topology product comparison; it does not retroactively repair v1.
+The [speed-attempt ledger](P8_SPEED_ATTEMPTS.md) preserves later operational
+failures, the receipt-incomplete baseline measurement, and each amended retry.
 
 ## Reproduction and receipts
 
