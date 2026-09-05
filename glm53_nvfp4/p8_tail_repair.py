@@ -33,6 +33,7 @@ IMAGE_RECEIPT = ROOT / "p8-tail-repair-image-v1a/receipt.json"
 RECIPE = ROOT / "p8-smallm-scheduler-v1/fc1-integrated-v1/container-final.private.json"
 RECIPE_SHA256 = "c7f5832af2244926ebf0f2d481efbe7461bee85afb18cc4d85dd3769d44ffdf8"
 PREREG = REPO / "experiments/p8-tail-omission-repair-v1-prereg.json"
+AMENDMENT = REPO / "experiments/p8-tail-omission-repair-v1a-amendment.json"
 ROLES = control.ROLES
 TEACHER = control.TEACHER
 WINDOW_IDS = control.WINDOW_IDS
@@ -41,6 +42,7 @@ BASELINE_MEAN = control.P8_MEAN
 RAW_BYTES = 4 * protocol.ROWS * protocol.VOCAB_LIMIT * 4
 HEADROOM = 20 * 2**30
 KPOOL_SOURCE = "/opt/infernal-invocation/vllm/vllm/models/glm5next/nvidia/ops/kpool_compress.py"
+_BASE_CLONE_ARGV = base.clone_argv
 
 
 def source_files() -> set[str]:
@@ -51,6 +53,7 @@ def source_files() -> set[str]:
         "runtime_patch/p8_tail_repair/Dockerfile",
         "runtime_patch/p8_tail_repair/kpool-tail-consumed-v1.patch",
         "experiments/p8-tail-omission-repair-v1-prereg.json",
+        "experiments/p8-tail-omission-repair-v1a-amendment.json",
     }
 
 
@@ -136,6 +139,8 @@ def make_plan(path: Path, output: Path) -> dict:
         "recipe_sha256": RECIPE_SHA256,
         "prereg": str(PREREG),
         "prereg_sha256": sha(PREREG),
+        "amendment": str(AMENDMENT),
+        "amendment_sha256": sha(AMENDMENT),
         "windows": windows,
         "roles": str(ROLES),
         "roles_sha256": sha(ROLES),
@@ -212,6 +217,7 @@ def authenticate(path: Path) -> dict:
         or image["image_id"] != plan["capture_image"]
         or image["patched_kpool_sha256"] != plan["patched_kpool_sha256"]
         or sha(PREREG) != plan["prereg_sha256"]
+        or sha(AMENDMENT) != plan["amendment_sha256"]
         or sha(RECIPE) != plan["recipe_sha256"]
         or sha(ROLES) != plan["roles_sha256"]
     ):
@@ -243,7 +249,7 @@ def stage_windows(plan: dict, stage: str) -> list[dict]:
 
 
 def clone_argv(container: dict, image: str, entry: dict, out: Path, windows: list[dict], owner: str) -> list[str]:
-    args = base.clone_argv(container, image, entry, out, windows, owner)
+    args = _BASE_CLONE_ARGV(container, image, entry, out, windows, owner)
     return [
         *args[:-3],
         "--env", "GLM53_P8_INDEX_ORDER=logical-short-v1",
