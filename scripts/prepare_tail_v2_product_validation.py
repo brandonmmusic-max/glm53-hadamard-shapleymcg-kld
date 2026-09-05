@@ -46,6 +46,9 @@ def main() -> None:
     parser.add_argument("--exl3-image-receipt", type=Path, required=True)
     parser.add_argument("--exl3-activation-receipt", type=Path, required=True)
     parser.add_argument("--weight-audit", type=Path, required=True)
+    parser.add_argument("--operational-amendment", type=Path)
+    parser.add_argument("--supersedes-plan", type=Path)
+    parser.add_argument("--failed-execution", type=Path)
     args = parser.parse_args()
     if (args.plan != args.plan.resolve() or args.output != args.output.resolve()
             or args.exl3_image_receipt != args.exl3_image_receipt.resolve()
@@ -53,6 +56,16 @@ def main() -> None:
             or args.weight_audit != args.weight_audit.resolve()
             or args.plan.exists() or args.plan.with_suffix(".sha256").exists() or args.output.exists()):
         raise ValueError("fresh canonical plan/seal/output and canonical receipt required")
+    lineage = (args.operational_amendment, args.supersedes_plan, args.failed_execution)
+    if any(value is not None for value in lineage):
+        if any(value is None or value != value.resolve() or not value.is_file() for value in lineage):
+            raise ValueError("operational amendment requires three canonical existing files")
+        amendment = json.loads(args.operational_amendment.read_text())
+        if (amendment.get("status") != "predeclared-after-v1a-failure-before-v1b-gpu-run"
+                or amendment.get("prior_plan", {}).get("sha256") != validation.sha(args.supersedes_plan)
+                or amendment.get("prior_execution", {}).get("sha256") != validation.sha(args.failed_execution)
+                or amendment.get("v1b_execution") is None):
+            raise ValueError("operational amendment does not bind the failed predecessor")
     p8 = load_receipt(P8_RECEIPT, "glm53.p8-tail-repair-image.v2")
     exl3 = load_receipt(args.exl3_image_receipt, "glm53.exl3-tail-v2-product-image.v1")
     if p8["patched_kpool_sha256"] != exl3["patched_kpool_sha256"]:
@@ -118,6 +131,19 @@ def main() -> None:
         "source_sha256": {name: validation.sha(REPO / name) for name in sorted(SOURCES)},
         "retry_policy": "no resume or silent reroll; preserve failed receipts and amend before another attempt",
     }
+    if args.operational_amendment is not None:
+        plan["operational_amendment"] = {
+            "path": str(args.operational_amendment),
+            "sha256": validation.sha(args.operational_amendment),
+        }
+        plan["supersedes_plan"] = {
+            "path": str(args.supersedes_plan),
+            "sha256": validation.sha(args.supersedes_plan),
+        }
+        plan["preserved_failed_execution"] = {
+            "path": str(args.failed_execution),
+            "sha256": validation.sha(args.failed_execution),
+        }
     args.plan.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
     args.plan.with_suffix(".sha256").write_text(validation.sha(args.plan) + "  " + args.plan.name + "\n")
     validation.authenticate_plan(args.plan)

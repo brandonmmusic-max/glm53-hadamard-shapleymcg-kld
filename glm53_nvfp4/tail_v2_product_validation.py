@@ -125,6 +125,12 @@ def authenticate_plan(path: Path) -> dict:
     if (sha(failed_path) != failed_receipt["sha256"]
             or json.loads(failed_path.read_text()).get("status") != "failed"):
         raise ValueError("preserved failed image-build receipt differs")
+    if "operational_amendment" in plan:
+        for key in ("operational_amendment", "supersedes_plan", "preserved_failed_execution"):
+            item = plan.get(key, {})
+            source = Path(item.get("path", ""))
+            if source != source.resolve() or not source.is_file() or sha(source) != item.get("sha256"):
+                raise ValueError(f"operational lineage differs: {key}")
     from . import p8_weight_identity as weights
     weight_path = Path(plan["weight_audit"]["path"])
     if sha(weight_path) != plan["weight_audit"]["sha256"]:

@@ -1,0 +1,37 @@
+{
+  "schema": "glm53.tail-v2-product-validation-operational-amendment.v1b",
+  "status": "predeclared-after-v1a-failure-before-v1b-gpu-run",
+  "prior_plan": {
+    "path": "experiments/tail-v2-p8-exl3-cf32-product-validation-v1a.json",
+    "sha256": "7917435982fe66426e3f836d96ae90842601e4b801b9b34470f55b41802da135"
+  },
+  "prior_execution": {
+    "path": "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/tail-v2-p8-exl3-cf32-product-validation-v1a/quality/execution.json",
+    "sha256": "42b39b4c7175d394d6b3b93020002a3a2cfdc7cd46266c828541d4f8887be8a2",
+    "completed_slots": 1,
+    "restoration_clean": true
+  },
+  "completed_exl3_slot": {
+    "sha256": "25ad5a902cff14fc1357231e8b3adc92139b931b1afc4e6f5a02d34f92a7a1f2",
+    "windows": 32,
+    "use_in_v1b_analysis": false
+  },
+  "failed_p8_slot": {
+    "sha256": "23b4fecac110ba62d2287c4ed5b571503d3fda92a883ed5dad2608ed2a29b502",
+    "windows": 0,
+    "container_started": false,
+    "error": "OSError 98: address already in use"
+  },
+  "diagnosis": "The immediately prior EXL3 server left TCP port 8030 in TIME_WAIT. The v1a runner used a plain bind, so the next slot rejected TIME_WAIT even though no listener existed.",
+  "single_operational_change": "Set SO_REUSEADDR on a non-listening localhost bind before each quality slot. Do not set SO_REUSEPORT and close the probe before container creation.",
+  "unchanged": [
+    "images and Tail-V2 source",
+    "CF32 windows, order, teachers, metric and BCa",
+    "five cold processes per arm and determinism rule",
+    "runtime topology, attention, KV, MoE, activations and bpw",
+    "stream-score-retire storage policy",
+    "speed protocol and decision rules"
+  ],
+  "v1b_execution": "Fresh campaign from the first EXL3 slot. The completed v1a EXL3 scores remain preserved failure evidence and are not reused, pooled, or substituted in v1b.",
+  "protected_roles_opened": []
+}

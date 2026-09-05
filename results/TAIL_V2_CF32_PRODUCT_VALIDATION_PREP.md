@@ -81,3 +81,13 @@ without creating a container.
 
 The draft proposal is
 `experiments/tail-v2-p8-exl3-cf32-product-validation-proposal-v1.json`.
+
+## Operational chronology
+
+The sealed v1a execution completed the first EXL3 CF32 slot, then stopped
+before P8 container creation because a plain bind treated the prior slot's TCP
+`TIME_WAIT` as an active listener. Production restoration passed. The v1a
+scores are preserved but excluded from subsequent analysis. The predeclared
+v1b amendment uses a non-listening `SO_REUSEADDR` probe, matching the already
+qualified forced-decode lifecycle behavior. Plan v1b restarts the full order
+at a fresh output and changes no numerical or runtime decision.
