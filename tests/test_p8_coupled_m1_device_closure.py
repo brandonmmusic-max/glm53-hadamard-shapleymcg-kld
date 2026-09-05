@@ -66,6 +66,21 @@ def test_exact_k32_permutation_is_block_local_and_frozen() -> None:
     assert sorted(actual[0, 32:].tolist()) == list(range(32, 64))
 
 
+def test_blocked_quantizer_payload_preserves_exact_wire_bytes_and_rows() -> None:
+    module = _module()
+    for rows, width in ((1, 4096), (8, 512), (2, 4096)):
+        blocked = torch.arange(rows * width).to(torch.uint8).reshape(rows, width // 32, 32)
+        actual = module.packed_quantizer_payload(blocked, rows, width)
+        expected = module.permute_k32_payload(blocked.reshape(rows, width))
+        assert actual.shape == (rows, width)
+        assert torch.equal(actual, expected)
+        changed = actual.clone()
+        changed[0, 0] ^= 1
+        assert not torch.equal(changed, expected)
+        with pytest.raises(ValueError, match="blocked quantizer"):
+            module.packed_quantizer_payload(blocked.reshape(rows, width), rows, width)
+
+
 def test_materialized_intermediate_reader_uses_slice_major_scale_words() -> None:
     module = _module()
     rows = 32

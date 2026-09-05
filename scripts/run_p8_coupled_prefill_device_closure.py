@@ -285,12 +285,12 @@ def _reference_prototypes(sidecar: Path, prototypes, scales):
         physical = (down_q @ down.T).to(torch.float16)
         route = hadamard_blocks(physical.float(), 128) * scales.down_svh.float()
         route_cache[:, slot] = route
-        middle_payload_cache[:, slot] = M1.permute_k32_payload(payload)
+        middle_payload_cache[:, slot] = M1.packed_quantizer_payload(payload, PROTOTYPE_COUNT, 512)
         middle_scale_cache[:, slot] = sf
         weight_receipts.append(receipt)
         del gate, up, down, gp, uph, raw, work, down_q, physical, route
     return {
-        "input_payload": M1.permute_k32_payload(input_payload),
+        "input_payload": M1.packed_quantizer_payload(input_payload, PROTOTYPE_COUNT, 4096),
         "input_scale": input_sf,
         "middle_payload": middle_payload_cache,
         "middle_scale": middle_scale_cache,

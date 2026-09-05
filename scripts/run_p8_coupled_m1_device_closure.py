@@ -360,6 +360,17 @@ def _decode_expert(path: Path, expert: int):
     return gate, up, down, receipt
 
 
+def packed_quantizer_payload(payload, rows: int, width: int):
+    """Convert only the quantizer's [rows, K/32, 32] layout to wire rows.
+
+    No sorting, numeric conversion, or tolerance: retain every permuted byte.
+    Reject other shapes so a routing/layout defect cannot pass by flattening.
+    """
+    if tuple(payload.shape) != (rows, width // 32, 32) or width % 32:
+        raise ValueError("expected blocked quantizer payload [rows, K/32, 32]")
+    return permute_k32_payload(payload).reshape(rows, width)
+
+
 def _reference(path: Path, x, weights, scales):
     import torch
     from p8_coupled_scales import hadamard_blocks, quantize_e4m3_ue8m0_per32
@@ -408,7 +419,7 @@ def _reference(path: Path, x, weights, scales):
         physical = (down_q @ down.T).to(torch.float16)
         route = hadamard_blocks(physical.float(), 128) * scales.down_svh.float()
         routes.append(route.squeeze(0))
-        middle_payloads.append(permute_k32_payload(payload).squeeze(0))
+        middle_payloads.append(packed_quantizer_payload(payload, 1, 512).squeeze(0))
         middle_scales.append(sf.squeeze(0))
         weight_receipts.append(receipt)
         del gate, up, down
@@ -416,7 +427,7 @@ def _reference(path: Path, x, weights, scales):
     mixed = (route_tensor * weights.reshape(-1, 1)).sum(0, keepdim=True)
     final = hadamard_blocks(mixed, 512).to(torch.bfloat16)
     return {
-        "input_payload": permute_k32_payload(input_payload),
+        "input_payload": packed_quantizer_payload(input_payload, 1, 4096),
         "input_scale": input_sf,
         "middle_payload": torch.stack(middle_payloads),
         "middle_scale": torch.stack(middle_scales),
