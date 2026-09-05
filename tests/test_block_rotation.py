@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from glm53_nvfp4.block_gptq import block_hessian
@@ -5,6 +6,7 @@ from glm53_nvfp4.block_rotation import (
     apply_activation_rotation,
     apply_output_rotation,
     apply_weight_rotation,
+    butterfly16,
     cayley_rotation,
     hadamard,
     hadamard16,
@@ -24,6 +26,34 @@ def test_hadamard16_is_orthogonal_and_preserves_linear_map():
     wr = apply_weight_rotation(w, r)
     assert orthogonality_error(r) < 1e-6
     torch.testing.assert_close(torch.nn.functional.linear(xr, wr), torch.nn.functional.linear(x, w), atol=2e-5, rtol=2e-5)
+
+
+def test_butterfly16_identity_quarter_turn_and_linear_closure():
+    identity = butterfly16(0.0)
+    torch.testing.assert_close(identity, torch.eye(16), atol=0, rtol=0)
+    quarter = butterfly16(torch.pi / 4)
+    assert orthogonality_error(quarter) < 2e-6
+    torch.testing.assert_close(
+        quarter.abs(), torch.full((16, 16), 0.25), atol=2e-7, rtol=0
+    )
+    generator = torch.Generator().manual_seed(5304)
+    x = torch.randn(7, 64, generator=generator)
+    w = torch.randn(31, 64, generator=generator)
+    rotation = butterfly16(torch.tensor([0.07, -0.11, 0.19, -0.23]))
+    torch.testing.assert_close(
+        torch.nn.functional.linear(
+            apply_activation_rotation(x, rotation),
+            apply_weight_rotation(w, rotation),
+        ),
+        torch.nn.functional.linear(x, w),
+        atol=3e-5,
+        rtol=3e-5,
+    )
+
+
+def test_butterfly16_rejects_invalid_angle_count():
+    with pytest.raises(ValueError, match="1, 4, or 32"):
+        butterfly16(torch.zeros(3))
 
 
 def test_hadamard32_and_hadamard64_preserve_linear_map():

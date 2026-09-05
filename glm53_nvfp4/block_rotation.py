@@ -38,6 +38,55 @@ def hadamard16(*, device=None, dtype=torch.float32) -> torch.Tensor:
     return hadamard(GROUP_SIZE, device=device, dtype=dtype)
 
 
+def butterfly16(
+    angles: torch.Tensor | float,
+    *,
+    device=None,
+    dtype=torch.float32,
+) -> torch.Tensor:
+    """Return a four-stage orthogonal 16-wide Givens butterfly.
+
+    ``angles`` may be one scalar, four stage-shared angles, or all 32
+    stage/pair angles.  Zero is exactly the identity.  Setting every angle to
+    ``pi/4`` produces a dense signed-Hadamard member (every absolute entry is
+    1/4) while retaining a continuous, compact path back to identity.
+
+    The matrix follows this module's row-vector convention: applying the four
+    stages to an activation is ``x @ R`` and the matching stored weight is
+    ``W @ R``.
+    """
+    values = torch.as_tensor(angles, device=device, dtype=dtype)
+    if values.ndim == 0 or values.numel() == 1:
+        values = values.reshape(1).expand(32)
+    elif values.numel() == 4:
+        values = values.reshape(4, 1).expand(4, 8).reshape(32)
+    elif values.numel() == 32:
+        values = values.reshape(32)
+    else:
+        raise ValueError(
+            f"butterfly16 expects 1, 4, or 32 angles, got {values.numel()}"
+        )
+
+    rotation = torch.eye(GROUP_SIZE, device=values.device, dtype=values.dtype)
+    cursor = 0
+    for stride in (1, 2, 4, 8):
+        stage = torch.eye(GROUP_SIZE, device=values.device, dtype=values.dtype)
+        for base in range(0, GROUP_SIZE, 2 * stride):
+            for offset in range(stride):
+                first = base + offset
+                second = first + stride
+                angle = values[cursor]
+                cursor += 1
+                cosine = torch.cos(angle)
+                sine = torch.sin(angle)
+                stage[first, first] = cosine
+                stage[first, second] = sine
+                stage[second, first] = -sine
+                stage[second, second] = cosine
+        rotation = rotation @ stage
+    return rotation
+
+
 def signed_hadamard16(
     seed: int | str,
     *,
