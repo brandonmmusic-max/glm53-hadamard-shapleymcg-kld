@@ -1023,6 +1023,21 @@ confirmation, and final roles remained unopened for this redesign branch.
 - Plan: `experiments/p8-fc1-tiles-device-v2.json`; fresh output and source seals.
   Original V1 remains failed. No KLD claim, protected opening or allocation.
 
+## 2026-09-05: Decision 46 — retain the narrow-FC1 near miss; remove duplicate copies
+
+- V2 passes all 30 exact-closure cells on each of four GPUs, including
+  canonical fallback input bytes. N64 reduces total block median by 34.13%,
+  34.60%, 34.95%, 34.76%; N32 by 31.29%, 31.41%, 32.16%, 31.25%.
+  Neither meets 35% on every GPU. Do not round the near miss into a pass or
+  launch integrated serving under that failed gate.
+- The next candidate crops B/SFB asynchronous copies to each owner's N64/N32
+  range, preserving absolute N128 shared-memory addresses, A/SFA staging,
+  grid, decoder, MMA order, activation seams, scale stores and FC2. This tests
+  the known duplicated-staging rival without relaxing the numerical gate.
+- Reuse identical synthetic cases and timing protocol under a fresh source/
+  image seal and output version. GPU runs remain serialized and all failed
+  attempts preserved. No protected opening, KLD claim or allocation restart.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
