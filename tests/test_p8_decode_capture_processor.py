@@ -57,6 +57,7 @@ class FakeSamplingParams:
         self.allowed_token_ids = None
         self.logit_bias = None
         self.structured_outputs = None
+        self.thinking_token_budget = None
 
 
 def _install_vllm_stubs(monkeypatch):
@@ -152,6 +153,7 @@ def test_full_capture_is_pre_mask_complete_and_atomic(loaded):
     assert metadata["status"] == "complete"
     assert metadata["shape"] == [3, 154_880]
     assert metadata["original_logit_width"] == 154_882
+    assert metadata["original_logit_dtype"] == "torch.float32"
     assert metadata["causal_teacher_row_range"] == [0, 2]
     assert metadata["one_token_prefill_row_range"] == [0, 0]
     assert metadata["true_decode_row_range"] == [1, 2]
@@ -189,6 +191,7 @@ def test_capture_start_writes_only_requested_tail_but_forces_all_rows(loaded):
         (lambda p: setattr(p, "ignore_eos", False), "ignore_eos"),
         (lambda p: setattr(p, "logprobs", -1), "logprobs"),
         (lambda p: setattr(p, "presence_penalty", 0.1), "presence_penalty"),
+        (lambda p: setattr(p, "thinking_token_budget", 4), "thinking_token_budget"),
     ],
 )
 def test_request_validation_fails_closed(loaded, mutate, match):

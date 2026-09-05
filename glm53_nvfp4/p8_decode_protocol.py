@@ -190,6 +190,7 @@ def load_capture(root, window_id, tokens):
         "finite_real_vocab": True, "tp_rank": 0,
     }
     if (any(metadata.get(key) != value for key, value in required.items())
+            or metadata.get("original_logit_dtype") not in ("torch.float32", "torch.float16", "torch.bfloat16")
             or metadata.get("original_logit_width", 0) < VOCAB_LIMIT
             or metadata.get("request_extra_arg_keys") != sorted(xargs)
             or metadata.get("completed_unix_ns", 0) <= metadata.get("started_unix_ns", 0)

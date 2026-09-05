@@ -210,6 +210,8 @@ def _parse_request(params: SamplingParams) -> _RequestSpec:
             raise VLLMValidationError(f"decode capture requires empty {name}")
     if getattr(params, "structured_outputs", None) is not None:
         raise VLLMValidationError("decode capture forbids structured outputs")
+    if getattr(params, "thinking_token_budget", None) is not None:
+        raise VLLMValidationError("decode capture forbids thinking_token_budget")
 
     return _RequestSpec(
         window_id=window_id,
@@ -283,11 +285,18 @@ class _CaptureArtifact:
         self.started_unix_ns = started
         self.rows_written = 0
         self.original_logit_width: int | None = None
+        self.original_logit_dtype: str | None = None
         self.raw_hash = hashlib.sha256()
         self.complete = False
         _fsync_directory(root)
 
-    def write_row(self, capture_row: int, row: np.ndarray, original_width: int) -> None:
+    def write_row(
+        self,
+        capture_row: int,
+        row: np.ndarray,
+        original_width: int,
+        original_dtype: str = "torch.float32",
+    ) -> None:
         if self.complete:
             raise RuntimeError("capture is already complete")
         if capture_row != self.rows_written:
@@ -303,6 +312,10 @@ class _CaptureArtifact:
             self.original_logit_width = original_width
         elif self.original_logit_width != original_width:
             raise RuntimeError("incoming logit width changed during capture")
+        if self.original_logit_dtype is None:
+            self.original_logit_dtype = original_dtype
+        elif self.original_logit_dtype != original_dtype:
+            raise RuntimeError("incoming logit dtype changed during capture")
         canonical = np.ascontiguousarray(row, dtype="<f4")
         self.array[capture_row] = canonical
         self.raw_hash.update(canonical.tobytes(order="C"))
@@ -311,7 +324,11 @@ class _CaptureArtifact:
     def finalize(self) -> None:
         if self.complete:
             raise RuntimeError("capture finalized more than once")
-        if self.rows_written != self.rows or self.original_logit_width is None:
+        if (
+            self.rows_written != self.rows
+            or self.original_logit_width is None
+            or self.original_logit_dtype is None
+        ):
             raise RuntimeError(
                 f"cannot finalize incomplete capture: {self.rows_written}/{self.rows} rows"
             )
@@ -338,6 +355,7 @@ class _CaptureArtifact:
             "shape": list(self.shape),
             "real_vocab_size": REAL_VOCAB_SIZE,
             "original_logit_width": self.original_logit_width,
+            "original_logit_dtype": self.original_logit_dtype,
             "rows_completed": self.rows_written,
             "capture_start_output_len": start,
             "captured_output_len_range": [start, len(self.spec.forced_token_ids) - 1],
@@ -525,7 +543,10 @@ class ForcedDecodeCaptureLogitsProcessor(LogitsProcessor):
                 row_tensor = logits[0, :REAL_VOCAB_SIZE].detach().to(device="cpu")
                 row = row_tensor.contiguous().numpy()
                 state.artifact.write_row(
-                    output_len - state.spec.capture_start_output_len, row, width
+                    output_len - state.spec.capture_start_output_len,
+                    row,
+                    width,
+                    str(logits.dtype),
                 )
 
             target = state.spec.forced_token_ids[output_len]
