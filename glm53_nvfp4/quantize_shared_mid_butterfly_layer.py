@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 
@@ -45,6 +46,15 @@ def _rotation_metadata(path: Path, layer: int) -> tuple[float, dict[str, str]]:
     if metadata.get("layer") != str(layer) or metadata.get("scope") != "mid-only":
         raise ValueError("rotation metadata does not match layer/scope")
     return float(metadata["angle_pi"]), metadata
+
+
+def _canonical_rotation(angle_pi: float, device: str | torch.device) -> torch.Tensor:
+    """Reproduce the file builder's CPU bits before moving them to the device.
+
+    CPU and CUDA libdevice trigonometric implementations can differ by an ulp;
+    recomputing on CUDA therefore cannot be used for a bitwise payload check.
+    """
+    return butterfly16(math.pi * angle_pi, dtype=torch.float32).to(device)
 
 
 def main() -> None:
@@ -91,7 +101,7 @@ def main() -> None:
     rotation = load_layer_rotation(
         args.rotation_file, layer, kind="mid", width=2048, device=args.device
     )
-    expected_rotation = butterfly16(torch.pi * angle_pi, device=args.device)
+    expected_rotation = _canonical_rotation(angle_pi, args.device)
     if not torch.equal(rotation, expected_rotation):
         raise RuntimeError("rotation payload is not the deterministic sealed butterfly")
 
