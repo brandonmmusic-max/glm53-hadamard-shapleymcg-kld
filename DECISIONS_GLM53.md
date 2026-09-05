@@ -246,6 +246,18 @@ restoration receipt remain preserved.
 
 Amendment: `experiments/p8-exl3-fp8-ds-mla-forced-decode-v2-amendment.json`.
 
+V2 completed both arms and all four windows. P8 fell from `0.1174741` to
+`0.0483920` KLD (58.81% lower, 4/4 wins, paired delta interval
+`[-0.13010,-0.03021]`); EXL3 fell from `0.1128498` to `0.0411688` (63.52%
+lower, 4/4 wins, interval `[-0.11892,-0.04414]`). Both predeclared thresholds
+pass. The B12X/NVFP4 production MLA stack is implicated and the codec is
+exonerated as the shared cause of the approximately `0.11` endpoint. Because
+the attention compatibility change was mandatory, do not attribute the whole
+effect to KV dtype alone.
+
+Result: `results/P8_EXL3_FP8_DS_MLA_CONTROL_V2.md` and
+`evidence/opened/codec-v2/p8-exl3-fp8-ds-mla-control-v2/`.
+
 ## Decision 26: freeze the only remaining proxy-selected rotation inside physical P8 (2026-09-05)
 
 Before encoding layers 20 or 22 or opening their target KLD, freeze exactly
