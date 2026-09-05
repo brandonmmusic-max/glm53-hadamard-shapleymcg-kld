@@ -26,6 +26,7 @@ def _sha(path: Path) -> str:
 
 def test_manifest_hashes_every_declared_source() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text())
+    assert manifest["schema"] == "glm53.p8-coupled-image-sources.v2"
     for relative, expected in manifest["source_sha256"].items():
         assert _sha(ROOT / relative) == expected
 
@@ -36,12 +37,62 @@ def test_dockerfile_pins_parent_tail_and_actual_import_copies() -> None:
     assert dockerfile.startswith(f"FROM {manifest['parent_image_id']}\n")
     assert manifest["tail_v2"]["sha256"] in dockerfile
     assert "research-only-not-device-qualified" in dockerfile
-    assert "m1-n128-only-unqualified" in dockerfile
+    assert "decode-m1-prefill-m64-n128-unqualified" in dockerfile
     assert "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels" in dockerfile
     assert "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels" in dockerfile
     for destinations in manifest["install"].values():
         for destination in destinations:
             assert destination in dockerfile
+    for phase in manifest["parent_phase_abi"]["phases"].values():
+        assert phase["sha256"] in dockerfile
+        for path in phase["paths"]:
+            assert path in dockerfile
+
+
+def test_manifest_pins_repaired_prefill_modules_and_rejects_stale_donors() -> None:
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    sources = manifest["source_sha256"]
+    assert "runtime_patch/p8_coupled_prefill_plan.py" in sources
+    assert any(path.endswith("p8_coupled_prefill_fc1.py") for path in sources)
+    assert any(path.endswith("p8_coupled_prefill_fc2.py") for path in sources)
+    rejected = set(manifest["parent_phase_abi"]["rejected_donor_sha256"])
+    assert rejected == {
+        "cb72c50dab933ee866103caf7c32f1a6cfb15df991fcdd8b753ac765551946b1",
+        "ce31085628a8423468a453275f18c3322f8029d35afccb35f5e7060cbab11a7e",
+    }
+    assert not rejected.intersection(sources.values())
+
+
+def test_manifest_encodes_exact_parent_and_candidate_call_abis() -> None:
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    phases = manifest["parent_phase_abi"]["phases"]
+    assert len(phases["phase1"]["call_parameters"]) == 18
+    assert phases["phase1"]["call_parameters"][12] == "trellis_rotations"
+    assert len(phases["phase2"]["call_parameters"]) == 16
+    assert "scale_component" not in phases["phase2"]["call_parameters"]
+
+    candidates = manifest["candidate_launch_abi"]
+    assert len(candidates["prefill_fc1"]["call_parameters"]) == 18
+    assert candidates["prefill_fc1"]["call_parameters"][12] == "scale_component"
+    assert candidates["prefill_fc1"]["shared_bytes"] == 65536
+    assert len(candidates["prefill_fc2"]["call_parameters"]) == 17
+    assert candidates["prefill_fc2"]["call_parameters"][12] == "scale_component"
+    assert candidates["prefill_fc2"]["shared_bytes"] == 34816
+
+
+def test_verifier_checks_phase_hash_abi_owner_and_launch_contract() -> None:
+    verifier = (ROOT / "runtime_patch/p8_coupled_image/verify_image.py").read_text()
+    for required in (
+        'manifest["parent_phase_abi"]',
+        'manifest["candidate_launch_abi"]',
+        "inspect.signature",
+        "inspect.getsource",
+        "stale build/lib donor is present on sys.path",
+        "call owner mismatch",
+        "shared bytes mismatch",
+        "launch source missing",
+    ):
+        assert required in verifier
 
 
 def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch) -> None:
@@ -78,6 +129,8 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert "--pull=false" in command
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
+    assert builder.TAG == "klc/glm53-p8-coupled:v2"
+    assert builder.INTEGRATION_BASE == "53e0b45c57b9946ae3a7ef5dbdc376400d9a1a96"
 
 
 def test_manifest_declares_source_tree_import_precedence() -> None:
@@ -88,3 +141,12 @@ def test_manifest_declares_source_tree_import_precedence() -> None:
             assert origin.startswith("/opt/infernal-invocation/b12x/b12x/")
     assert origins["sitecustomize"] == "/usr/lib/python3.12/sitecustomize.py"
     assert origins["p8_native_kernel"] == "/opt/p8-coupled-runtime/p8_native_kernel.py"
+    assert origins["p8_coupled_prefill_plan"] == (
+        "/opt/p8-coupled-runtime/p8_coupled_prefill_plan.py"
+    )
+    assert origins["b12x.moe._shared.kernels.p8_coupled_prefill_fc1"].endswith(
+        "/p8_coupled_prefill_fc1.py"
+    )
+    assert origins["b12x.moe._shared.kernels.p8_coupled_prefill_fc2"].endswith(
+        "/p8_coupled_prefill_fc2.py"
+    )
