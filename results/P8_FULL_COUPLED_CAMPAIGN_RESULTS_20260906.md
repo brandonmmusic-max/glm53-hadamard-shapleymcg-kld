@@ -301,38 +301,56 @@ the per-token quadratic game, so these shares sum to the layer damage exactly.
 The concentrated layers are exactly the high-damage ones. In the diffuse low-damage layers
 the top expert holds only 2.5% to 16%.
 
-### This is not a weight-quantization effect
+### What the concentration is not
 
-The obvious explanation would be that the dominant expert quantizes badly. It does not.
-For layer 29, per-expert transformed-weight NMSE ranges only from 0.00700 to 0.00790 across
-all 288 experts, and expert 2, which carries 97.02% of the layer's damage, sits at 0.00746,
-which is 0.99 times the median and **203rd of 288** by weight error. The dominant expert
-index also differs from layer to layer (2, 21, 5, 204, 259, 109, 223, ...), so this is not one
-global outlier expert.
+Four candidate explanations were tested against layer 29, where one expert holds 97.02% of the
+layer's damage, and all four are ruled out.
 
-The damage is the routed output error, sum_t || sum_e w_te (f_q,e - f_e) ||^2, so it scales
-with routing weight and activation magnitude, not with weight error alone. The measurement
-says a small number of expert-token pairs carry very large activations, and their ordinary
-quantization error is amplified there.
+| Candidate cause | Measurement | Verdict |
+|---|---|---|
+| The expert quantizes badly | per-expert weight NMSE spans 0.00700-0.00790 across all 288; the dominant expert sits at 0.00746, 203rd of 288 | ruled out |
+| The expert has larger weights, so the same relative error is larger in absolute terms | Frobenius norms 54.6 / 55.2 / 54.2 against an ordinary-expert median of 54.9 / 55.3 / 54.2 | ruled out |
+| The expert is routed far more often | 79 of 24,576 routed slots, against a median of 80 per expert; 147th of 288 by count | ruled out |
+| The expert sees unusually large activations | hidden-state norms are essentially constant across the fit tokens, mean 24.95 and median 24.96, and no token exceeds five times the median | ruled out |
 
-### Consequence for allocation granularity
+The dominant expert index also differs from layer to layer (2, 21, 5, 204, 259, 109, 223, ...), so
+this is not one global outlier expert.
 
-This is the most actionable result of the campaign so far, and it argues against the
-granularity the current kernels force.
+### What the concentration tracks instead
 
-| Strategy | Bytes to upgrade | Damage addressed |
+The concentrated layers are the domain-skewed ones. Layer 29's damage is 103.07 per token on the
+reasoning-termination axis against 1.25 on the code and agentic axis, a factor of 83. Across all
+42 layers the correlation between a layer's top-expert share and the log of its domain skew is
+**0.784**.
+
+That points at token concentration rather than expert concentration: a small set of tokens, drawn
+mostly from one domain, produces most of the routed-output error in the late layers, and the
+Shapley credit lands on whichever expert happened to be routed on those tokens. The credit
+assignment is exact for the game as defined; the question it leaves open is whether the *expert
+identity* is a stable property of the model or an artifact of which tokens this calibration set
+contains.
+
+**This has not been tested and should not be assumed.** The test is to recompute the shares on a
+disjoint token sample and see whether the same expert dominates. Until that is done, no
+per-expert claim is made here, and the byte-efficiency arithmetic below is a hypothesis about
+what per-expert allocation could buy, not a measured result.
+
+### Consequence for allocation granularity, if the expert identity proves stable
+
+| Strategy | Bytes to upgrade | Damage addressed on this calibration set |
 |---|---:|---:|
 | 16 whole layers to K5 (what the ABI allows today) | 14,495,514,624 | 89.5% |
 | Top 100 layer-expert pairs to K5 | 314,572,800 | 80.1% |
 
-One expert at one rate step costs 3,145,728 B against 905,969,664 B for a whole layer.
-Reaching 80% of the damage costs about 46 times fewer bytes per-expert than per-layer.
+One expert at one rate step costs 3,145,728 B against 905,969,664 B for a whole layer, so reaching
+80% of the damage would cost about 46 times fewer bytes per-expert than per-layer. That is worth
+chasing only if the disjoint-sample test holds; if the dominance is token-driven and the expert
+identity moves, per-expert allocation would overfit the calibration set and the layer-granular
+choice stands.
 
-The running campaign remains layer-granular because the sidecar ABI stores one rate per layer
-and the compiled small-M kernel reads one rate per layer; per-expert rates need pool dispatch
-in the kernel. That work is now clearly worth doing, and this measurement is the evidence for
-it. No per-expert claim is made here beyond the proxy: like every damage number in this
-document it is fit-role routed-output error, not KLD.
+The running campaign remains layer-granular regardless, because the sidecar ABI stores one rate
+per layer and the compiled small-M kernel reads one rate per layer. Every damage number in this
+document is fit-role routed-output error on 3,072 calibration tokens, not KLD.
 
 ## 6. Assumed versus measured rate ratios
 
