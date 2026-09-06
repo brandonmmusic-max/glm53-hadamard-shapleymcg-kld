@@ -1,254 +1,254 @@
 {
-  "candidate_launch_abi": {
-    "prefill_fc1": {
-      "call_owner": "b12x.moe._shared.kernels.p8_coupled_prefill_fc1.P8CoupledPrefillFC1Kernel",
-      "call_parameters": [
-        "packed_a_storage",
-        "scale_storage",
-        "w13_rp",
-        "w13_sfb_rp",
-        "intermediate_u32",
-        "token_map",
-        "task_expert",
-        "task_valid_rows",
-        "expert_tile_base",
-        "alpha",
-        "input_global_scale",
-        "trellis_lut",
-        "scale_component",
-        "input_k128_tiles",
-        "intermediate_tiles",
-        "packed_w13_tiles",
-        "max_active_clusters",
-        "stream"
-      ],
-      "class": "P8CoupledPrefillFC1Kernel",
-      "constructor_parameters": [],
-      "instance_attributes": {
-        "full_coupled": true,
-        "owned_n": 128,
-        "shared_bytes": 65536,
-        "shared_words": 16384,
-        "stage_bytes": 17664,
-        "tile_m": 64,
-        "trellis_lut_offset": 65536
-      },
-      "module": "b12x.moe._shared.kernels.p8_coupled_prefill_fc1",
-      "normalized_launch_source": [
-        "grid=(1,1,max_active_clusters)",
-        "min_blocks_per_mp=1"
-      ],
-      "resource_contract": {
-        "allocation_end": 65536,
-        "full_output_fp32_end": 65536,
-        "full_output_fp32_start": 32768,
-        "gate_fp16_end": 16384,
-        "gate_fp16_start": 0,
-        "pipeline_end": 35328,
-        "pipeline_start": 0,
-        "up_fp16_end": 32768,
-        "up_fp16_start": 16384
-      }
-    },
-    "prefill_fc2": {
-      "call_owner": "b12x.moe._shared.kernels.p8_small_m.P8SmallMPhase2Kernel",
-      "call_parameters": [
-        "intermediate_u32",
-        "down_rp",
-        "down_sfb_rp",
-        "scatter_output",
-        "token_map",
-        "token_weights",
-        "task_expert",
-        "task_valid_rows",
-        "expert_tile_base",
-        "down_alpha",
-        "global_scale",
-        "trellis_lut",
-        "scale_component",
-        "intermediate_tiles",
-        "packed_output_tiles",
-        "max_active_clusters",
-        "stream"
-      ],
-      "class": "P8CoupledPrefillFC2Kernel",
-      "constructor_parameters": [],
-      "instance_attributes": {
-        "full_coupled": true,
-        "shared_bytes": 34816,
-        "shared_words": 8704,
-        "tile_m": 64,
-        "tile_n": 128,
-        "trellis_lut_offset": 34816
-      },
-      "module": "b12x.moe._shared.kernels.p8_coupled_prefill_fc2",
-      "normalized_launch_source": [
-        "grid=(1,1,max_active_clusters*Int32(2))",
-        "min_blocks_per_mp=2"
-      ]
-    }
+ "candidate_launch_abi": {
+  "prefill_fc1": {
+   "call_owner": "b12x.moe._shared.kernels.p8_coupled_prefill_fc1.P8CoupledPrefillFC1Kernel",
+   "call_parameters": [
+    "packed_a_storage",
+    "scale_storage",
+    "w13_rp",
+    "w13_sfb_rp",
+    "intermediate_u32",
+    "token_map",
+    "task_expert",
+    "task_valid_rows",
+    "expert_tile_base",
+    "alpha",
+    "input_global_scale",
+    "trellis_lut",
+    "scale_component",
+    "input_k128_tiles",
+    "intermediate_tiles",
+    "packed_w13_tiles",
+    "max_active_clusters",
+    "stream"
+   ],
+   "class": "P8CoupledPrefillFC1Kernel",
+   "constructor_parameters": [],
+   "instance_attributes": {
+    "full_coupled": true,
+    "owned_n": 128,
+    "shared_bytes": 65536,
+    "shared_words": 16384,
+    "stage_bytes": 17664,
+    "tile_m": 64,
+    "trellis_lut_offset": 65536
+   },
+   "module": "b12x.moe._shared.kernels.p8_coupled_prefill_fc1",
+   "normalized_launch_source": [
+    "grid=(1,1,max_active_clusters)",
+    "min_blocks_per_mp=1"
+   ],
+   "resource_contract": {
+    "allocation_end": 65536,
+    "full_output_fp32_end": 65536,
+    "full_output_fp32_start": 32768,
+    "gate_fp16_end": 16384,
+    "gate_fp16_start": 0,
+    "pipeline_end": 35328,
+    "pipeline_start": 0,
+    "up_fp16_end": 32768,
+    "up_fp16_start": 16384
+   }
   },
-  "encoder_commit": "23a32edaf8aa98333528fe02af3067b9868baa56",
-  "install": {
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/dynamic.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/dynamic.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_topk.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_topk.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_topk.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_h128_fc1.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_h128_fc1.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_narrow_fc1.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_narrow_fc1.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_narrow_fc1.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_small_m.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_small_m.py"
-    ],
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/w4a8_mcg_decode.py": [
-      "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
-      "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_mcg_decode.py"
-    ],
-    "runtime_patch/p8_coupled_prefill_plan.py": [
-      "/opt/p8-coupled-runtime/p8_coupled_prefill_plan.py"
-    ],
-    "runtime_patch/p8_coupled_scales.py": [
-      "/opt/p8-coupled-runtime/p8_coupled_scales.py"
-    ],
-    "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py": [
-      "/opt/p8-coupled-runtime/p8_native_kernel.py"
-    ],
-    "runtime_patch/p8_mixed_rate_image/sitecustomize.py": [
-      "/usr/lib/python3.12/sitecustomize.py"
-    ],
-    "runtime_patch/p8_mixed_rate_image/verify_image.py": [
-      "/opt/p8-coupled-runtime/verify_image.py"
-    ],
-    "runtime_patch/p8_smallm_schedule.py": [
-      "/opt/p8-coupled-runtime/p8_smallm_schedule.py"
-    ]
-  },
-  "integration_base_commit": "336e082785904e4c0c2bd887fe437ae14adad209",
-  "lineage": {
-    "change": "small-M coupled FC1/FC2 kernels take trellis_bits in {3,4,5} with rate-scaled B staging; dynamic small-M gate accepts K3/K4/K5; wrapper accepts bits 3 and serves M>1 on non-K4 layers row by row; K5-capable procedural MCG decoder installed in both import trees; grouped M64 prefill kernels unchanged (K4 only)",
-    "parent_recipe": "runtime_patch/p8_full_coupled_image (v10)"
-  },
-  "parent_image_id": "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745",
-  "parent_phase_abi": {
-    "phases": {
-      "phase1": {
-        "call_parameters": [
-          "packed_a_storage",
-          "scale_storage",
-          "w13_rp",
-          "w13_sfb_rp",
-          "intermediate_u32",
-          "token_map",
-          "task_expert",
-          "task_valid_rows",
-          "expert_tile_base",
-          "alpha",
-          "input_global_scale",
-          "trellis_lut",
-          "trellis_rotations",
-          "input_k128_tiles",
-          "intermediate_tiles",
-          "packed_w13_tiles",
-          "max_active_clusters",
-          "stream"
-        ],
-        "class": "W4A8MaterializedPhase1Kernel",
-        "module": "b12x.moe._shared.kernels.w4a8_phase1",
-        "paths": [
-          "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase1.py",
-          "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_phase1.py"
-        ],
-        "sha256": "7222df68bb6ad7ec5ca69cf7c4ffd5c3d6b1ddc240e6375c4b1e77bcc151909c"
-      },
-      "phase2": {
-        "call_parameters": [
-          "intermediate_u32",
-          "down_rp",
-          "down_sfb_rp",
-          "scatter_output",
-          "token_map",
-          "token_weights",
-          "task_expert",
-          "task_valid_rows",
-          "expert_tile_base",
-          "down_alpha",
-          "global_scale",
-          "trellis_lut",
-          "intermediate_tiles",
-          "packed_output_tiles",
-          "max_active_clusters",
-          "stream"
-        ],
-        "class": "W4A8MaterializedPhase2Kernel",
-        "module": "b12x.moe._shared.kernels.w4a8_phase2",
-        "paths": [
-          "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase2.py",
-          "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_phase2.py"
-        ],
-        "sha256": "be317f7f76153ff5f60d2d1cb76f15dae14e6252a109b2d448e7dd8852f66194"
-      }
-    },
-    "rejected_donor_sha256": [
-      "cb72c50dab933ee866103caf7c32f1a6cfb15df991fcdd8b753ac765551946b1",
-      "ce31085628a8423468a453275f18c3322f8029d35afccb35f5e7060cbab11a7e"
-    ]
-  },
-  "required_import_origins": {
-    "b12x.moe._shared.kernels.dynamic": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py",
-    "b12x.moe._shared.kernels.p8_coupled_prefill_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py",
-    "b12x.moe._shared.kernels.p8_coupled_prefill_fc2": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py",
-    "b12x.moe._shared.kernels.p8_coupled_topk": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_topk.py",
-    "b12x.moe._shared.kernels.p8_h128_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py",
-    "b12x.moe._shared.kernels.p8_narrow_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_narrow_fc1.py",
-    "b12x.moe._shared.kernels.p8_small_m": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py",
-    "b12x.moe._shared.kernels.w4a8_mcg_decode": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
-    "b12x.moe._shared.kernels.w4a8_phase1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase1.py",
-    "b12x.moe._shared.kernels.w4a8_phase2": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase2.py",
-    "p8_coupled_prefill_plan": "/opt/p8-coupled-runtime/p8_coupled_prefill_plan.py",
-    "p8_coupled_scales": "/opt/p8-coupled-runtime/p8_coupled_scales.py",
-    "p8_native_kernel": "/opt/p8-coupled-runtime/p8_native_kernel.py",
-    "p8_smallm_schedule": "/opt/p8-coupled-runtime/p8_smallm_schedule.py",
-    "sitecustomize": "/usr/lib/python3.12/sitecustomize.py"
-  },
-  "runtime_commit": "336e082785904e4c0c2bd887fe437ae14adad209",
-  "schema": "glm53.p8-coupled-image-sources.v11",
-  "source_sha256": {
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/dynamic.py": "62b5b67a06674ea555c4c5a9026e26f26cce30cf2911546299866616e29cc847",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py": "c43517ea2bc3d33b66db720a184730970e503c28a4ab930b7696cdbc04617030",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py": "7aed6e7c6f2b4195982e876d932891d4ed5fabd1ee04d8177d032328721d889c",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_topk.py": "632a3bc4174440c04fb28e6dfcefc8876a16938738811c3487f47e6585c4706d",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_h128_fc1.py": "97dc8c1899bab187918143da1dda7b3397d70fdf710810c79070ed970907ba40",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_narrow_fc1.py": "8bfa5f4ad432fbfdeb3b9281b795f8e52540b16d8dccad9d8d6c9df67e91589f",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_small_m.py": "478c5400d1efd7fd7c301ae4298a139e3c75b95928dc176173fe5d495e48f285",
-    "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/w4a8_mcg_decode.py": "baecc8e9f7ef8ea713b04fb5d3a6c80cc661552083756377b0ad380ebc570a9c",
-    "runtime_patch/p8_coupled_prefill_plan.py": "441fcf1f854899d39da14e5de07e250b0bdfe66cdf5d8de3802df394d4abecaa",
-    "runtime_patch/p8_coupled_scales.py": "5e9220740c30bfbcb47ab0ea0857f820562b95e6a0797ff0fb0868eb6f84a0f2",
-    "runtime_patch/p8_mixed_rate_image/Dockerfile": "dd5b74598aa531a6f65a3b5109edf4a40ce6363dc201c001a0d10d22ef427a0d",
-    "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py": "8b4ffbdca64d38c256a405db31bc8e3e37a4083103c7dd4ffa021dd69d89e598",
-    "runtime_patch/p8_mixed_rate_image/sitecustomize.py": "2b6cbcb5edecf080ea21f5e7e876684d163e52d4766ec377a0c446c3f7d8d2ee",
-    "runtime_patch/p8_mixed_rate_image/verify_image.py": "02711e03331e75a1b5ba6f93e22128086b4a9cfd983e302fcf4de715f558d050",
-    "runtime_patch/p8_smallm_schedule.py": "804fae60a3b2e5fdea31d0fc1f343e545a45a4a3e859d617bc667bf3ea706df6"
-  },
-  "tail_v2": {
-    "path": "/opt/infernal-invocation/vllm/vllm/models/glm5next/nvidia/ops/kpool_compress.py",
-    "sha256": "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
+  "prefill_fc2": {
+   "call_owner": "b12x.moe._shared.kernels.p8_small_m.P8SmallMPhase2Kernel",
+   "call_parameters": [
+    "intermediate_u32",
+    "down_rp",
+    "down_sfb_rp",
+    "scatter_output",
+    "token_map",
+    "token_weights",
+    "task_expert",
+    "task_valid_rows",
+    "expert_tile_base",
+    "down_alpha",
+    "global_scale",
+    "trellis_lut",
+    "scale_component",
+    "intermediate_tiles",
+    "packed_output_tiles",
+    "max_active_clusters",
+    "stream"
+   ],
+   "class": "P8CoupledPrefillFC2Kernel",
+   "constructor_parameters": [],
+   "instance_attributes": {
+    "full_coupled": true,
+    "shared_bytes": 34816,
+    "shared_words": 8704,
+    "tile_m": 64,
+    "tile_n": 128,
+    "trellis_lut_offset": 34816
+   },
+   "module": "b12x.moe._shared.kernels.p8_coupled_prefill_fc2",
+   "normalized_launch_source": [
+    "grid=(1,1,max_active_clusters*Int32(2))",
+    "min_blocks_per_mp=2"
+   ]
   }
+ },
+ "encoder_commit": "23a32edaf8aa98333528fe02af3067b9868baa56",
+ "install": {
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/dynamic.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/dynamic.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_topk.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_topk.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_topk.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_h128_fc1.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_h128_fc1.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_narrow_fc1.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_narrow_fc1.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_narrow_fc1.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_small_m.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_small_m.py"
+  ],
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/w4a8_mcg_decode.py": [
+   "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
+   "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_mcg_decode.py"
+  ],
+  "runtime_patch/p8_coupled_prefill_plan.py": [
+   "/opt/p8-coupled-runtime/p8_coupled_prefill_plan.py"
+  ],
+  "runtime_patch/p8_coupled_scales.py": [
+   "/opt/p8-coupled-runtime/p8_coupled_scales.py"
+  ],
+  "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py": [
+   "/opt/p8-coupled-runtime/p8_native_kernel.py"
+  ],
+  "runtime_patch/p8_mixed_rate_image/sitecustomize.py": [
+   "/usr/lib/python3.12/sitecustomize.py"
+  ],
+  "runtime_patch/p8_mixed_rate_image/verify_image.py": [
+   "/opt/p8-coupled-runtime/verify_image.py"
+  ],
+  "runtime_patch/p8_smallm_schedule.py": [
+   "/opt/p8-coupled-runtime/p8_smallm_schedule.py"
+  ]
+ },
+ "integration_base_commit": "336e082785904e4c0c2bd887fe437ae14adad209",
+ "lineage": {
+  "change": "small-M coupled FC1/FC2 kernels take trellis_bits in {3,4,5} with rate-scaled B staging; dynamic small-M gate accepts K3/K4/K5; wrapper accepts bits 3 and serves M>1 on non-K4 layers row by row; K5-capable procedural MCG decoder installed in both import trees; grouped M64 prefill kernels unchanged (K4 only)",
+  "parent_recipe": "runtime_patch/p8_full_coupled_image (v10)"
+ },
+ "parent_image_id": "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745",
+ "parent_phase_abi": {
+  "phases": {
+   "phase1": {
+    "call_parameters": [
+     "packed_a_storage",
+     "scale_storage",
+     "w13_rp",
+     "w13_sfb_rp",
+     "intermediate_u32",
+     "token_map",
+     "task_expert",
+     "task_valid_rows",
+     "expert_tile_base",
+     "alpha",
+     "input_global_scale",
+     "trellis_lut",
+     "trellis_rotations",
+     "input_k128_tiles",
+     "intermediate_tiles",
+     "packed_w13_tiles",
+     "max_active_clusters",
+     "stream"
+    ],
+    "class": "W4A8MaterializedPhase1Kernel",
+    "module": "b12x.moe._shared.kernels.w4a8_phase1",
+    "paths": [
+     "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase1.py",
+     "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_phase1.py"
+    ],
+    "sha256": "7222df68bb6ad7ec5ca69cf7c4ffd5c3d6b1ddc240e6375c4b1e77bcc151909c"
+   },
+   "phase2": {
+    "call_parameters": [
+     "intermediate_u32",
+     "down_rp",
+     "down_sfb_rp",
+     "scatter_output",
+     "token_map",
+     "token_weights",
+     "task_expert",
+     "task_valid_rows",
+     "expert_tile_base",
+     "down_alpha",
+     "global_scale",
+     "trellis_lut",
+     "intermediate_tiles",
+     "packed_output_tiles",
+     "max_active_clusters",
+     "stream"
+    ],
+    "class": "W4A8MaterializedPhase2Kernel",
+    "module": "b12x.moe._shared.kernels.w4a8_phase2",
+    "paths": [
+     "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase2.py",
+     "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_phase2.py"
+    ],
+    "sha256": "be317f7f76153ff5f60d2d1cb76f15dae14e6252a109b2d448e7dd8852f66194"
+   }
+  },
+  "rejected_donor_sha256": [
+   "cb72c50dab933ee866103caf7c32f1a6cfb15df991fcdd8b753ac765551946b1",
+   "ce31085628a8423468a453275f18c3322f8029d35afccb35f5e7060cbab11a7e"
+  ]
+ },
+ "required_import_origins": {
+  "b12x.moe._shared.kernels.dynamic": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py",
+  "b12x.moe._shared.kernels.p8_coupled_prefill_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py",
+  "b12x.moe._shared.kernels.p8_coupled_prefill_fc2": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py",
+  "b12x.moe._shared.kernels.p8_coupled_topk": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_coupled_topk.py",
+  "b12x.moe._shared.kernels.p8_h128_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py",
+  "b12x.moe._shared.kernels.p8_narrow_fc1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_narrow_fc1.py",
+  "b12x.moe._shared.kernels.p8_small_m": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py",
+  "b12x.moe._shared.kernels.w4a8_mcg_decode": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
+  "b12x.moe._shared.kernels.w4a8_phase1": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase1.py",
+  "b12x.moe._shared.kernels.w4a8_phase2": "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_phase2.py",
+  "p8_coupled_prefill_plan": "/opt/p8-coupled-runtime/p8_coupled_prefill_plan.py",
+  "p8_coupled_scales": "/opt/p8-coupled-runtime/p8_coupled_scales.py",
+  "p8_native_kernel": "/opt/p8-coupled-runtime/p8_native_kernel.py",
+  "p8_smallm_schedule": "/opt/p8-coupled-runtime/p8_smallm_schedule.py",
+  "sitecustomize": "/usr/lib/python3.12/sitecustomize.py"
+ },
+ "runtime_commit": "336e082785904e4c0c2bd887fe437ae14adad209",
+ "schema": "glm53.p8-coupled-image-sources.v11",
+ "source_sha256": {
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/dynamic.py": "62b5b67a06674ea555c4c5a9026e26f26cce30cf2911546299866616e29cc847",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc1.py": "c43517ea2bc3d33b66db720a184730970e503c28a4ab930b7696cdbc04617030",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_prefill_fc2.py": "7aed6e7c6f2b4195982e876d932891d4ed5fabd1ee04d8177d032328721d889c",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_coupled_topk.py": "632a3bc4174440c04fb28e6dfcefc8876a16938738811c3487f47e6585c4706d",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_h128_fc1.py": "97dc8c1899bab187918143da1dda7b3397d70fdf710810c79070ed970907ba40",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_narrow_fc1.py": "8bfa5f4ad432fbfdeb3b9281b795f8e52540b16d8dccad9d8d6c9df67e91589f",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/p8_small_m.py": "478c5400d1efd7fd7c301ae4298a139e3c75b95928dc176173fe5d495e48f285",
+  "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/w4a8_mcg_decode.py": "baecc8e9f7ef8ea713b04fb5d3a6c80cc661552083756377b0ad380ebc570a9c",
+  "runtime_patch/p8_coupled_prefill_plan.py": "441fcf1f854899d39da14e5de07e250b0bdfe66cdf5d8de3802df394d4abecaa",
+  "runtime_patch/p8_coupled_scales.py": "5e9220740c30bfbcb47ab0ea0857f820562b95e6a0797ff0fb0868eb6f84a0f2",
+  "runtime_patch/p8_mixed_rate_image/Dockerfile": "dd5b74598aa531a6f65a3b5109edf4a40ce6363dc201c001a0d10d22ef427a0d",
+  "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py": "4098691054c09a5fabebaf009a1b5fda5aa7cc9893aee2a62d2bac5f147b47c0",
+  "runtime_patch/p8_mixed_rate_image/sitecustomize.py": "2b6cbcb5edecf080ea21f5e7e876684d163e52d4766ec377a0c446c3f7d8d2ee",
+  "runtime_patch/p8_mixed_rate_image/verify_image.py": "02711e03331e75a1b5ba6f93e22128086b4a9cfd983e302fcf4de715f558d050",
+  "runtime_patch/p8_smallm_schedule.py": "804fae60a3b2e5fdea31d0fc1f343e545a45a4a3e859d617bc667bf3ea706df6"
+ },
+ "tail_v2": {
+  "path": "/opt/infernal-invocation/vllm/vllm/models/glm5next/nvidia/ops/kpool_compress.py",
+  "sha256": "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
+ }
 }

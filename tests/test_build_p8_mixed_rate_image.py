@@ -233,6 +233,24 @@ def test_mixed_rate_lineage_parameterizes_every_small_m_rate_gate() -> None:
     assert "if m != 1 and self.trellis_bits != 4:" in wrapper
     site = (ROOT / "runtime_patch/p8_mixed_rate_image/sitecustomize.py").read_text()
     assert "stream=K{runtime.trellis_bits}" in site and "stream=K4 " not in site
+
+
+def test_descriptor_carriers_are_sized_from_the_stored_rate() -> None:
+    """The dummy carriers alias the packed trellis storage, whose row length is bits/8 bytes
+    per weight. A hard-coded hidden // 2 is the K4 case only, and made the K3 loader fail with
+    a shape of 288 x 1024 x 2048 against 452,984,832 actual bytes."""
+    wrapper = (ROOT / "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py").read_text()
+    assert "w13_row_bytes = hidden * self.trellis_bits // 8" in wrapper
+    assert "w2_row_bytes = intermediate * self.trellis_bits // 8" in wrapper
+    assert "experts, 2 * intermediate, w13_row_bytes" in wrapper
+    assert "experts, hidden, w2_row_bytes" in wrapper
+    assert "experts, 2 * intermediate, hidden // 2" not in wrapper
+    assert "experts, hidden, intermediate // 2" not in wrapper
+    # The rate-derived sizes must reproduce the K4 constants exactly and match the observed K3 size.
+    experts, hidden, intermediate = 288, 4096, 512
+    assert experts * 2 * intermediate * (hidden * 4 // 8) == experts * 2 * intermediate * (hidden // 2)
+    assert experts * hidden * (intermediate * 4 // 8) == experts * hidden * (intermediate // 2)
+    assert experts * 2 * intermediate * (hidden * 3 // 8) == 452_984_832
     manifest = json.loads(MANIFEST_PATH.read_text())
     decoder_key = "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/w4a8_mcg_decode.py"
     assert set(manifest["install"][decoder_key]) == {

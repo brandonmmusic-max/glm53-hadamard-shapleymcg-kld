@@ -265,18 +265,23 @@ class P8NativeTPMoE:
             k_dim=intermediate,
         ).reshape(-1)
         # These are descriptor carriers only; they alias the trellis storage
-        # above and therefore add zero payload bytes.
-        w13_dummy_bytes = experts * 2 * intermediate * (hidden // 2)
-        w2_dummy_bytes = experts * hidden * (intermediate // 2)
+        # above and therefore add zero payload bytes.  Their trailing extent is
+        # the PACKED row length, which is bits/8 bytes per weight: hidden // 2
+        # only at K4.  Deriving it from the stored rate keeps K4 byte-identical
+        # while letting K3 and K5 describe their own shorter or longer rows.
+        w13_row_bytes = hidden * self.trellis_bits // 8
+        w2_row_bytes = intermediate * self.trellis_bits // 8
+        w13_dummy_bytes = experts * 2 * intermediate * w13_row_bytes
+        w2_dummy_bytes = experts * hidden * w2_row_bytes
         self.w13_dummy = w13_stream_storage.view(torch.uint8).reshape(-1)[
             :w13_dummy_bytes
         ].reshape(
-            experts, 2 * intermediate, hidden // 2
+            experts, 2 * intermediate, w13_row_bytes
         )
         self.w2_dummy = w2_stream_storage.view(torch.uint8).reshape(-1)[
             :w2_dummy_bytes
         ].reshape(
-            experts, hidden, intermediate // 2
+            experts, hidden, w2_row_bytes
         )
         self.sentinel = torch.zeros(1, dtype=torch.uint8, device=self.device)
         self.zero_lut = torch.zeros(1, dtype=torch.uint8, device=self.device)
