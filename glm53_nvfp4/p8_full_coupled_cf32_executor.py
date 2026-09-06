@@ -183,7 +183,7 @@ def _storage_state(manifest: dict, output: Path) -> dict:
     paths = [Path(p) for p in storage["campaign_paths"]]
     if output not in paths:
         paths.append(output)
-    charged = sum(support.tree_apparent_bytes(path) for path in paths)
+    charged = sum(support.paths_apparent_bytes(paths).values())
     return {"campaign_paths": [str(p) for p in paths], "campaign_apparent_bytes": charged,
             "max_new_bytes": storage["max_new_bytes"], "one_window_raw_bytes": RAW_BYTES,
             "filesystem_free_bytes": shutil.disk_usage(output.parent if not output.exists() else output).free}

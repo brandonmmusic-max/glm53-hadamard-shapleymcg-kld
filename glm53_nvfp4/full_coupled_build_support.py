@@ -88,12 +88,29 @@ def safetensors_header(path: Path) -> tuple[dict[str, str], dict[str, dict], int
     return metadata, header, 8 + length
 
 
-def tree_apparent_bytes(path: Path) -> int:
+def tree_apparent_bytes(path: Path, seen: set[tuple[int, int]] | None = None) -> int:
+    """Apparent bytes under ``path``; a hard-linked file is charged once per ``seen`` set.
+
+    Checkpoints reuse layers by hard link (pilot -> full build -> mixed-rate assembly), so
+    callers that charge several campaign paths against one ceiling pass a shared ``seen``
+    set and the linked bytes count once; a fresh set charges every link.
+    """
     path = Path(path)
     if not path.exists():
         return 0
+    if seen is None:
+        seen = set()
+
+    def charge(st: os.stat_result) -> int:
+        if st.st_nlink > 1:
+            key = (st.st_dev, st.st_ino)
+            if key in seen:
+                return 0
+            seen.add(key)
+        return st.st_size
+
     if path.is_file():
-        return path.lstat().st_size
+        return charge(path.lstat())
     total = 0
     stack = [path]
     while stack:
@@ -105,8 +122,14 @@ def tree_apparent_bytes(path: Path) -> int:
                 if entry.is_dir(follow_symlinks=False):
                     stack.append(Path(entry.path))
                 else:
-                    total += entry.stat(follow_symlinks=False).st_size
+                    total += charge(entry.stat(follow_symlinks=False))
     return total
+
+
+def paths_apparent_bytes(paths) -> dict[str, int]:
+    """Per-path apparent bytes with hard links charged once across all paths (first path wins)."""
+    seen: set[tuple[int, int]] = set()
+    return {str(path): tree_apparent_bytes(Path(path), seen) for path in paths}
 
 
 def utc_now() -> str:
@@ -178,7 +201,7 @@ def cmd_guard(args: argparse.Namespace) -> dict:
     gpus = [int(value) for value in args.gpus.split(",") if value.strip()]
     if gpus:
         result["gpus"] = gpu_idle(gpus)
-    campaign_bytes = sum(tree_apparent_bytes(Path(root)) for root in args.campaign_path)
+    campaign_bytes = sum(paths_apparent_bytes(args.campaign_path).values())
     free_bytes = shutil.disk_usage(args.root).free
     result.update(
         {
@@ -511,7 +534,8 @@ def cmd_ledger(args: argparse.Namespace) -> dict:
         "at": utc_now(),
         "unix": time.time(),
         "note": args.note,
-        "paths": {str(path): tree_apparent_bytes(Path(path)) for path in args.campaign_path},
+        "paths": paths_apparent_bytes(args.campaign_path),
+        "hard_links_charged_once": True,
         "filesystem_free_bytes": shutil.disk_usage(args.root).free,
         "max_new_bytes": args.max_new_bytes,
     }

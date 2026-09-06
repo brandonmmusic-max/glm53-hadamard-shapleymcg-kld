@@ -268,6 +268,23 @@ def test_guard_fails_closed_on_production_gpu_and_budget(tmp_path: Path, monkeyp
         support.cmd_guard(ok)
 
 
+def test_apparent_bytes_charge_hard_links_once_across_campaign_paths(tmp_path: Path):
+    a = tmp_path / "k4" / "sidecars"
+    b = tmp_path / "mixed" / "sidecars"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    (a / "rank-0.safetensors").write_bytes(b"x" * 1000)
+    (a / "rank-1.safetensors").write_bytes(b"y" * 500)
+    (b / "rank-0.safetensors").hardlink_to(a / "rank-0.safetensors")
+    (b / "fresh.safetensors").write_bytes(b"z" * 70)
+    # A fresh set per call charges every link; a shared set charges the linked file once.
+    assert support.tree_apparent_bytes(tmp_path / "k4") == 1500
+    assert support.tree_apparent_bytes(tmp_path / "mixed") == 1070
+    charged = support.paths_apparent_bytes([tmp_path / "k4", tmp_path / "mixed"])
+    assert charged == {str(tmp_path / "k4"): 1500, str(tmp_path / "mixed"): 70}
+    assert sum(charged.values()) == 1570
+
+
 def test_tree_apparent_bytes_ignores_symlinks(tmp_path: Path):
     (tmp_path / "a").write_bytes(b"1234")
     (tmp_path / "sub").mkdir(); (tmp_path / "sub" / "b").write_bytes(b"12")
