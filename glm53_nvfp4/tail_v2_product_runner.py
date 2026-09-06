@@ -165,6 +165,13 @@ def _request(request: dict, port: int, tick, timeout: int) -> dict:
         return value
 
 
+def _check_port_available(port: int) -> None:
+    """Reject a live listener while permitting a prior slot's TIME_WAIT."""
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        probe.bind(("127.0.0.1", port))
+
+
 def _cool_and_inventory(out: Path, expected: list[str]) -> None:
     with (out / "cooldown.jsonl").open("x") as stream:
         deadline = time.monotonic() + 1800
@@ -212,8 +219,7 @@ def run_quality_slot(plan: dict, recipe: dict, entry: dict, root: Path,
         if cold.pilot.command(["docker", "ps", "-a", "--filter", f"name=^/{name}$",
                                "--format", "{{.ID}}"]).stdout.strip():
             raise ValueError("quality container name already exists")
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", QUALITY_PORT))
+        _check_port_available(QUALITY_PORT)
         _cool_and_inventory(out, hardware)
         cold.pilot.save(out / "nvidia-before.xml", cold.pilot.command(["nvidia-smi", "-q", "-x"]).stdout)
         argv = clone_argv(plan, recipe, arm, entry, out, owner, capture_enabled=True,

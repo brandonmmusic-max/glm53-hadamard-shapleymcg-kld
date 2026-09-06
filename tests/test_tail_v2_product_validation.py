@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import socket
 
 import numpy as np
 import pytest
@@ -139,6 +140,19 @@ def test_determinism_failure_is_visible_not_averaged(tmp_path):
     result = subject.verify_five_run_determinism(tmp_path.resolve(), windows)
     assert result["status"] == "fail"
     assert sum(not row["bitwise_deterministic"] for row in result["rows"]) == 1
+
+
+def test_quality_port_probe_permits_time_wait_but_rejects_listener():
+    from glm53_nvfp4 import tail_v2_product_runner as runner
+
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        listener.listen(1)
+        with pytest.raises(OSError):
+            runner._check_port_available(port)
+    runner._check_port_available(port)
 
 
 def test_quality_lifecycle_scores_and_retires_before_next_request(tmp_path, monkeypatch):

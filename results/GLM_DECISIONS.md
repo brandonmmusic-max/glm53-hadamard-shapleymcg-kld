@@ -1549,6 +1549,22 @@ confirmation, and final roles remained unopened for this redesign branch.
   remains unscheduled and must be announced before start; its estimated full
   checkpoint size exceeds the 30 GB unapproved storage cap.
 
+## 2026-09-05: Decision 70 — preserve Tail-V2 CF32 v1a and amend TIME_WAIT only
+
+- The first v1a EXL3 cold process completed and scored all 32 balanced
+  conditional-fit windows. Its slot exit code is zero and all raw logits were
+  retired only after durable score receipts.
+- P8 did not create or start a container. The runner's plain localhost bind
+  rejected port 8030 while the completed EXL3 connection remained in TCP
+  `TIME_WAIT`; production state restored exactly and no protected role opened.
+- Preserve v1a as failed operational evidence and do not use its EXL3 scores
+  in the next analysis. Amendment v1b changes only the non-listening port
+  probe to set `SO_REUSEADDR`, never `SO_REUSEPORT`, and closes it before
+  container creation. This permits `TIME_WAIT` but still rejects a listener.
+- Restart the complete frozen order under a fresh v1b output. Images, Tail-V2
+  patch, CF32, KLD metric, determinism, speed, topology, activation precision,
+  bpw, storage and decision rules remain unchanged.
+
 ## 2026-09-03: uniform rotation
 
 - The original KLD 2.93661 result was invalidated. A sparse overlay was loaded
