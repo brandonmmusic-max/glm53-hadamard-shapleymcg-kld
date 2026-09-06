@@ -57,6 +57,8 @@ def _rules(extra_roots: dict[str, str]) -> list[tuple[str, re.Pattern[str], str]
         ("worktree", re.compile(r"/home/[^\s\"'<>]*?/\.[^/\s\"'<>]+/worktrees/([^/\s\"'<>]+)(?=/|\b)"), r"<worktree:\1>"),
         ("home", re.compile(r"/home/[^/\s\"'<>]+(?=/|\b)"), "<home>"),
         ("media", re.compile(r"/media/[^/\s\"'<>]+(?=/|\b)"), "<media>"),
+        # Container-internal home; appears in runtime manifests as the image's cache root.
+        ("container_home", re.compile(r"/root(?=/|\b)"), "<container-home>"),
         ("tmp", re.compile(r"/tmp(?=/|\b)"), "<tmp>"),
     ]
     return rules
@@ -121,7 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         target.write_bytes(data)
     manifest = {"schema": MANIFEST_SCHEMA, "placeholders": {"repo": "<repo>", **{k: f"<{k}>" for k in sorted(roots)},
                                                               "scratch": "<scratch>", "worktree": "<worktree:NAME>",
-                                                              "home": "<home>", "media": "<media>", "tmp": "<tmp>"},
+                                                              "home": "<home>", "media": "<media>",
+                                                              "container_home": "<container-home>", "tmp": "<tmp>"},
                 "files": sorted(records, key=lambda r: r["dest"])}
     (args.output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
     print(json.dumps({"files": len(records), "output_dir": str(args.output_dir), "manifest": MANIFEST_NAME}))

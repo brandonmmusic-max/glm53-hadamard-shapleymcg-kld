@@ -23,6 +23,10 @@ def test_known_roots_become_placeholders_most_specific_first(tmp_path: Path):
     assert data["scratch"] == "<scratch>/log.txt"
     assert data["other"] == "<worktree:other-branch>/file.py"
     assert data["store"] == "<media>/x" and data["tmp"] == "<tmp>/thing" and data["plain"] == "<home>/models/M"
+    # A container-internal home is a real path in runtime manifests, not a personal one.
+    container, counts_c = scrub.scrub_text("/root/.cache/huggingface and /rootfs/keep", {})
+    assert container == "<container-home>/.cache/huggingface and /rootfs/keep"
+    assert counts_c["container_home"] == 1
     assert counts["repo"] == 2 and counts["campaign"] == 1 and counts["scratch"] == 1 and counts["worktree"] == 1
 
 

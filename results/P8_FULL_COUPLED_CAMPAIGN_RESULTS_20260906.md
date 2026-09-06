@@ -1,0 +1,279 @@
+# Full 42-layer coupled TrellisMX P8: build, fidelity protocol and measured results
+
+Status 2026-09-06 08:30 EDT. Phase 0 is complete and measured. Phase 1 (same-size K3/K4/K5
+reallocation) is running; its measured result will be appended, not substituted for a prediction.
+
+Everything below is read from a receipt on the campaign volume. Where a number is a prediction
+from a proxy rather than a measurement it says so in the same sentence.
+
+## 1. What was built
+
+A coupled TrellisMX P8 checkpoint covering **every routed layer, 3 through 44**, replacing the
+earlier three-layer pilot. Each layer is stored as four tensor-parallel rank files.
+
+| Quantity | Value |
+|---|---:|
+| Routed layers | 42 |
+| Rank files | 168 |
+| Logical routed weights | 304,405,807,104 |
+| Weight payload | 161,715,585,024 B (4.25 bpw exactly) |
+| Coupled metadata | 151,436,544 B (0.00398 bpw) |
+| safetensors headers | 551,040 B |
+| Total file bytes | 161,867,572,608 |
+| Stored rate including metadata | 4.253979859528719 bpw |
+| Manifest sha256 | `2b81f12f1730b12ed66a21407c81d281b939a4efa7bbfe46efacb06e34033978` |
+
+Boundary: `coupled-h512-h128-suh-svh-v1`, that is an H512 input Hadamard, the exact EXL3 suh/svh
+scales, an H128 output Hadamard, sign draw 0 and a SiLU cap of 10. Transform predeclaration
+sha256 `093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12`.
+
+Two encoder designs are pinned in the manifest, and the runtime accepts only these two hashes:
+
+| Design sha256 | Layers |
+|---|---:|
+| `23fba55049279860d0038583660ecad6625885df08f6a521217ce9e8fe71aa74` | 39 |
+| `4ebb96dd9d555fc18f24fb5f4d380216e1de30327a68d7aae89fc10f41878695` | 3 |
+
+The three layers on the second design (3, 20 and 22) were encoded during the pilot and are
+hard-linked rather than re-encoded; their reuse receipts record the source directory and the
+sha256 of every linked file.
+
+### Byte constraint that governs Phase 1
+
+The coupled checkpoint is **151,865,280 B larger** than the identity K4 checkpoint files
+(161,715,707,328 B), because the coupled metadata is real signed scale data and is not
+sign-packable. At layer granularity one rate step is 905,969,664 B, so holding the identity
+budget requires at least one more K3 layer than K5 layers. The solver derives this rather than
+assuming it: the maximum admissible net offset `#K5 - #K3` is **-1**.
+
+## 2. Fidelity protocol
+
+Quality is measured with the sealed CF32 conditional-fit protocol, unchanged from earlier work:
+
+* 32 windows, roles sha256 `b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14`,
+  8 windows in each of four domains;
+* 2,047 forced-decode rows per window; row 0 is excluded from the true-decode metric because it
+  is the prefill position;
+* teacher logits are the stored BF16 reference; KL(teacher || student) is accumulated in FP64 on
+  CPU, never on device;
+* the window interval is a bias-corrected and accelerated bootstrap over windows, B = 20,000,
+  seed 20260902;
+* raw logit captures are streamed **one window at a time** (1,268,157,440 B each) and each is
+  unlinked only after its score and hash receipt are durable, so the protocol never needs the
+  dense 32-window capture on disk.
+
+Execution is sealed before it runs. The preparer writes a runtime manifest binding the image id,
+the checkpoint manifest, every sidecar hash, the design hashes, the transform, the roles and the
+teacher root; the executor authenticates that manifest, writes a seal, and refuses to run if the
+window order, arm order or image id differs from the seal. For this run:
+
+| Artifact | sha256 |
+|---|---|
+| Runtime manifest | `ba431792ca46dd4f613f1ee74f133e3699c4766b509a6a5b7c9889894308e32b` |
+| Execution seal | `2b027c2495f2f0f88e9f3cf256af850d0afc153d5f03ac80f3b241ed779c1d42` |
+| Analysis | `cf12e503eca9491d792a1fb9b30341e97f13938870be95f07218f61294619213` |
+
+The runtime log gate additionally verifies all 168 layer/rank pairs loaded, the per-layer design
+hash and the per-layer stored rate, so a checkpoint cannot be measured under a runtime that
+silently substituted anything.
+
+### Runtime conditions actually recorded
+
+| Condition | Value |
+|---|---|
+| Image | `sha256:859d180f14740ef70ef452e1a07a57895bd87500c41559ac5cffb1708dab5fbb` |
+| Attention | B12X_MLA_SPARSE |
+| KV cache | nvfp4_ds_mla |
+| MoE backend | native-p8-mxf8f6f4-n128-coupled-h512-h128-suh-svh-v1 |
+| Activations | E4M3, UE8M0 K32 scales, at native P8 MMA boundaries |
+| Layers | 3-44, stored rate K4 |
+
+Production was off for the entire campaign: the backend service and the model-stack timer stayed
+inactive and port 8000 stayed unbound.
+
+## 3. Measured result: uniform coupled K4
+
+| Metric | Value |
+|---|---:|
+| True-decode mean KLD | **0.036967452439595275** |
+| Mean including row 0 | 0.037951788543825330 |
+| Window BCa 95% | 0.031308303958108 to 0.044597445871382 |
+| Windows | 32 |
+
+Per domain:
+
+| Domain | KLD |
+|---|---:|
+| axis1_general | 0.037460 |
+| axis2_legal | 0.053656 |
+| axis3_code_agentic | 0.033627 |
+| axis4_reasoning_termination | 0.023126 |
+
+### Paired against prior arms on the identical 32 windows
+
+Both reference arms were measured with the **same KV cache (nvfp4_ds_mla) and the same attention
+backend**, so the comparison is not confounded by the cache. They ran under the tail-repair v2
+image rather than the v10 coupled image, so this is a matched-window comparison, not a
+matched-condition one, and it is reported as descriptive rather than as a preregistered contrast.
+The reference values are the mean of the three product-validation repeats.
+
+| Comparison | Mean | Paired difference | 95% interval | Coupled better in |
+|---|---:|---:|---|---:|
+| Coupled K4 (this run) | 0.036967 | — | — | — |
+| Identity K4 P8 | 0.037310 | -0.000342 (-0.92%) | -0.003438 to +0.002154 | 17 of 32 |
+| EXL3 4.0 bpw | 0.031300 | +0.005667 (+18.1%) | +0.001882 to +0.009357 | 9 of 32 |
+
+Interval is a percentile bootstrap of the paired per-window difference, 20,000 resamples,
+seed 20260906.
+
+**Reading.** Against the identity P8 the interval spans zero: the coupled boundary is **level**,
+not better. The honest claim is that coupling all 42 layers cost nothing, which matters because
+the rebuild existed to make coupling possible at full model scope. Against EXL3 at 4.0 bpw the
+interval excludes zero: EXL3 is genuinely ahead by about 18% relative on this path, and the
+coupled boundary did not close that gap.
+
+### Per window
+
+| Window | Coupled K4 | Identity P8 | EXL3 4bpw | Coupled minus identity |
+|---|---:|---:|---:|---:|
+| 0003 | 0.025792 | 0.027817 | 0.029270 | -0.002026 |
+| 0008 | 0.082805 | 0.086353 | 0.058019 | -0.003548 |
+| 0009 | 0.052474 | 0.052213 | 0.033092 | +0.000262 |
+| 0010 | 0.016554 | 0.017403 | 0.024262 | -0.000850 |
+| 0011 | 0.018423 | 0.018976 | 0.018808 | -0.000553 |
+| 0021 | 0.048571 | 0.045595 | 0.029681 | +0.002976 |
+| 0030 | 0.025483 | 0.025570 | 0.037592 | -0.000087 |
+| 0031 | 0.018279 | 0.020648 | 0.019321 | -0.002369 |
+| 0032 | 0.040619 | 0.024201 | 0.019419 | +0.016418 |
+| 0035 | 0.034341 | 0.042824 | 0.026428 | -0.008483 |
+| 0040 | 0.048365 | 0.043390 | 0.029945 | +0.004976 |
+| 0041 | 0.091949 | 0.084970 | 0.075859 | +0.006979 |
+| 0046 | 0.067506 | 0.066718 | 0.058816 | +0.000788 |
+| 0047 | 0.022345 | 0.023402 | 0.025080 | -0.001057 |
+| 0051 | 0.014229 | 0.016011 | 0.019251 | -0.001782 |
+| 0055 | 0.022519 | 0.022812 | 0.022038 | -0.000293 |
+| 0056 | 0.042927 | 0.042746 | 0.035134 | +0.000181 |
+| 0060 | 0.020507 | 0.019369 | 0.014176 | +0.001138 |
+| 0062 | 0.030274 | 0.030267 | 0.025838 | +0.000007 |
+| 0063 | 0.029081 | 0.033704 | 0.025971 | -0.004623 |
+| 0074 | 0.048627 | 0.085245 | 0.029017 | -0.036618 |
+| 0080 | 0.043521 | 0.048032 | 0.029742 | -0.004511 |
+| 0081 | 0.028723 | 0.022449 | 0.052494 | +0.006274 |
+| 0083 | 0.034011 | 0.035517 | 0.033193 | -0.001506 |
+| 0090 | 0.045199 | 0.051138 | 0.039649 | -0.005939 |
+| 0094 | 0.021712 | 0.023294 | 0.016786 | -0.001582 |
+| 0098 | 0.049120 | 0.049472 | 0.038676 | -0.000352 |
+| 0099 | 0.016895 | 0.012871 | 0.013902 | +0.004024 |
+| 0100 | 0.026918 | 0.024562 | 0.024577 | +0.002357 |
+| 0113 | 0.060976 | 0.048378 | 0.038902 | +0.012598 |
+| 0118 | 0.015827 | 0.013658 | 0.010768 | +0.002168 |
+| 0123 | 0.038385 | 0.034301 | 0.045908 | +0.004084 |
+
+## 4. Shapley attribution method and its verification
+
+Per-layer payoff is the fit-role routed-output damage
+
+    D_L = sum_t || sum_e w_te ( f_q,e(x_t) - f_e(x_t) ) ||^2
+
+on 3,072 fit tokens (48 per window, 64 windows of the fit role), in residual-stream units with
+quantized E4M3 carriers. Within a layer the per-expert credit is the **exact** Shapley value of
+the per-token quadratic game v(C) = || sum_{e in C} z_e ||^2, which has the closed form
+psi_e = sum_t <z_e(t), S(t)>, so the expert shares sum to the layer damage exactly. The
+implementation is checked against brute-force enumeration over all player orderings in the test
+suite, and every damage receipt carries a closure assertion that fails the run if it does not
+hold. Observed closure on the first three layers:
+
+| Layer | Sum of expert shares | Layer damage |
+|---|---:|---:|
+| 3 | 28510.713174493954 | 28510.713174493950 |
+| 4 | 578.6717597712234 | 578.6717597712233 |
+| 5 | 744.9510276175723 | 744.9510276175722 |
+
+The decode path used by the scorer is independently validated: for layers with encoder chunk
+receipts it recomputes all **864 per-projection NMSE values** and compares them to the encoder's
+own receipts, and the K3 and K5 chunk-stream decode was checked on CPU against the smoke-encode
+receipts to a worst relative difference of 5.5e-8.
+
+**Boundary of the claim.** These shares sum exactly to the layer's routed-output damage. They do
+**not** sum to the model KLD, and no claim is made that they do. Across layers the allocation
+treats the damage as additive; the end-to-end KLD of the installed allocation is the only quality
+claim, which is why it is measured rather than predicted.
+
+Protocol hashes for the damage pass: fit roles
+`85cb6f8d29151863457830e41a141743feabcd69706a231d89cd01a3e02175c9`, capture manifest
+`f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a`, EXL3 scale source
+`092be1ffa8db66bf02d4c370d0433a57aa48d4a6e5ce89723ef6a3bb7ca32643`.
+
+## 5. Measured layer damage
+
+All 42 layers were scored at K4 with no new encoding, since the K4 sidecars already exist.
+
+| Quantity | Value |
+|---|---:|
+| Total K4 routed-output damage | 715,466 |
+| Highest layer (29) | 115,230 |
+| Lowest layer (12) | 442 |
+| Ratio, highest to lowest | 261 |
+
+Damage is heavily concentrated: the 16 layers selected for upgrade hold **89.5%** of the total,
+while the 17 selected for downgrade hold **2.8%**. That concentration is what makes a same-size
+swap arithmetically plausible here, and it is measured, not assumed.
+
+## 6. Assumed versus measured rate ratios
+
+The candidate screen used ratios taken from single-layer weight error: K3 at 3.76x and K5 at
+0.285x the K4 damage. The K5 side has now been measured on 19 layers:
+
+| Statistic | Measured K5/K4 damage ratio |
+|---|---:|
+| Minimum | 0.2292 |
+| Median | 0.3348 |
+| Mean | 0.3623 |
+| Maximum | 0.5888 |
+
+The assumed 0.285 was optimistic by roughly 18%. Recomputing the predicted swap with **measured**
+K5 damage and the still-assumed K3 penalty gives a predicted change in the proxy of **-51.2%**
+against -56.3% under the assumption. The K3 side is being measured now; it is the half of the
+ledger that could still overturn the sign.
+
+## 7. Controls that gate the campaign
+
+* **Storage.** Every build step passes a guard that recomputes the campaign's apparent bytes and
+  refuses to proceed unless the total plus the step's reservation stays under the owner-set
+  ceiling of 400,000,000,000 B and free space exceeds the need plus a 10 GB floor. Hard-linked
+  files are charged once across campaign paths, so link-only assembly cannot double-count the
+  161 GB checkpoint. Two reclaim receipts record every deletion with file counts and byte totals.
+* **Thermal.** Encoder workers are stopped and resumed by signal at 90 C and 85 C; every event is
+  journaled with layer, GPU, pid and temperature.
+* **Production.** Every guard invocation re-checks that the backend service and model-stack timer
+  are inactive; the model-stack lock is held for the duration of each GPU phase.
+* **Overwrite safety.** Encoder, packer, verifier and scorer all refuse to overwrite an existing
+  output; a partially written layer is detected and the run stops rather than silently repairing.
+* **Determinism.** Layer completion re-derives the exact 4.25 bpw arithmetic from file sizes
+  (`weight_bytes * 32 == 17 * logical_elements`) rather than trusting metadata, and cross-checks
+  the metadata bpw against it.
+
+## 8. Incidents during the campaign
+
+Recorded because they affect provenance, not because they changed a result.
+
+1. **Host low-memory policy** stopped the encode and orchestrator at 23:21 on 09-05 while 445 GB
+   of memory was available. Layer 16's four chunks and receipts were intact; the interrupted pack
+   left three partial rank files, which were removed and journaled in
+   `<k4 root>/receipts/pack-restarts.jsonl` before the pack was rerun from the retained chunks.
+   All long-running jobs were relaunched detached and were never interrupted again.
+2. **Preparer defect,** introduced when the arm selector was added: the canonical-path check
+   tried to resolve the arm name as a path, aborting the first handoff at 02:56 on 09-06. Fixed,
+   with a regression test that drives the preparer entry point with an arm argument. The failure
+   happened before any output was written, so no partial capture root existed and the retry was
+   clean.
+
+## 9. Still running
+
+The K3 candidate encodes, then the final allocation from measured damage only, assembly by hard
+link, the allocated model's CF32 KLD on the v11 mixed-rate image, and two diagnostic arms
+isolating the downgrade cost from the upgrade benefit. Kernel note: the mixed-rate lineage
+differs from the pinned K4 kernel only in accepting rates 3, 4 and 5 and rescaling the shared
+memory staging accordingly; at rate 4 the new expressions evaluate to exactly the inherited
+constants, so K4 behaviour is unchanged. K3 and K5 must still pass an M1 device closure against a
+CPU reference before anything is installed.
