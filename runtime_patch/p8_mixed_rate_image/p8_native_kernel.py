@@ -493,11 +493,10 @@ class P8NativeTPMoE:
         m = int(x.shape[0])
         if tuple(topk_ids.shape) != (m, self.topk) or tuple(topk_weights.shape) != (m, self.topk):
             raise RuntimeError("P8 native routing shape mismatch")
-        if m != 1 and self.trellis_bits != 4:
-            if not self.small_m_scheduler:
-                raise RuntimeError("P8 K3/K5 layers require the small-M owner path")
-            rows = [self(x[i : i + 1], topk_weights[i : i + 1], topk_ids[i : i + 1]) for i in range(m)]
-            return torch.cat(rows, dim=0)
+        # Every stored rate now has a fused grouped M64/N128 owner, so a non-K4 layer at M>1
+        # runs the same native path as K4 rather than looping the M1 kernel row by row. The
+        # row-by-row fallback is deliberately gone: a rate without a grouped specialization
+        # must fail closed instead of silently serving at a fraction of the speed.
         if self.scale_component is not None and not self.full_coupled and m != 1:
             raise RuntimeError("P8 scale sandwich currently supports M=1 only")
         # Match the W4A8 planner's measured M16-to-M64 transition: sparse

@@ -233,7 +233,8 @@ def test_mixed_rate_lineage_parameterizes_every_small_m_rate_gate() -> None:
     wrapper = (ROOT / "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py").read_text()
     assert 'bits_text not in {"3", "4", "5"}' in wrapper
     assert "K4-only small-M specialization" not in wrapper
-    assert "if m != 1 and self.trellis_bits != 4:" in wrapper
+    # M>1 on a non-K4 layer now runs the fused grouped owner; the row-by-row loop is gone.
+    assert "if m != 1 and self.trellis_bits != 4:" not in wrapper
     site = (ROOT / "runtime_patch/p8_mixed_rate_image/sitecustomize.py").read_text()
     assert "stream=K{runtime.trellis_bits}" in site and "stream=K4 " not in site
 
@@ -275,3 +276,38 @@ def test_descriptor_carriers_are_sized_from_the_stored_rate() -> None:
         "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
         "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/w4a8_mcg_decode.py",
     }
+
+def test_grouped_prefill_owners_are_rate_parameterized_and_no_row_by_row_fallback() -> None:
+    """K5 must serve M>1 through the fused grouped M64/N128 owner, not a row-by-row loop.
+
+    Before this, a non-K4 layer looped the M1 kernel once per row for every batch larger than
+    one token, which is correct but a fraction of the speed and would have made any prefill or
+    concurrent-decode measurement meaningless.
+    """
+    kernels = ROOT / "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels"
+    fc1 = (kernels / "p8_coupled_prefill_fc1.py").read_text()
+    fc2 = (kernels / "p8_coupled_prefill_fc2.py").read_text()
+    for text, label in ((fc1, "FC1"), (fc2, "FC2")):
+        assert "def __init__(self, *, trellis_bits: int = 4)" in text, label
+        assert "trellis_bits=int(trellis_bits)" in text, label
+        assert "supports K3, K4 or K5 streams" in text, label
+    assert "self.shared_words = (self.shared_bytes + 3) // 4" in fc2, "FC2 must re-derive its launch size"
+    dynamic = (kernels / "dynamic.py").read_text()
+    assert "P8CoupledPrefillFC1Kernel(trellis_bits=trellis_bits)" in dynamic
+    assert "P8CoupledPrefillFC2Kernel(trellis_bits=trellis_bits)" in dynamic
+    wrapper = (ROOT / "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py").read_text()
+    assert "if m != 1 and self.trellis_bits != 4:" not in wrapper, "row-by-row fallback must be gone"
+    assert "rows = [self(x[i : i + 1]" not in wrapper
+
+    # The rate-scaled FC2 staging must reproduce the K4 class constants exactly and fit in
+    # SM120 dynamic shared memory (227 KB) at every rate.
+    a_stage = 64 * 128 + 64 * 4
+    b_storage_offset = ((2 * a_stage + 1023) // 1024) * 1024
+    for bits, expected_stage in ((3, 6144), (4, 8192), (5, 10240)):
+        b_stage = 2048 * bits
+        assert b_stage == expected_stage
+        shared = b_storage_offset + 2 * b_stage + 2 * (16 * 8 * 4)
+        assert shared < 227 * 1024
+        if bits == 4:
+            assert b_stage == 128 * 128 // 2
+            assert shared == b_storage_offset + 2 * (128 * 128 // 2) + 2 * (16 * 8 * 4)

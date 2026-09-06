@@ -1279,8 +1279,8 @@ class MoEDynamicKernelBackend:
             from b12x.moe._shared.kernels.p8_coupled_prefill_fc2 import (
                 P8CoupledPrefillFC2Kernel,
             )
-            self.materialized_phase1_kernel = P8CoupledPrefillFC1Kernel()
-            self.materialized_phase2_kernel = P8CoupledPrefillFC2Kernel()
+            self.materialized_phase1_kernel = P8CoupledPrefillFC1Kernel(trellis_bits=trellis_bits)
+            self.materialized_phase2_kernel = P8CoupledPrefillFC2Kernel(trellis_bits=trellis_bits)
         elif self.p8_scale_sandwich:
             from b12x.moe._shared.kernels.p8_h128_fc1 import P8H128FC1Kernel
             self.materialized_phase1_kernel = P8H128FC1Kernel(

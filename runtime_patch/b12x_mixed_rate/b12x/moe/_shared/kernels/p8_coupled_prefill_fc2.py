@@ -31,6 +31,8 @@ class P8CoupledPrefillFC2Kernel(P8SmallMPhase2Kernel):
     a_stage_bytes = a_payload_bytes + a_scale_bytes
     a_storage_bytes = 2 * a_stage_bytes
     b_storage_offset = ((a_storage_bytes + 1023) // 1024) * 1024
+    # Class constants are the K4 case; __init__ rescales B and everything after it
+    # from the stored rate, and at K4 the recomputed values equal these exactly.
     b_stage_bytes = 128 * 128 // 2
     b_storage_bytes = 2 * b_stage_bytes
     sfb_storage_offset = b_storage_offset + b_storage_bytes
@@ -38,10 +40,15 @@ class P8CoupledPrefillFC2Kernel(P8SmallMPhase2Kernel):
     shared_bytes = sfb_storage_offset + 2 * sfb_stage_bytes
     shared_words = (shared_bytes + 3) // 4
 
-    def __init__(self) -> None:
-        super().__init__(scale_sandwich=True, full_coupled=True)
+    def __init__(self, *, trellis_bits: int = 4) -> None:
+        if int(trellis_bits) not in (3, 4, 5):
+            raise ValueError("coupled P8 prefill FC2 supports K3, K4 or K5 streams")
+        super().__init__(scale_sandwich=True, full_coupled=True, trellis_bits=int(trellis_bits))
         if (self.tile_m, self.tile_n, self.source_tile_m) != (64, 128, 64):
             raise ValueError("coupled P8 prefill FC2 requires exact M64/N128")
+        # The parent recomputes b_stage/b_storage/sfb_offset/shared from the rate using this
+        # subclass's own b_storage_offset; re-derive shared_words so the launch matches.
+        self.shared_words = (self.shared_bytes + 3) // 4
 
     @cute.kernel
     def kernel(

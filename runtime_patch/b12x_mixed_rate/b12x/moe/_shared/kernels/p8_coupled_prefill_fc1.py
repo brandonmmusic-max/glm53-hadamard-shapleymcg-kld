@@ -3,8 +3,11 @@
 This specializes the CPU/static-validated N128 owner used by decode.  It
 changes only M ownership and grouped-task traversal: four M16 MMA fragments
 cover an M64 tile, while every H128 transform remains inside one CTA.  The
-K4 procedural-MCG stream, E4M3/UE8M0/32 operands and native mxf8f6f4 MMA are
-unchanged.  Device closure is deliberately still required before enablement.
+procedural-MCG stream, E4M3/UE8M0/32 operands and native mxf8f6f4 MMA are
+unchanged; the stored rate comes from ``trellis_bits`` and only rescales the
+B-operand staging, exactly as on the decode owner, so K4 is bit-identical to
+the pre-rate build.  Device closure is deliberately still required before
+enablement, and the M1 closure does not exercise this grouped path.
 """
 from __future__ import annotations
 
@@ -26,8 +29,10 @@ class P8CoupledPrefillFC1Kernel(P8H128FC1Kernel):
     mma_m_blocks = 4
     owned_row_groups = 16
 
-    def __init__(self) -> None:
-        super().__init__(full_coupled=True)
+    def __init__(self, *, trellis_bits: int = 4) -> None:
+        if int(trellis_bits) not in (3, 4, 5):
+            raise ValueError("coupled P8 prefill FC1 supports K3, K4 or K5 streams")
+        super().__init__(full_coupled=True, trellis_bits=int(trellis_bits))
         if (self.tile_m, self.owned_n, self.source_tile_m) != (64, 128, 64):
             raise ValueError("coupled P8 prefill FC1 requires exact M64/N128")
 
