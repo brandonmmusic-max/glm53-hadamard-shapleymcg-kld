@@ -684,6 +684,40 @@ def _run(command: Sequence[str], *, check: bool = True) -> subprocess.CompletedP
     return subprocess.run(command, text=True, capture_output=True, check=check)
 
 
+def probe_command(args, repo: Path) -> list[str]:
+    """Argv for the in-container probe.
+
+    Every probe-relevant option the outer parser accepts must be forwarded here; a flag
+    added to the parser but not to this list silently runs the probe with its default.
+    """
+    return [
+        "docker", "run", "--rm", "--gpus", f"device={args.gpu_device}",
+        "--network=none", "--ipc=private", "--shm-size=1g",
+        "-e", "PYTHONPATH=/opt/p8-coupled-runtime:/work",
+        "-e", "OMP_NUM_THREADS=2",
+        "-e", "GLM53_P8_NATIVE=", "-e", "GLM53_P4_NATIVE=",
+        "-v", f"{repo}:/work:ro",
+        "-v", f"{args.sidecar}:/inputs/sidecar.safetensors:ro",
+        "-v", f"{args.design}:/inputs/design.json:ro",
+        "-v", f"{args.transform}:/inputs/transform.json:ro",
+        "-v", f"{args.output}:/out:rw",
+        "--entrypoint", "/opt/venv/bin/python", args.image,
+        "/work/scripts/run_p8_mixed_rate_m1_device_closure.py", "--probe",
+        "--bits", str(args.bits),
+        "--layer", str(args.layer),
+        "--image-id", args.image,
+        "--sidecar", "/inputs/sidecar.safetensors",
+        "--sidecar-sha256", args.sidecar_sha256,
+        "--design", "/inputs/design.json",
+        "--design-sha256", args.design_sha256,
+        "--transform", "/inputs/transform.json",
+        "--transform-sha256", args.transform_sha256,
+        "--runtime-manifest", "/opt/p8-coupled-runtime/image-manifest.json",
+        "--runtime-manifest-sha256", args.runtime_manifest_sha256,
+        "--output", "/out/result.json",
+    ]
+
+
 def outer_execute(args: argparse.Namespace) -> None:
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.image):
         raise ValueError("--image must be an immutable sha256 image ID")
@@ -734,31 +768,7 @@ def outer_execute(args: argparse.Namespace) -> None:
 
     args.output.mkdir(mode=0o700, parents=True)
     repo = Path(__file__).resolve().parents[1]
-    command = [
-        "docker", "run", "--rm", "--gpus", f"device={args.gpu_device}",
-        "--network=none", "--ipc=private", "--shm-size=1g",
-        "-e", "PYTHONPATH=/opt/p8-coupled-runtime:/work",
-        "-e", "OMP_NUM_THREADS=2",
-        "-e", "GLM53_P8_NATIVE=", "-e", "GLM53_P4_NATIVE=",
-        "-v", f"{repo}:/work:ro",
-        "-v", f"{args.sidecar}:/inputs/sidecar.safetensors:ro",
-        "-v", f"{args.design}:/inputs/design.json:ro",
-        "-v", f"{args.transform}:/inputs/transform.json:ro",
-        "-v", f"{args.output}:/out:rw",
-        "--entrypoint", "/opt/venv/bin/python", args.image,
-        "/work/scripts/run_p8_mixed_rate_m1_device_closure.py", "--probe",
-        "--bits", str(args.bits),
-        "--image-id", args.image,
-        "--sidecar", "/inputs/sidecar.safetensors",
-        "--sidecar-sha256", args.sidecar_sha256,
-        "--design", "/inputs/design.json",
-        "--design-sha256", args.design_sha256,
-        "--transform", "/inputs/transform.json",
-        "--transform-sha256", args.transform_sha256,
-        "--runtime-manifest", "/opt/p8-coupled-runtime/image-manifest.json",
-        "--runtime-manifest-sha256", args.runtime_manifest_sha256,
-        "--output", "/out/result.json",
-    ]
+    command = probe_command(args, repo)
     launch = {
         "schema": "glm53.p8-mixed-rate-m1-device-launch.v1",
         "bits": args.bits,

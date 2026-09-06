@@ -155,3 +155,36 @@ def test_actual_wrapper_debug_contract_is_required_not_optional() -> None:
         "packed_a", "scale_flat", "intermediate_u32", "route_output",
         "token_map", "row_counts", "expert_tile_base",
     }
+
+def test_every_probe_option_is_forwarded_into_the_container() -> None:
+    """A flag added to the parser but not to the container argv silently uses its default.
+
+    That is exactly how the K3 closure ran against layer 3 while being handed a layer-4
+    sidecar, so the forwarding is asserted rather than assumed.
+    """
+    import importlib.util
+    from pathlib import Path as _Path
+
+    spec = importlib.util.spec_from_file_location("closure", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    args = module.parse_args([
+        "--execute", "--image", "sha256:" + "a" * 64, "--gpu-device", "0",
+        "--sidecar", "/tmp/s.safetensors", "--sidecar-sha256", "b" * 64,
+        "--design", "/tmp/d.json", "--design-sha256", "c" * 64,
+        "--transform", "/tmp/t.json", "--transform-sha256", "d" * 64,
+        "--runtime-manifest-sha256", "e" * 64, "--output", "/tmp/out",
+        "--bits", "3", "--layer", "17",
+    ])
+    command = module.probe_command(args, _Path("/repo"))
+    assert "--probe" in command
+    pairs = {command[i]: command[i + 1] for i in range(len(command) - 1) if command[i].startswith("--")}
+    assert pairs["--layer"] == "17", "the closure layer must reach the probe"
+    assert pairs["--bits"] == "3"
+    # Any option the probe itself understands and the outer run knows must be forwarded.
+    probe_understands = {"--bits", "--layer", "--image-id", "--sidecar", "--sidecar-sha256",
+                         "--design", "--design-sha256", "--transform", "--transform-sha256",
+                         "--runtime-manifest", "--runtime-manifest-sha256", "--output"}
+    missing = probe_understands - set(pairs)
+    assert not missing, f"probe options not forwarded: {sorted(missing)}"
