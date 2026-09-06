@@ -1,9 +1,39 @@
 # Fable takeover prompt — GLM-5.3-Flash coupled P8 experiment
 
-You are taking over Brandon Music's local experiment. Continue the actual
-measurement already running; do not restart planning, encoding, or baselines.
-This handoff was prepared September 5, 2026, while the candidate container was
-initializing. Revalidate live state: this is a snapshot, not a completion claim.
+You are taking over Brandon Music's local experiment. The matched measurement
+is now COMPLETE. Do not rerun it or restart planning/encoding from scratch.
+Revalidate live state before any new work. Earlier live-run details below are
+retained as historical context and are superseded by this final result.
+
+## Final result — authoritative takeover state
+
+Executor session26404 and PID2766432 terminated successfully (exit0).
+Both arms completed32/32; final audits, score/hash replay and cross-arm input
+reauthentication passed. All owned containers are cleaned up; production OFF.
+
+- Coupled true-decode KLD: **0.05499088068580576**.
+- Matched identity true-decode KLD: **0.052847380391592064**.
+- Coupled-minus-identity: **+0.0021435002942136946**, mean **4.0560% worse**.
+- Paired95% BCa: **[-0.0010680525204973161,+0.007625670904706085]**;
+ 17/32 coupled wins. Interval spans zero; not a resolved regression.
+- **Predeclared development gate FAIL**, because coupled mean is higher.
+
+Conditions: layers3/20/22 intervention, reststock; B12X_MLA_SPARSE,
+nvfp4_ds_mla KV, TailV2, native P8 mxf8f6f4 N128 MoE, E4M3 UE8M0_K32
+activations, TP4/DCP1/noEP/graphs/MTPoff; identity4.25 versus coupled
+4.2539798595 selected-projection tensor bpw. This is not a stock-only comparison.
+
+Read `results/P8_COUPLED_CF32_FINAL_V3.md` and
+`evidence/cf32-coupled-comparison-v3/analysis.json` first. Analysis SHA256:
+`019fe64ed14a859b852cf9f6910ba888f49e4ed9e83c271ef52a6720d8a22a52`.
+Local final execution and analysis are under the v3 capture root below.
+
+No all42 coupled build should start under the failed pass rule. The prior
+authorized fallback is an encoder-only calibrated inter-block BlockLDLQ
+three-layer pilot preserving P8 ABI; no fallback job has been launched.
+Brandon requested this handoff due to remaining usage. Do not launch work
+that conflicts with his newest instructions; inspect results, report bounded
+conclusions, then pursue the next authorized step within storage limits.
 
 ## Immediate priority and latest user direction
 
@@ -19,7 +49,7 @@ encoded, packed, and real-TP4-loader checked. The complete candidate's
 running. Do not describe packing/loader or synthetic-kernel tests
 as end-to-end quality proof.
 
-## Active run — attach, do not duplicate
+## Historical live-run details — now terminal, do not relaunch
 
 Execution host: Brandon's Pop!_OS machine. All work stays local.
 
@@ -241,6 +271,5 @@ for chronology. Source change27805aa (integrated86ceac2) passed33 focused tests
 and independent review. Audit agent's latest report commit643957c exists in
 the shared Git object store; it may not yet be integrated at snapshot time.
 
-**First action: inspect the live executor and identity container, then obtain
-the matched comparison. The32-window coupled KLD is complete. Do not stop or
-duplicate a healthy measurement.**
+**First action: read the final paired result and verify terminal cleanup.
+Both32-window measurements are complete. Do not duplicate them.**
