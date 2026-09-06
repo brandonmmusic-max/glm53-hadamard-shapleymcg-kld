@@ -268,3 +268,11 @@ autonomously. Consequences recorded here as decisions before results:
   layer-3 candidates -> K3/K5 device closures (v11) -> all-layer candidates ->
   allocation -> assembly -> allocated-model KLD (v11). Logs under
   `<campaign>/phase1-campaign-v1/`.
+- Publication hygiene: the design files pinned by the sidecars (42-layer V4
+  sha256 `23fba550…`, pilot V3 `4ebb96dd…`, rate designs K3 `73ce0a73…` and K5
+  `d004563e…`) embed machine-local absolute paths, so they are kept out of
+  version control (gitignored) and archived byte-identical under
+  `<campaign>/designs/`; the manifests carry their hashes. Receipts copied into
+  `evidence/` go through `scripts/scrub_receipts_for_publication.py`, which
+  replaces machine-local roots with placeholders, fails closed on any leftover,
+  and records original and scrubbed sha256 per file.

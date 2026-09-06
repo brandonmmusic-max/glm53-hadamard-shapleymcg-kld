@@ -141,7 +141,30 @@ def build_report(args: argparse.Namespace) -> str:
             lines.append(f"- K{bits}: no closure result available")
     lines.append("")
 
-    lines += ["## 6. Claim boundary", "",
+    lines += ["## 6. Designs and evidence", ""]
+    designs: dict[str, set[int]] = {}
+    for manifest, label in ((k4, "uniform K4"), (mixed, "allocated")):
+        if manifest:
+            for digest, layers in manifest.get("designs", {}).items():
+                designs.setdefault(f"{label}: {digest}", set()).update(int(x) for x in layers)
+    if designs:
+        lines += ["Design files are pinned by sha256 in every sidecar and archived byte-identical on the campaign",
+                  "volume under designs/; they are not version-controlled because they embed machine-local paths.", "",
+                  "| Checkpoint: design sha256 | Layers |", "|---|---:|"]
+        for key, layers in sorted(designs.items()):
+            lines.append(f"| {key} | {len(layers)} |")
+        lines.append("")
+    evidence = _load(args.evidence_manifest)
+    if evidence:
+        lines += [f"Scrubbed receipt copies ({len(evidence['files'])} files; placeholders replace machine-local roots,",
+                  "original sha256 recorded):", "", "| File | Original sha256 | Scrubbed sha256 |", "|---|---|---|"]
+        for entry in evidence["files"]:
+            lines.append(f"| {entry['dest']} | {entry['source_sha256'][:16]}… | {entry['scrubbed_sha256'][:16]}… |")
+        lines.append("")
+    elif not designs:
+        lines += ["No design or evidence manifests available.", ""]
+
+    lines += ["## 7. Claim boundary", "",
               "- CF32 is already-opened development data (32 windows, 8 per domain, 2,047 rows each; row 0",
               "  excluded from true decode); not final qualification.",
               "- P8 is E4M3 mxf8f6f4 at twice NVFP4's MMA issue count; no speed claim is made here.",
@@ -160,6 +183,7 @@ def main() -> None:
     parser.add_argument("--mixed-manifest", type=Path)
     parser.add_argument("--mixed-analysis", type=Path)
     parser.add_argument("--closure-dir", type=Path)
+    parser.add_argument("--evidence-manifest", type=Path, help="SCRUB_MANIFEST.json written by scrub_receipts_for_publication.py")
     parser.add_argument("--generated-at", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
