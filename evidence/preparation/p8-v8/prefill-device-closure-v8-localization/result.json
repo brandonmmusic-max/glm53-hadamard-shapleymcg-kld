@@ -1,0 +1,76 @@
+{
+  "decision": "fail",
+  "error": {
+    "message": "observable activation carrier byte mismatch: {'input_payload': False, 'input_scale': False, 'middle_payload': False, 'middle_scale': False}",
+    "type": "RuntimeError"
+  },
+  "gpu_used": true,
+  "protocol": {
+    "case_roles": {
+      "M2": "smallest supported M>1; eight active partial expert tiles",
+      "M64": "exact M64 boundary for each selected expert",
+      "M65": "one complete M64 tile plus one-row tail for each selected expert"
+    },
+    "claim_boundary": "one synthetic layer-3/rank-0 TP-local M2/M64/M65 eager device closure; not KLD, throughput, CUDA-graph, serving, all-rank, or full-model qualification",
+    "evidence_level": "gpu-smoke-numerical-closure",
+    "exact_gates": [
+      "all imported runtime source hashes equal the installed image manifest",
+      "sidecar/design/transform hashes and full-coupled schema agree",
+      "actual P8NativeTPMoE call dispatches small_m=false materialized=true M64/N128",
+      "row_counts, expert_tile_base and token_map bijectively map every route",
+      "input E4M3 payload and every UE8M0-K32 byte equal CPU reference",
+      "every routed down-input E4M3 payload and UE8M0-K32 byte equals reference",
+      "five same-input runs preserve every carrier and output hash per M case"
+    ],
+    "expert_ids": [
+      0,
+      1,
+      17,
+      63,
+      127,
+      191,
+      255,
+      287
+    ],
+    "failure_policy": "any hash drift, missing debug carrier, fallback/class-only evidence, schedule mismatch, byte mismatch, nonfinite value, or failed numeric gate is a closure failure; no gate may be weakened after execution",
+    "geometry": {
+      "experts": 288,
+      "hidden": 4096,
+      "input_prototypes": 2,
+      "layer": 3,
+      "local_intermediate": 512,
+      "m_cases": [
+        2,
+        64,
+        65
+      ],
+      "rank": 0,
+      "tile_m": 64,
+      "tile_n": 128,
+      "topk": 8
+    },
+    "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
+    "ldlq": false,
+    "m1_protocol_sha256": "9556885c32385574530acf7b07c1d5636b46852ca9714c27883f98f17368efe1",
+    "numeric_gates": {
+      "final_cosine_strictly_greater_than": 0.995,
+      "final_relative_l2_strictly_less_than": 0.12,
+      "route_cosine_strictly_greater_than": 0.995,
+      "route_relative_l2_strictly_less_than": 0.12
+    },
+    "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
+    "repetitions_per_case": 5,
+    "routing": "every token routes once to each of the same eight distinct experts; token inputs alternate between two frozen BF16 prototypes",
+    "schema": "glm53.p8-full-coupled-prefill-device-closure.v1",
+    "seed": 20260905130,
+    "storage": {
+      "fixture": "reuse one existing streamed full-rank synthetic sidecar read-only",
+      "max_evidence_bytes": 67108864,
+      "max_wrapper_scratch_upper_bound_bytes": 136314880,
+      "new_fixture_bytes": 0
+    }
+  },
+  "protocol_sha256": "7c6db9db4728ed6c6e626c976f8bfe77a9729a8cc48a4c04f98fcf734a5c0fb8",
+  "schema": "glm53.p8-full-coupled-prefill-device-closure.v1",
+  "traceback": "Traceback (most recent call last):\n  File \"/work/scripts/run_p8_coupled_prefill_device_closure.py\", line 712, in main\n    result = run_probe(args)\n             ^^^^^^^^^^^^^^^\n  File \"/work/scripts/run_p8_coupled_prefill_device_closure.py\", line 488, in run_probe\n    raise RuntimeError(f\"observable activation carrier byte mismatch: {exact}\")\nRuntimeError: observable activation carrier byte mismatch: {'input_payload': False, 'input_scale': False, 'middle_payload': False, 'middle_scale': False}\n"
+}

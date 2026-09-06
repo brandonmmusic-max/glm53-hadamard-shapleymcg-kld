@@ -1,0 +1,74 @@
+{
+  "schema": "glm53.p8-coupled.storage-ledger-audit.v2",
+  "decision": {
+    "fixture_only": "pass_with_external_receipt_before_expiry",
+    "three_layer_simultaneous_two_copy": "not_cleared",
+    "fresh_empty_budget_root_alone": "invalid"
+  },
+  "cutoff": {
+    "iso8601": "2026-09-05T14:16:00-04:00",
+    "unix": 1788632160,
+    "basis": "36 seconds before earliest coupled artifact mtime and 11 minutes before first coupled commit"
+  },
+  "measurement": {
+    "iso8601": "2026-09-05T16:15:28-04:00",
+    "unix": 1788639328,
+    "recommended_external_receipt_valid_until_unix": 1788639928
+  },
+  "ceiling_bytes": 30000000000,
+  "external_upper_bound_components": {
+    "five_coupled_worktrees_full_apparent_bytes": 2222578137,
+    "shared_git_objects_modified_since_cutoff_bytes": 1904809,
+    "coupled_files_outside_five_worktrees_bytes": 33225,
+    "campaign_preparation_and_image_build_directories_bytes": 2364443,
+    "quality_root_maximum_observed_simultaneous_bytes": 1310510246,
+    "all_docker_and_containerd_files_modified_since_cutoff_bytes": 89917183,
+    "post_audit_unclassified_short_lag_reserve_bytes": 67108864
+  },
+  "external_bytes_upper_bound": 3694416907,
+  "fixture": {
+    "sidecar_bytes": 963497568,
+    "design_bytes": 714,
+    "receipt_allowance_bytes": 1048576,
+    "forecast_bytes": 964546858
+  },
+  "fixture_only": {
+    "projected_aggregate_bytes": 4658963765,
+    "remaining_below_ceiling_bytes": 25341036235
+  },
+  "three_layer_simultaneous_two_copy": {
+    "forecast_bytes": 23123890176,
+    "projected_with_fixture_and_external_bytes": 27782853941,
+    "remaining_below_ceiling_bytes": 2217146059,
+    "cleared": false
+  },
+  "future_three_layer_sequential_proposal": {
+    "one_layer_two_copy_working_set_bytes": 7707963392,
+    "one_verified_retained_final_layer_bytes": 3853987840,
+    "peak_two_retained_layers_plus_current_two_copy_bytes": 15415939072,
+    "projected_peak_with_fixture_and_external_bytes": 20074902837,
+    "remaining_below_ceiling_bytes": 9925097163,
+    "requirements": [
+      "fixed order layers 3 then 20 then 22",
+      "hash schema and closure receipt for all four TP sidecars before retiring that layer redundant chunk",
+      "no two source chunks simultaneously",
+      "no dense BF16 output",
+      "refresh external receipt and bound writer temporaries before each layer"
+    ],
+    "authorized_by_this_audit": false
+  },
+  "docker_cross_check": {
+    "images_created_since_cutoff": 32,
+    "v2_v3_uncompressed_layer_union_over_parent_bytes": 1051464,
+    "containers_created_since_cutoff": 2,
+    "container_writable_bytes_at_snapshot": 14856192,
+    "buildx_cache_records_created_or_last_used_since_cutoff": 0,
+    "note": "cross-check only; already included in the broader modified-file upper bound"
+  },
+  "git_cross_check": {
+    "common_object_store": "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/.git/objects",
+    "loose_objects_modified_since_cutoff": 359,
+    "pack_files_modified_since_cutoff": 0
+  },
+  "claim_boundary": "fixture storage only; no fixture generation, device closure, KLD, throughput, model encoding, cleanup, or three-layer allocation is authorized by this audit"
+}

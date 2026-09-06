@@ -180,6 +180,9 @@ def test_quality_lifecycle_scores_and_retires_before_next_request(tmp_path, monk
     monkeypatch.setattr(subject, "storage_inventory", lambda path: {"raw_files": 0})
     monkeypatch.setattr(subject, "audit_runtime_log", lambda log, arm, require_dispatch=True: {"arm": arm})
     monkeypatch.setattr(runner, "_cool_and_inventory", lambda out, hardware: None)
+    # Lifecycle ordering is isolated from the real server's port; the dedicated
+    # port-probe test above verifies listener rejection with an ephemeral port.
+    monkeypatch.setattr(runner, "_check_port_available", lambda port: None)
     monkeypatch.setattr(runner, "clone_argv", lambda *args, **kwargs: ["docker", "create"])
     monkeypatch.setattr(runner.capture, "normalize_capture_ownership", lambda *args, **kwargs: {})
     monkeypatch.setattr(runner.cold, "inventory", lambda: ["gpu"])

@@ -1,0 +1,80 @@
+{
+  "cuda_graph_tested": true,
+  "decision": "fail",
+  "error": {
+    "message": "M64 five graph replays are not bitwise deterministic",
+    "type": "RuntimeError"
+  },
+  "gpu_used": true,
+  "protocol": {
+    "capture_order": [
+      "instantiate the actual full-coupled P8NativeTPMoE wrapper",
+      "warm the exact case on a side CUDA stream and synchronize before capture",
+      "run and preserve one fresh eager observation",
+      "capture one wrapper call using persistent inputs and torch.cuda.CUDAGraph",
+      "replay the graph five times without changing the inputs"
+    ],
+    "claim_boundary": "synthetic layer-3/rank-0 component graph-versus-eager closure for M1/M2/M64/M65; not KLD, throughput, serving, all-rank, real-checkpoint, or full-model qualification",
+    "evidence_level": "gpu-smoke-cudagraph-eager-parity",
+    "exact_gates": [
+      "installed sources and fixture/design/transform identities equal immutable v9 pins",
+      "actual dispatch matches v9 full-coupled materialized M1 or M64/N128 path",
+      "eager and every graph replay expose all required debug carriers",
+      "input and routed down-input E4M3 payload plus UE8M0-K32 bytes equal the same CPU reference",
+      "route and final output byte hashes from every graph replay equal the fresh eager observation",
+      "all observable carrier hashes are identical between eager and every graph replay",
+      "five graph replay receipt dictionaries are bitwise identical"
+    ],
+    "failure_policy": "capture failure, compilation during capture, missing/stale carrier, dispatch drift, byte mismatch, nonfinite output, or failed frozen numerical gate is a graph closure failure",
+    "frozen_inputs": {
+      "M1": "exact seed, experts, BF16 input and routing recipe from the v9 M1 protocol",
+      "M2_M64_M65": "exact seed, prototypes, experts and routing recipe from the v9 prefill protocol",
+      "payload_sha256": {
+        "m1_topk_ids": "724a0e6f433e0b48fcc8a26cf7415f0a9ac47f82e3081f60dd868eb8bf9ab0db",
+        "m1_topk_weights": "bf6c1df7b916eed2a8d5d8c251ec32390b658030059919d6f738fb077a9b3604",
+        "m1_x": "c432187fe0944c4f0dd398b5c1ee5e8d167358da489c18d71a9814bec9ebd0ff",
+        "prefill_all_weights": "4acb7027559ee77598fd97904e6200147df7f0342eaee53018c2902c79f0496a",
+        "prefill_prototypes": "ed8c573433420f351eb32ee15e100cf1d0573e0f92848249fd1899055a652459",
+        "prefill_topk_ids": "724a0e6f433e0b48fcc8a26cf7415f0a9ac47f82e3081f60dd868eb8bf9ab0db"
+      }
+    },
+    "geometry": {
+      "experts": 288,
+      "fc1_tile_n": 128,
+      "hidden": 4096,
+      "layer": 3,
+      "local_intermediate": 512,
+      "m_cases": [
+        1,
+        2,
+        64,
+        65
+      ],
+      "rank": 0,
+      "topk": 8
+    },
+    "image_rebuild_required": false,
+    "immutable_image": "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3",
+    "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
+    "ldlq": false,
+    "numeric_gates": {
+      "final_cosine_strictly_greater_than": 0.995,
+      "final_relative_l2_strictly_less_than": 0.12,
+      "route_cosine_strictly_greater_than": 0.995,
+      "route_relative_l2_strictly_less_than": 0.12
+    },
+    "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
+    "repetitions_per_case": 5,
+    "runtime_manifest_sha256": "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1",
+    "schema": "glm53.p8-full-coupled-cudagraph-closure.v1",
+    "source_eager_receipts": {
+      "m1_protocol_sha256": "9556885c32385574530acf7b07c1d5636b46852ca9714c27883f98f17368efe1",
+      "m1_result_sha256": "2e3b1d09940259ee5792c4464f0187cc9a44e386e72686b046d9284dadd299de",
+      "prefill_protocol_sha256": "7c6db9db4728ed6c6e626c976f8bfe77a9729a8cc48a4c04f98fcf734a5c0fb8",
+      "prefill_result_sha256": "d8a0885d7fda130b959bacced2c0af13901ec96c0c6d8db844100b5c257bd262"
+    }
+  },
+  "protocol_sha256": "3281b800664e7987732a681959c561b0c74905271e34a3da07e1ea004a0a2843",
+  "schema": "glm53.p8-full-coupled-cudagraph-closure.v1",
+  "traceback": "Traceback (most recent call last):\n  File \"/work/scripts/run_p8_coupled_graph_device_closure.py\", line 498, in main\n    result = run_probe(args)\n             ^^^^^^^^^^^^^^^\n  File \"/work/scripts/run_p8_coupled_graph_device_closure.py\", line 334, in run_probe\n    raise RuntimeError(f\"M{m} five graph replays are not bitwise deterministic\")\nRuntimeError: M64 five graph replays are not bitwise deterministic\n"
+}

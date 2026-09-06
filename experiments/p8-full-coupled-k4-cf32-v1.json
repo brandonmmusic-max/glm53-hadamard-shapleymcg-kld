@@ -1,0 +1,50 @@
+{
+  "schema": "glm53.p8-full-coupled-cf32-preregistration.v1",
+  "status": "preregistered-before-full-model-results",
+  "recorded_at": "2026-09-05T21:40:00-04:00",
+  "objective": "Measure the full 42-layer coupled H512/H128 + suh/svh K4 P8 model against the full identity K4 P8 model on one image and one runtime configuration.",
+  "arms_in_order": ["coupled_full", "identity_full"],
+  "arm_definitions": {
+    "coupled_full": "layers 3..44 native P8, coupled boundary, sidecars from the full coupled build manifest; layers 3, 20, 22 reused from the pilot under the V3 design, the other 39 under the 42-layer design",
+    "identity_full": "layers 3..44 native P8, identity boundary, sidecars from the pinned uniform-p8-all42-v1 checkpoint re-measured on the same image"
+  },
+  "runtime": {
+    "tp": 4, "dcp": 1, "ep": false, "mtp": false, "graphs": true,
+    "attention_backend": "B12X_MLA_SPARSE", "kv_dtype": "nvfp4_ds_mla",
+    "tail_v2_sha256": "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251",
+    "moe": "native P8 mxf8f6f4 N128 small-M owner path, E4M3 UE8M0_K32 activations, no fused scratch",
+    "image": "klc/glm53-p8-full-coupled:v10 (v9 sources plus a sitecustomize design-hash allowlist); the image id is bound in the runtime manifest at preparation"
+  },
+  "measurement": {
+    "role": "conditional-fit",
+    "roles_sha256": "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14",
+    "windows": 32, "windows_per_domain": 8,
+    "prediction_rows_per_window": 2047,
+    "true_decode_mask": {"exclude_rows": [0], "include": [1, 2047]},
+    "metric": "KL(teacher || student), FP64 CPU, equal-window mean",
+    "bootstrap": {"unit": "window", "replicates": 20000, "seed": 20260902, "interval": "BCa 95%"},
+    "window_order": "manifest order",
+    "exclusions": "none; no rerolls; protected selection/confirmation/final roles stay closed"
+  },
+  "decision_rule": {
+    "development": "coupled_full mean true-decode KLD below identity_full; BCa reported, nonblocking",
+    "strict_claim": "mean paired delta negative and paired BCa upper bound below zero",
+    "primary_comparison": "coupled_full minus identity_full, same image, same runtime flags, same windows",
+    "report": ["absolute KLD per arm", "paired delta", "relative improvement", "paired BCa", "window wins", "domain breakdown", "exact bytes and bpw per arm", "runtime labels and image id"]
+  },
+  "byte_accounting": {
+    "routed_weights": 304405807104,
+    "identity_weight_payload_bytes": 161715585024,
+    "identity_sidecar_file_bytes": 161715707328,
+    "coupled_weight_payload_bytes": 161715585024,
+    "coupled_metadata_bytes": 151436544,
+    "coupled_sidecar_file_bytes": 161867572608,
+    "coupled_tensor_bpw_including_metadata": 4.2539798595287182,
+    "note": "coupled_full is 151,436,544 bytes (0.0936 %) larger than identity_full; it is not equal-size and is labelled as such"
+  },
+  "comparator_disclosure": "The earlier identity full-model value 0.03730955956731441 was measured on klc/glm53-p8-tail-repair:v2 with FC1_TILE_N=64 and fused scratch; it is reported as context only. The matched control is identity_full re-measured on the v10 image with N128 and no fused scratch.",
+  "storage_policy": "one raw capture at a time (1,268,157,440 bytes), durable score receipt before raw retirement; campaign apparent bytes plus one raw reservation must stay under the owner-approved ceiling bound in the execution seal",
+  "production_policy": "klc-backend.service and klc-model-stack.timer stay inactive; port 8000 stays unbound; never restored by this campaign",
+  "claim_boundary": "Already-opened CF32 development evidence, not final qualification. P8 mxf8f6f4 has twice the NVFP4 MMA issue count; no speed claim.",
+  "not_measured_here": ["stock NVFP4 arm", "speed", "Shapley allocation (Phase 1)", "protected confirmation logits"]
+}

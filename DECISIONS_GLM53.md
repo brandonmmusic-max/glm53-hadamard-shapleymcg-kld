@@ -1,5 +1,32 @@
 # GLM-5.3-Flash NVFP4 V2 decisions
 
+## Decision 28: preserve coupled image v2 failure; verify instance geometry before retry (2026-09-05)
+
+The CPU-only coupled image build from `e6fb3b4e44fef3216e4da15929f955c8df9b405a`
+failed at its Step 27 verifier: FC1 class-level shared memory was 35,328 bytes,
+versus the required 65,536. No GPU execution or quality measurement occurred.
+The verifier reads a class attribute, whereas the coupled constructor computes
+an instance-specific allocation. This is a diagnostic lead, not yet a verified
+repair. Keep the 65,536-byte requirement until the constructed kernel's layout
+and region bounds are checked. Do not lower the expected size to pass the test.
+
+Preserved evidence under
+`/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-image-v2-build`:
+
+- `receipt.json` SHA256 `d599ad0ea1ad2a210cd9f0e2e209709c4301233e54590281d085f33457f36169`;
+- `build.log` SHA256 `5957534a64d16704c5703cd49590e42142da78736a9a13f073561d13442d9de9`.
+
+Before a retry, freeze a distinct v3 recipe, keep the v2 evidence unchanged,
+and test the constructed launch geometry against the pinned parent. The live
+tail-V2 baseline campaign remains unmodified. Synthetic fixture generation
+also waits for aggregate incremental-storage accounting; an empty fixture
+directory must not reset the user's 30,000,000,000-byte campaign ceiling.
+
+This is structural evidence only. Intended P8 compute remains native E4M3
+weights/activations with UE8M0/32 and K4 payload 4.25 bpw, plus channel-scale
+metadata. The mxf8f6f4 path has twice NVFP4's MMA issue count. No KLD or speed
+claim follows from this build attempt.
+
 ## 1. 2026-09-02: start and evidence level
 
 Before model downloads or adaptive measurements, execute the uniform identity-GPTQ NVFP4 candidate as a confirmation-level sealed experiment. Treat the existing 25-window panel as opened legacy evidence. Do not claim a new final result without a newly captured post-freeze final panel.

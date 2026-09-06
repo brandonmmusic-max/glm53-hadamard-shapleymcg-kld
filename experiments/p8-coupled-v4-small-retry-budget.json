@@ -1,0 +1,35 @@
+{
+  "schema": "glm53.p8-small-retry-storage.v1",
+  "measured_at_utc": "2026-09-05 20:47:21 UTC",
+  "decision": "Permit only one v4 image build and one frozen M1 component retry; no model encoding or captures under this receipt",
+  "aggregate_user_ceiling_bytes": 30000000000,
+  "prior_accounting": "results/P8_COUPLED_STORAGE_LEDGER_AUDIT.json",
+  "conservative_cutoff_unix": 1788632160,
+  "current_full_worktree_bytes": [442718776, 443043743, 448616000, 448339368, 443735312, 443597060, 446590818],
+  "current_fixture_directory_bytes": 963876187,
+  "current_preparation_and_build_directories_bytes": [742934, 803636, 817873],
+  "retained_prior_quality_peak_charge_bytes": 1310510246,
+  "all_docker_containerd_files_modified_since_cutoff_apparent_bytes": 77056751,
+  "shared_git_objects_modified_since_cutoff_bytes": 2306125,
+  "older_worktree_coupled_files_prior_charge_bytes": 33225,
+  "rounded_existing_charge_with_headroom_bytes": 7000000000,
+  "new_build_reserved_bytes": 67108864,
+  "new_component_evidence_reserved_bytes": 67108864,
+  "aggregate_bounded_charge_bytes": 7134217728,
+  "nvme1n1p3_available_bytes": 150826946560,
+  "root_available_bytes": 81272090624,
+  "conditions": [
+    "No new worktree, model, teacher-logit or calibration allocation",
+    "Reuse existing frozen synthetic sidecar without regeneration",
+    "No writes to klcstore",
+    "Recheck after build before the device retry; refresh if these bounds are exceeded",
+    "Production backend and model-stack timer remain off; no automatic restore",
+    "Prior failures remain immutable and no acceptance threshold changes"
+  ],
+  "measurement_commands": [
+    "du -sb coupled worktrees and coupled campaign directories",
+    "sudo find /var/lib/docker /var/lib/containerd -type f -newermt @1788632160 -printf sizes; sum sizes",
+    "find shared Git objects -type f -newermt @1788632160 -printf sizes; sum sizes",
+    "df -B1 NVMe, klcstore, workspace"
+  ]
+}

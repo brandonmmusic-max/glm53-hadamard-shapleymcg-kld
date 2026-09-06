@@ -1,0 +1,226 @@
+{
+  "decision": "pass",
+  "device": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "device_capability": [
+    12,
+    0
+  ],
+  "executed_sources": {
+    "b12x.moe._shared.kernels.dynamic": {
+      "manifest_key": "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/dynamic.py",
+      "path": "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/dynamic.py",
+      "sha256": "8c191157e9885ccf2a76d9700a5c941008d34ba4cddfca35c07961f96cdff880"
+    },
+    "b12x.moe._shared.kernels.p8_coupled_topk": {
+      "manifest_key": "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_coupled_topk.py",
+      "path": "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_coupled_topk.py",
+      "sha256": "632a3bc4174440c04fb28e6dfcefc8876a16938738811c3487f47e6585c4706d"
+    },
+    "b12x.moe._shared.kernels.p8_h128_fc1": {
+      "manifest_key": "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_h128_fc1.py",
+      "path": "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_h128_fc1.py",
+      "sha256": "518ac381639e08f638c4a24f7f2ff5d24430a4c227297b502cdf85ef028b4d0f"
+    },
+    "b12x.moe._shared.kernels.p8_small_m": {
+      "manifest_key": "runtime_patch/b12x_h16/b12x/moe/_shared/kernels/p8_small_m.py",
+      "path": "/opt/venv/lib/python3.12/site-packages/b12x/moe/_shared/kernels/p8_small_m.py",
+      "sha256": "c741c0b9f54684b5b6f7df275292daf2fe3febd45782b1a2deaf3c01d3c83a77"
+    },
+    "p8_coupled_scales": {
+      "manifest_key": "runtime_patch/p8_coupled_scales.py",
+      "path": "/opt/p8-coupled-runtime/p8_coupled_scales.py",
+      "sha256": "5e9220740c30bfbcb47ab0ea0857f820562b95e6a0797ff0fb0868eb6f84a0f2"
+    },
+    "p8_native_kernel": {
+      "manifest_key": "runtime_patch/p8_native_kernel.py",
+      "path": "/opt/p8-coupled-runtime/p8_native_kernel.py",
+      "sha256": "1f51da9549b51393135684da5744b136c7dda58fa5c708524039c4170817d25b"
+    },
+    "p8_smallm_schedule": {
+      "manifest_key": "runtime_patch/p8_smallm_schedule.py",
+      "path": "/opt/p8-coupled-runtime/p8_smallm_schedule.py",
+      "sha256": "804fae60a3b2e5fdea31d0fc1f343e545a45a4a3e859d617bc667bf3ea706df6"
+    }
+  },
+  "gpu_used": true,
+  "harness_sha256": "f4490084f0765cec6bda7313944356391fef0c2de1a9e1f81575eaf4016c5200",
+  "identities": {
+    "design": "4ebb96dd9d555fc18f24fb5f4d380216e1de30327a68d7aae89fc10f41878695",
+    "postwrite": "b844836319e50f56ad41c9b39a3ea6112d5843b8c94c52249482ec0c2b025540",
+    "runtime_manifest": "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1",
+    "transform": "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12"
+  },
+  "image_id": "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3",
+  "kld_tested": false,
+  "loader_abi_gate_closed": true,
+  "moe_mma_executed": false,
+  "numerical_tested": false,
+  "protocol": {
+    "claim_boundary": "real layer-3 all-four-rank sidecar load/repack/ABI closure only; no MoE/MMA call, numerical closure, CUDA graph, KLD, throughput, serving, or full-model qualification; constructor scale repacking may use device kernels",
+    "evidence_level": "gpu-loader-abi-closure",
+    "exact_gates": [
+      "installed runtime sources equal the immutable v9 manifest",
+      "postwrite receipt is source-exact PASS and still retirement-false",
+      "four sidecar file hashes, metadata, shapes, dtypes and tensor hashes equal the postwrite receipt",
+      "actual v9 P8NativeTPMoE constructs for the matching real layer and rank",
+      "all seven runtime payload/scale tensor byte streams equal the postwrite tensor hashes",
+      "stored draw0 bytes and runtime-regenerated sign bytes equal their pinned hashes",
+      "wrapper resolves full_coupled K4 MCG, N128, deterministic TP4 with descriptor aliases and no identity fallback"
+    ],
+    "execution_order": "ranks 0,1,2,3 sequentially on one visible GPU",
+    "external_pins": {
+      "transform_sha256": "093d219b18ba32471adcee746442b1481c7ba5659bbea62b94f1a665d4343a12",
+      "v3_design_sha256": "4ebb96dd9d555fc18f24fb5f4d380216e1de30327a68d7aae89fc10f41878695"
+    },
+    "failure_policy": "any image/source/input/hash/schema/shape/dtype/rank/layer drift, partial coupling, identity mode, alternate descriptor storage, missing runtime tensor, or CUDA allocation failure is a loader closure failure",
+    "geometry": {
+      "experts": 288,
+      "fc1_tile_n": 128,
+      "hidden": 4096,
+      "layer": 3,
+      "local_intermediate": 512,
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "topk": 8,
+      "world_size": 4
+    },
+    "immutable_image": "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3",
+    "kld_tested": false,
+    "ldlq": false,
+    "moe_mma_executed": false,
+    "product": "P8 K4 procedural MCG alpha2 to E4M3/UE8M0-K32",
+    "runtime_manifest_sha256": "9a57438b3cefd022772bc471980fb0ece8c19087d08f02c875a73da2b6e392d1",
+    "schema": "glm53.p8-full-coupled-real-sidecar-loader-closure.v1",
+    "throughput_tested": false
+  },
+  "protocol_sha256": "bd9dbf3273445152ad93e743c2d7ca229c458ed5254045b35d269e2ff32a2b5f",
+  "ranks": [
+    {
+      "identity_fallback": false,
+      "layer": 3,
+      "mode": "full-coupled",
+      "moe_kernel_compiled": false,
+      "moe_mma_executed": false,
+      "rank": 0,
+      "runtime_loaded_tensor_sha256": {
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "02309e08da395dc15b1bbbb781f9046d670cc162e0062c3d0ade3c0dde2dcc79",
+        "w13_scale_ue8m0": "ed5320c8ab285fc033b5c5cffab6fe728bce7918caab952b8fcf50b2da0785eb",
+        "w13_trellis": "e091922cc6aa2abc089fb355a3a5693babfa09938eebef70b67acbde9c949bd1",
+        "w2_scale_ue8m0": "fb7c985372ab0c2275b67f67a1feeb5a33e1f5a55ccfd85ff7cfc3b466adcd24",
+        "w2_trellis": "bcf96443c45a6186d1c61cb5b6b4165d6a725bf9ebe3e9dcaa577765ca7a9a06"
+      },
+      "runtime_regenerated_signs_fp16_sha256": "95693b3d933cef1caca1d4aed176789faff9746303ec5f8bcac4395c68e25ff0",
+      "sidecar_sha256": "ef41f9d4b7d92f7d6f022d2e9ea42c248f99a102188b6faf0a53ba5bfb5b47c5",
+      "stored_draw0_validated": true,
+      "stored_tensor_sha256": {
+        "coupled_sign_draw_u8": "2d5565fb483d8ea4525a7a9229677d1038ad34b6e22c8d5152e1d7f7b9817597",
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "02309e08da395dc15b1bbbb781f9046d670cc162e0062c3d0ade3c0dde2dcc79",
+        "w13_scale_ue8m0": "ed5320c8ab285fc033b5c5cffab6fe728bce7918caab952b8fcf50b2da0785eb",
+        "w13_trellis": "e091922cc6aa2abc089fb355a3a5693babfa09938eebef70b67acbde9c949bd1",
+        "w2_scale_ue8m0": "fb7c985372ab0c2275b67f67a1feeb5a33e1f5a55ccfd85ff7cfc3b466adcd24",
+        "w2_trellis": "bcf96443c45a6186d1c61cb5b6b4165d6a725bf9ebe3e9dcaa577765ca7a9a06"
+      }
+    },
+    {
+      "identity_fallback": false,
+      "layer": 3,
+      "mode": "full-coupled",
+      "moe_kernel_compiled": false,
+      "moe_mma_executed": false,
+      "rank": 1,
+      "runtime_loaded_tensor_sha256": {
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "b76e30d4134583ebe17b254a280ab71d5ae5ef6269fe33852547cf0236dac253",
+        "w13_scale_ue8m0": "7f75e05340d7c9fb26043a34b2acae80dc003fb3a3322a80167fe0776a6cd7a0",
+        "w13_trellis": "24e571f546f17019356c421576d4ec82b03a04a44bc7dfc884db28a55213644a",
+        "w2_scale_ue8m0": "1f6787284c2c85b1a93ebf07694b731061152f2b608989515731a1f92738347d",
+        "w2_trellis": "5a52ee4a1e84f78b810c9194b7409929c8947a67d5908af7f4e31b51e646434d"
+      },
+      "runtime_regenerated_signs_fp16_sha256": "95693b3d933cef1caca1d4aed176789faff9746303ec5f8bcac4395c68e25ff0",
+      "sidecar_sha256": "171bf9d7c61b3b6f2f69bfb4cdc359323a0a37553e572fc632c8eeb9b9bfcf65",
+      "stored_draw0_validated": true,
+      "stored_tensor_sha256": {
+        "coupled_sign_draw_u8": "2d5565fb483d8ea4525a7a9229677d1038ad34b6e22c8d5152e1d7f7b9817597",
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "b76e30d4134583ebe17b254a280ab71d5ae5ef6269fe33852547cf0236dac253",
+        "w13_scale_ue8m0": "7f75e05340d7c9fb26043a34b2acae80dc003fb3a3322a80167fe0776a6cd7a0",
+        "w13_trellis": "24e571f546f17019356c421576d4ec82b03a04a44bc7dfc884db28a55213644a",
+        "w2_scale_ue8m0": "1f6787284c2c85b1a93ebf07694b731061152f2b608989515731a1f92738347d",
+        "w2_trellis": "5a52ee4a1e84f78b810c9194b7409929c8947a67d5908af7f4e31b51e646434d"
+      }
+    },
+    {
+      "identity_fallback": false,
+      "layer": 3,
+      "mode": "full-coupled",
+      "moe_kernel_compiled": false,
+      "moe_mma_executed": false,
+      "rank": 2,
+      "runtime_loaded_tensor_sha256": {
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "58c33c9541b0a8558d9d8d7b771ddfbbe265cbdd9d93bdb1af1945b62d23380f",
+        "w13_scale_ue8m0": "809e9f57896eed9b1535bbddae9f4d37c216af7129a9911a23004c169b316d14",
+        "w13_trellis": "e52066d5b2acf59288a358ba01de025e1c7a0400fc144dc17ff6a852ca930c90",
+        "w2_scale_ue8m0": "1bf433b9b3066c4bde00d151a27f4fb1999f7f600301e86fabdb014da7f5e9cc",
+        "w2_trellis": "2c0716fc6f07041490ed976ddce6ca5e280a87daea473e4c173a2dc2afcf4886"
+      },
+      "runtime_regenerated_signs_fp16_sha256": "95693b3d933cef1caca1d4aed176789faff9746303ec5f8bcac4395c68e25ff0",
+      "sidecar_sha256": "ee93f6fb964e474b782e7aaf32351822bf54d8b43244eea8b9b82b049179ee84",
+      "stored_draw0_validated": true,
+      "stored_tensor_sha256": {
+        "coupled_sign_draw_u8": "2d5565fb483d8ea4525a7a9229677d1038ad34b6e22c8d5152e1d7f7b9817597",
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "58c33c9541b0a8558d9d8d7b771ddfbbe265cbdd9d93bdb1af1945b62d23380f",
+        "w13_scale_ue8m0": "809e9f57896eed9b1535bbddae9f4d37c216af7129a9911a23004c169b316d14",
+        "w13_trellis": "e52066d5b2acf59288a358ba01de025e1c7a0400fc144dc17ff6a852ca930c90",
+        "w2_scale_ue8m0": "1bf433b9b3066c4bde00d151a27f4fb1999f7f600301e86fabdb014da7f5e9cc",
+        "w2_trellis": "2c0716fc6f07041490ed976ddce6ca5e280a87daea473e4c173a2dc2afcf4886"
+      }
+    },
+    {
+      "identity_fallback": false,
+      "layer": 3,
+      "mode": "full-coupled",
+      "moe_kernel_compiled": false,
+      "moe_mma_executed": false,
+      "rank": 3,
+      "runtime_loaded_tensor_sha256": {
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "1d5277f00385fdee2f6042a469f8c61bef666c2e60c9e385ae0ff711ed955d1d",
+        "w13_scale_ue8m0": "be5414be0ad7de6876b920692138345c92f3e1c9eea668a254790ddd0eb04796",
+        "w13_trellis": "381be4c05f415f40dc197b04b8cab8871b02e357fbcb8492def8a1b7dd345a5d",
+        "w2_scale_ue8m0": "c2f7c759abf40ca40d8e551728fd86f9618134bd93788affc5bf23e56e3f5196",
+        "w2_trellis": "1c26968bba5cef8cca0dbc61b18376ab30de08654cf164ccd9d3fd21ccadbfbb"
+      },
+      "runtime_regenerated_signs_fp16_sha256": "95693b3d933cef1caca1d4aed176789faff9746303ec5f8bcac4395c68e25ff0",
+      "sidecar_sha256": "200b624da7674650cef3d11914b9543cd8ed36ce864551e58e3127198930c829",
+      "stored_draw0_validated": true,
+      "stored_tensor_sha256": {
+        "coupled_sign_draw_u8": "2d5565fb483d8ea4525a7a9229677d1038ad34b6e22c8d5152e1d7f7b9817597",
+        "down_svh_fp16": "90047fad1b5b77c9549a5688f021083fddebc9bdd878f8d0020e0c40b8386615",
+        "gate_up_suh_fp16": "244f05112c2507a2b681202bba8113e599420d7aa664e69f488752dd8b9b8e56",
+        "intermediate_scales_fp16": "1d5277f00385fdee2f6042a469f8c61bef666c2e60c9e385ae0ff711ed955d1d",
+        "w13_scale_ue8m0": "be5414be0ad7de6876b920692138345c92f3e1c9eea668a254790ddd0eb04796",
+        "w13_trellis": "381be4c05f415f40dc197b04b8cab8871b02e357fbcb8492def8a1b7dd345a5d",
+        "w2_scale_ue8m0": "c2f7c759abf40ca40d8e551728fd86f9618134bd93788affc5bf23e56e3f5196",
+        "w2_trellis": "1c26968bba5cef8cca0dbc61b18376ab30de08654cf164ccd9d3fd21ccadbfbb"
+      }
+    }
+  ],
+  "retirement_authorized": false,
+  "schema": "glm53.p8-full-coupled-real-sidecar-loader-closure.v1",
+  "throughput_tested": false
+}

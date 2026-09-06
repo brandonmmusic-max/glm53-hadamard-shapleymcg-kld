@@ -1,0 +1,61 @@
+{
+  "schema": "glm53.p8-layer20-loader-execution.v1",
+  "decision_before_result": true,
+  "layer": 20,
+  "harness_sha256": "3f4e9b4c47768cca026aba201906d74e8002996d32a8462ad09221aa55d2317e",
+  "protocol_sha256": "a17482a6721c8f83872a429138eb8d7a56632d3b5ec881ee12d7d52062de68e5",
+  "prerequisites": [
+    "layer20 encoding process terminal success, all four chunk receipts valid",
+    "layer20 packing and source-exact postwrite receipt pass",
+    "fresh campaign storage audit and at least16MiB remaining allowance",
+    "systemctl --user is-active klc-backend.service returns inactive",
+    "systemctl is-active klc-model-stack.timer returns inactive",
+    "idle GPU0 under exclusive model-stack lock"
+  ],
+  "command": [
+    "flock",
+    "-n",
+    "/run/lock/klc/model-stack.lock",
+    "python3",
+    "scripts/run_p8_coupled_real_sidecar_loader_closure.py",
+    "--execute",
+    "--layer",
+    "20",
+    "--image",
+    "sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3",
+    "--gpu-device",
+    "0",
+    "--design",
+    "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-coupled-integration-v1/results/P8_COUPLED_SCALE_FLASH_EVIDENCE_PREPARATION_V3.json",
+    "--transform",
+    "/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-coupled-integration-v1/experiments/p8-coupled-transform-draw0-silu10-v1.json",
+    "--postwrite",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/receipts/layer-020-postwrite.json",
+    "--sidecar",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-020/p8-layer-020-tp4-rank-0.safetensors",
+    "--sidecar",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-020/p8-layer-020-tp4-rank-1.safetensors",
+    "--sidecar",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-020/p8-layer-020-tp4-rank-2.safetensors",
+    "--sidecar",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/sidecars/layer-020/p8-layer-020-tp4-rank-3.safetensors",
+    "--output",
+    "/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-v1/receipts/layer-020-loader-closure-v1"
+  ],
+  "new_evidence_bound_bytes": 16777216,
+  "conditions": {
+    "attention": "N/A loader-only",
+    "kv_dtype": "N/A loader-only",
+    "moe_backend": "P8 full-coupled runtime constructor, MMA not executed",
+    "activation_precision": "N/A loader-only; target E4M3",
+    "bpw": 4.253979859528719
+  },
+  "isa_cost": "P8 has twice the NVFP4 MMA issue count",
+  "restrictions": [
+    "never restore production",
+    "no chunk deletion",
+    "no repacking or reencoding",
+    "no KLD/MMA/speed claim from constructor closure",
+    "preserve failed output, never overwrite"
+  ]
+}

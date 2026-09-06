@@ -7,20 +7,24 @@ This source has not passed device closure; it is opt-in through p8_small_m.
 """
 from __future__ import annotations
 
+import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 
-from cutlass.cutlass_dsl import Int32, Int64, Uint32
+from cutlass.cutlass_dsl import Int32, Int64, T, Uint32, dsl_user_op
+from cutlass._mlir.dialects import llvm
 
 from b12x._lib.intrinsics import (
     ld_shared_u32,
     ld_shared_v2_u32,
     shared_ptr_to_u32,
+    st_shared_u32,
 )
 from b12x._lib.intrinsics import (
     mxfp8_mma_m16n8k32_f32_e4m3,
 )
 from b12x.moe._shared.kernels.w4a8_trellis_decode import (
+    _w4a8_had128_quad,
     _w4a8_trellis_lane_geom,
 )
 from b12x.moe._shared.kernels.w4a8_mcg_decode import (
@@ -30,11 +34,51 @@ from b12x.moe._shared.kernels.w4a8_mcg_decode import (
 from b12x.moe._shared.kernels.w4a8_phase2 import W4A8MaterializedPhase2Kernel
 
 
+@dsl_user_op
+def _p8_pack_f32x2_to_half2(x0, x1, *, loc=None, ip=None):
+    return Uint32(
+        llvm.inline_asm(
+            T.i32(),
+            [
+                cutlass.Float32(x0).ir_value(loc=loc, ip=ip),
+                cutlass.Float32(x1).ir_value(loc=loc, ip=ip),
+            ],
+            "cvt.rn.f16x2.f32 $0, $2, $1;",
+            "=r,f,f",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def _p8_ld_shared_f16_to_f32(addr, *, loc=None, ip=None):
+    return cutlass.Float32(
+        llvm.inline_asm(
+            T.f32(),
+            [Int32(addr).ir_value(loc=loc, ip=ip)],
+            "{.reg .b16 tmp; ld.shared.b16 tmp, [$1]; cvt.f32.f16 $0, tmp;}",
+            "=f,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
 class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
     """M16 arithmetic inherited from P8, with one real row per route."""
 
     tile_m = 16
     source_tile_m = 16
+    mma_m_blocks = 1
+    owned_row_groups = 4
+    prefill_grouped = False
     a_payload_bytes = 16 * 128
     a_scale_bytes = 16 * 4
     a_stage_bytes = a_payload_bytes + a_scale_bytes
@@ -47,7 +91,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
     shared_bytes = sfb_storage_offset + 2 * sfb_stage_bytes
     shared_words = (shared_bytes + 3) // 4
 
-    def __init__(self):
+    def __init__(
+        self, *, scale_sandwich: bool = False, full_coupled: bool = False
+    ):
         # Deliberately no codec/arithmetic toggles in this P8-only arm.
         self.source_halves = 1
         self.deterministic_output = True
@@ -56,8 +102,72 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         self.trellis_direct_lut = False
         self.trellis_codebook = "mcg"
         self.trellis_scaled = True
-        self.trellis_identity_boundary = True
+        self.scale_sandwich = bool(scale_sandwich)
+        self.full_coupled = bool(full_coupled)
+        self.trellis_identity_boundary = not self.full_coupled
+        if self.full_coupled and not self.scale_sandwich:
+            raise ValueError("full-coupled P8 FC2 requires scale sandwich")
         self.trellis_lut_offset = self.shared_bytes
+
+    @cute.jit
+    def __call__(
+        self,
+        intermediate_u32: cute.Tensor,
+        down_rp: cute.Tensor,
+        down_sfb_rp: cute.Tensor,
+        scatter_output: cute.Tensor,
+        token_map: cute.Tensor,
+        token_weights: cute.Tensor,
+        task_expert: cute.Tensor,
+        task_valid_rows: cute.Tensor,
+        expert_tile_base: cute.Tensor,
+        down_alpha: cute.Tensor,
+        global_scale: cute.Tensor,
+        trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
+        intermediate_tiles: cutlass.Int32,
+        packed_output_tiles: cutlass.Int32,
+        max_active_clusters: cutlass.Int32,
+        stream: cuda.CUstream,
+    ):
+        """Extend the 16-argument parent launch ABI with scale_component."""
+
+        self.kernel(
+            intermediate_u32,
+            down_rp,
+            down_sfb_rp,
+            scatter_output,
+            token_map,
+            token_weights,
+            task_expert,
+            task_valid_rows,
+            expert_tile_base,
+            down_alpha,
+            global_scale,
+            trellis_lut,
+            scale_component,
+            intermediate_tiles,
+            packed_output_tiles,
+        ).launch(
+            grid=(1, 1, max_active_clusters * Int32(2)),
+            block=[self.threads_per_cta, 1, 1],
+            min_blocks_per_mp=2,
+            stream=stream,
+        )
+
+    @cute.jit
+    def _scale_down_after_h128(
+        self,
+        value: cutlass.Float32,
+        scale_component: cute.Tensor,
+        output_col: Int32,
+    ) -> cutlass.Float32:
+        """Apply shared down svh after output H128 and before route sum."""
+
+        down_svh_base = Int32(4096 + 288 * 3 * 512)
+        return value * scale_component[down_svh_base + output_col].to(
+            cutlass.Float32
+        )
 
     @cute.jit
     def _run_task(
@@ -71,6 +181,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         down_alpha: cute.Tensor,
         global_scale: cute.Tensor,
         trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
         smem_base: Int32,
         tid: Int32,
         warp_idx: Int32,
@@ -86,6 +197,11 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         lane = tid & Int32(31)
         q = lane >> Int32(2)
         c = lane & Int32(3)
+        # Same physical row origin as the inherited _stage_slice loader.
+        # Define before staged branches; grouped FC2 scatters via token_map.
+        physical_row_base = source_m_tile * Int32(self.source_tile_m) + m_half * Int32(
+            self.tile_m
+        )
         if cutlass.const_expr(self.w4a8_trellis):
             tr_ia, tr_ib, tr_s2 = _w4a8_trellis_lane_geom(
                 lane, self.trellis_bits
@@ -116,9 +232,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         # Each warp owns M16xN32: one M16 block and four N8 fragments.
         facc = tuple(
             tuple(cute.make_rmem_tensor((4,), cutlass.Float32) for _nt in range(4))
-            for _blk in range(1)
+            for _blk in range(self.mma_m_blocks)
         )
-        for blk in cutlass.range_constexpr(1):
+        for blk in cutlass.range_constexpr(self.mma_m_blocks):
             for nt in cutlass.range_constexpr(4):
                 facc[blk][nt].fill(0.0)
 
@@ -126,8 +242,9 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         while intermediate_slice < intermediate_tiles:
             # The serving M1 monolithic path restarts its FC2 accumulator for
             # every K128 slice and rounds the ordered running output to BF16.
-            for nt in cutlass.range_constexpr(4):
-                facc[0][nt].fill(0.0)
+            if cutlass.const_expr(not self.scale_sandwich):
+                for nt in cutlass.range_constexpr(4):
+                    facc[0][nt].fill(0.0)
             stage = intermediate_slice & Int32(1)
             a_base = smem_base + stage * Int32(self.a_stage_bytes)
             sfa_base = a_base + Int32(self.a_payload_bytes)
@@ -164,15 +281,15 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
             cute.arch.fence_proxy("async.shared", space="cta")
             cute.arch.sync_threads()
 
-            asc = cute.make_rmem_tensor((1,), Uint32)
-            for blk in cutlass.range_constexpr(1):
+            asc = cute.make_rmem_tensor((self.mma_m_blocks,), Uint32)
+            for blk in cutlass.range_constexpr(self.mma_m_blocks):
                 sf_row = Int32(blk * 16) + q + ((lane & Int32(1)) << Int32(3))
                 asc[blk] = ld_shared_u32(sfa_base + (sf_row << Int32(2)))
 
             for kb in cutlass.range_constexpr(4):
                 u_phys = (Int32(kb * 2) + (c >> Int32(1))) ^ q
-                a_frag = cute.make_rmem_tensor((1, 4), Uint32)
-                for blk in cutlass.range_constexpr(1):
+                a_frag = cute.make_rmem_tensor((self.mma_m_blocks, 4), Uint32)
+                for blk in cutlass.range_constexpr(self.mma_m_blocks):
                     a_lo = (
                         a_base
                         + Int32(blk * 16 * self.tile_k)
@@ -226,7 +343,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                         sfb_word = ld_shared_u32(
                             sfb_base + ((n8 * Int32(8) + q) << Int32(2))
                         )
-                    for blk in cutlass.range_constexpr(1):
+                    for blk in cutlass.range_constexpr(self.mma_m_blocks):
                         fragment = facc[blk][nt]
                         if cutlass.const_expr(self.w4a8_trellis):
                             d0, d1, d2, d3 = mxfp8_mma_m16n8k32_f32_e4m3(
@@ -250,32 +367,127 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                         fragment[2] = d2
                         fragment[3] = d3
 
-            # Preserve the monolithic serving boundary exactly:
-            # BF16(down_scale * slice_dot), then route weighting, then the
-            # ordered BF16 running sum.
+            if cutlass.const_expr(not self.scale_sandwich):
+                # Preserve the identity serving boundary exactly:
+                # BF16(down_scale * slice_dot), route weight, ordered BF16 sum.
+                down_scale = down_alpha[expert_idx].to(cutlass.Float32) * global_scale[
+                    expert_idx
+                ].to(cutlass.Float32)
+                weight = token_weights[source_m_tile * Int32(16)].to(cutlass.Float32)
+                col_base = output_tile * Int32(128) + warp_idx * Int32(32) + c * Int32(2)
+                if q == Int32(0):
+                    for nt in cutlass.range_constexpr(4):
+                        col = col_base + Int32(nt * 8)
+                        for element in cutlass.range_constexpr(2):
+                            partial = cutlass.Float32(cutlass.BFloat16(
+                                down_scale * facc[0][nt][element]
+                            ))
+                            previous = cutlass.Float32(0.0)
+                            if intermediate_slice > Int32(0):
+                                previous = cutlass.Float32(scatter_output[
+                                    source_m_tile, col + Int32(element)
+                                ])
+                            weighted = weight * partial
+                            scatter_output[source_m_tile, col + Int32(element)] = (
+                                cutlass.BFloat16(previous + weighted)
+                            )
+            cute.arch.sync_threads()
+            intermediate_slice += Int32(1)
+
+        if cutlass.const_expr(self.scale_sandwich):
+            # The complete K=512 result remains FP32 until one N128 CTA owns
+            # its exact output block.  Store the physical projection as FP16,
+            # run H128, then apply shared down_svh before route weighting.
+            cute.arch.cp_async_wait_group(0)
+            cute.arch.fence_proxy("async.shared", space="cta")
+            cute.arch.sync_threads()
             down_scale = down_alpha[expert_idx].to(cutlass.Float32) * global_scale[
                 expert_idx
             ].to(cutlass.Float32)
-            weight = token_weights[source_m_tile * Int32(16)].to(cutlass.Float32)
-            col_base = output_tile * Int32(128) + warp_idx * Int32(32) + c * Int32(2)
-            if q == Int32(0):
-                for nt in cutlass.range_constexpr(4):
-                    col = col_base + Int32(nt * 8)
-                    for element in cutlass.range_constexpr(2):
-                        partial = cutlass.Float32(cutlass.BFloat16(
-                            down_scale * facc[0][nt][element]
-                        ))
-                        previous = cutlass.Float32(0.0)
-                        if intermediate_slice > Int32(0):
-                            previous = cutlass.Float32(scatter_output[
-                                source_m_tile, col + Int32(element)
-                            ])
-                        weighted = weight * partial
-                        scatter_output[source_m_tile, col + Int32(element)] = (
-                            cutlass.BFloat16(previous + weighted)
+            physical_base = smem_base
+            col_in_tile = warp_idx * Int32(32) + c * Int32(2)
+            for nt in cutlass.range_constexpr(4):
+                col = col_in_tile + Int32(nt * 8)
+                for blk in cutlass.range_constexpr(self.mma_m_blocks):
+                    fragment = facc[blk][nt]
+                    row_lo = Int32(blk * 16) + q
+                    row_hi = row_lo + Int32(8)
+                    if row_lo < valid_rows:
+                        st_shared_u32(
+                            physical_base
+                            + (row_lo * Int32(self.tile_n) + col) * Int32(2),
+                            _p8_pack_f32x2_to_half2(
+                                down_scale * fragment[0],
+                                down_scale * fragment[1],
+                            ),
+                        )
+                    if row_hi < valid_rows:
+                        st_shared_u32(
+                            physical_base
+                            + (row_hi * Int32(self.tile_n) + col) * Int32(2),
+                            _p8_pack_f32x2_to_half2(
+                                down_scale * fragment[2],
+                                down_scale * fragment[3],
+                            ),
                         )
             cute.arch.sync_threads()
-            intermediate_slice += Int32(1)
+            for row_group in cutlass.range_constexpr(self.owned_row_groups):
+                hrow = warp_idx + Int32(row_group * self.num_warps)
+                if hrow < valid_rows:
+                    hcol = lane * Int32(4)
+                    addr = physical_base + (
+                        hrow * Int32(self.tile_n) + hcol
+                    ) * Int32(2)
+                    h0 = _p8_ld_shared_f16_to_f32(addr)
+                    h1 = _p8_ld_shared_f16_to_f32(addr + Int32(2))
+                    h2 = _p8_ld_shared_f16_to_f32(addr + Int32(4))
+                    h3 = _p8_ld_shared_f16_to_f32(addr + Int32(6))
+                    h0, h1, h2, h3 = _w4a8_had128_quad(
+                        h0, h1, h2, h3, lane
+                    )
+                    output_col = output_tile * Int32(128) + hcol
+                    h0 = self._scale_down_after_h128(
+                        h0, scale_component, output_col
+                    )
+                    h1 = self._scale_down_after_h128(
+                        h1, scale_component, output_col + Int32(1)
+                    )
+                    h2 = self._scale_down_after_h128(
+                        h2, scale_component, output_col + Int32(2)
+                    )
+                    h3 = self._scale_down_after_h128(
+                        h3, scale_component, output_col + Int32(3)
+                    )
+                    output_row = source_m_tile
+                    if cutlass.const_expr(self.prefill_grouped):
+                        physical_row = physical_row_base + hrow
+                        output_row = token_map[physical_row].to(Int32)
+                    if cutlass.const_expr(self.full_coupled):
+                        # Keep route values unweighted and FP32: route
+                        # weighting, top-k sum and final H512 belong to the
+                        # replacement reducer. Grouped prefill scatters by the
+                        # deterministic pair index in token_map.
+                        scatter_output[output_row, output_col] = h0
+                        scatter_output[output_row, output_col + Int32(1)] = h1
+                        scatter_output[output_row, output_col + Int32(2)] = h2
+                        scatter_output[output_row, output_col + Int32(3)] = h3
+                    else:
+                        weight = token_weights[source_m_tile * Int32(16)].to(
+                            cutlass.Float32
+                        )
+                        scatter_output[output_row, output_col] = cutlass.BFloat16(
+                            weight * h0
+                        )
+                        scatter_output[
+                            output_row, output_col + Int32(1)
+                        ] = cutlass.BFloat16(weight * h1)
+                        scatter_output[
+                            output_row, output_col + Int32(2)
+                        ] = cutlass.BFloat16(weight * h2)
+                        scatter_output[
+                            output_row, output_col + Int32(3)
+                        ] = cutlass.BFloat16(weight * h3)
+            cute.arch.sync_threads()
 
     @cute.kernel
     def kernel(
@@ -285,6 +497,7 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
         task_expert: cute.Tensor, task_valid_rows: cute.Tensor,
         expert_tile_base: cute.Tensor, down_alpha: cute.Tensor,
         global_scale: cute.Tensor, trellis_lut: cute.Tensor,
+        scale_component: cute.Tensor,
         intermediate_tiles: cutlass.Int32, packed_output_tiles: cutlass.Int32,
     ):
         # task_expert is the original topk_ids, not grouped metadata.
@@ -317,7 +530,8 @@ class P8SmallMPhase2Kernel(W4A8MaterializedPhase2Kernel):
                     self._run_task(
                         intermediate_u32, down_rp, down_sfb_rp, scatter_output,
                         token_map, token_weights, down_alpha, global_scale,
-                        trellis_lut, smem_base, tid, warp_idx, route, Int32(0),
+                        trellis_lut, scale_component, smem_base, tid, warp_idx,
+                        route, Int32(0),
                         expert, output_pair * Int32(2) + Int32(half), Int32(1),
                         rows_capacity, intermediate_tiles, packed_output_tiles,
                     )

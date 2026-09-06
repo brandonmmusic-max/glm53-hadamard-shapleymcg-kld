@@ -84,17 +84,37 @@ def test_regions_are_aligned_disjoint_zeroed_and_retain_shapes():
     assert layout.nbytes % 16 == 0
 
 
-def test_opt_in_has_one_zero_fill_and_identical_fallback():
+def test_opt_in_has_one_zero_fill_and_fallback_changes_only_scale_allocation():
     tree = ast.parse((PATCH / "p8_native_kernel.py").read_text())
     branch = next(n for n in ast.walk(tree)
                   if isinstance(n, ast.If) and ast.unparse(n.test) == "fused_scratch_zero")
     fills = [n for stmt in branch.body for n in ast.walk(stmt)
              if isinstance(n, ast.Call) and ast.unparse(n.func) == "torch.zeros"]
     assert len(fills) == 1
-    assert ast.dump(ast.Module(body=branch.orelse, type_ignores=[])) == ast.dump(
-        ast.Module(body=frozen_allocation_nodes(), type_ignores=[])
+    current = branch.orelse
+    frozen = frozen_allocation_nodes()
+    current_other = [
+        node for node in current
+        if not (
+            isinstance(node, ast.Assign)
+            and any(
+                ast.unparse(target) in {"scale_elements", "scale_flat"}
+                for target in node.targets
+            )
+        )
+    ]
+    frozen_other = [
+        node for node in frozen
+        if not (
+            isinstance(node, ast.Assign)
+            and any(ast.unparse(target) == "scale_flat" for target in node.targets)
+        )
+    ]
+    assert ast.dump(ast.Module(body=current_other, type_ignores=[])) == ast.dump(
+        ast.Module(body=frozen_other, type_ignores=[])
     )
     source = (PATCH / "p8_native_kernel.py").read_text()
+    assert "if self.full_coupled and materialized and not small_m" in source
     assert "fuse_scratch_zero: bool = False" in source
     assert "fused_scratch_zero = self.fuse_scratch_zero and small_m" in source
     assert '"fused_scratch_zero": fused_scratch_zero' in source
