@@ -266,10 +266,24 @@ autonomously. Consequences recorded here as decisions before results:
   all three projections, worst relative difference 5.5e-8).
 - Allocation: exact DP over #K5 - #K3 at the identity file budget
   (`glm53_nvfp4/p8_layer_rate_allocation.py`); at least one more K3 layer than K5.
-- Orchestrator `scripts/run_phase1_campaign.sh`: uniform coupled KLD (v10) ->
-  layer-3 candidates -> K3/K5 device closures (v11) -> all-layer candidates ->
-  allocation -> assembly -> allocated-model KLD (v11). Logs under
-  `<campaign>/phase1-campaign-v1/`.
+- Orchestrator `scripts/run_phase1_campaign.sh` (superseded before any step ran):
+  uniform coupled KLD (v10) -> layer-3 candidates -> K3/K5 device closures (v11)
+  -> all-layer candidates -> allocation -> assembly -> allocated-model KLD (v11).
+- Revised 2026-09-06 00:40 EDT after the owner objected to the exhaustive pass
+  (84 layer encodes, about 15 h): `scripts/run_phase1_campaign_v2.sh` screens
+  candidates instead. K4 Shapley damage needs no new encodes, so it is scored for
+  all 42 layers from the packed K4 sidecars (`scripts/score_k4_damage_parallel.sh`,
+  one worker per GPU). A preliminary allocation with assumed damage ratios (the
+  layer-4 smoke NMSE ratios, K3 3.76x and K5 0.285x of K4) selects candidate
+  sets widened by a margin along the K4-damage ranking: the highest-damage
+  layers for K5, the lowest for K3 (`--candidate-margin 3`, at least 4 K5 and 5
+  K3 candidates). Only those layers are encoded and scored exactly; their
+  sidecars are kept and hard-linked into the final checkpoint, so the assembly
+  encodes nothing. The final allocation uses measured damage only; layers never
+  scored at another rate are K4 by construction and the allocation JSON records
+  `eligible_rates` per layer. Disclosure: this is a screened optimum, exact over
+  the candidate sets, not a proof that no unscreened layer would have helped.
+  Logs under `<campaign>/phase1-campaign-v1/`.
 - Publication hygiene: the design files pinned by the sidecars (42-layer V4
   sha256 `23fba550…`, pilot V3 `4ebb96dd…`, rate designs K3 `73ce0a73…` and K5
   `d004563e…`) embed machine-local absolute paths, so they are kept out of
