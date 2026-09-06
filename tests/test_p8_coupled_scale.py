@@ -9,6 +9,7 @@ from safetensors.torch import save_file
 
 import glm53_nvfp4.p8_coupled_scale as coupled_mod
 from glm53_nvfp4.p8_coupled_scale import (
+    SUPPORTED_LAYERS,
     CoupledScaleSet,
     COUPLED_TRANSFORM_SHA256,
     block_hadamard,
@@ -350,13 +351,17 @@ def test_exact_exl3_loader_fails_closed_on_nonshared_or_wrong_geometry(tmp_path:
         )
 
 
-def test_exact_exl3_loader_rejects_layers_outside_frozen_pilot(tmp_path: Path):
-    with pytest.raises(ValueError, match="limited to layers"):
-        load_exact_exl3_scales(tmp_path / "unused.safetensors", layer=4)
+def test_exact_exl3_loader_rejects_layers_outside_routed_range(tmp_path: Path):
+    for layer in (2, 45):
+        with pytest.raises(ValueError, match="limited to layers"):
+            load_exact_exl3_scales(tmp_path / "unused.safetensors", layer=layer)
 
 
-def test_preparation_inputs_are_exactly_three_layers():
-    parsed = _parse_layer_paths(["3=/a", "20=/b", "22=/c"])
-    assert parsed == {3: Path("/a"), 20: Path("/b"), 22: Path("/c")}
+def test_preparation_inputs_are_exactly_all_routed_layers():
+    assert SUPPORTED_LAYERS == tuple(range(3, 45))
+    parsed = _parse_layer_paths([f"{layer}=/p{layer}" for layer in SUPPORTED_LAYERS])
+    assert parsed == {layer: Path(f"/p{layer}") for layer in SUPPORTED_LAYERS}
     with pytest.raises(ValueError, match="exactly layers"):
-        _parse_layer_paths(["3=/a", "20=/b"])
+        _parse_layer_paths([f"{layer}=/p{layer}" for layer in SUPPORTED_LAYERS[:-1]])
+    with pytest.raises(ValueError, match="exactly layers"):
+        _parse_layer_paths(["3=/a", "20=/b", "22=/c"])

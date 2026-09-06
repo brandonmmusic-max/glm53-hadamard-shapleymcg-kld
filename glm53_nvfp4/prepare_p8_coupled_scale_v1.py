@@ -1,4 +1,9 @@
-"""Freeze the three-layer coupled-scale P8 encoder preparation manifest."""
+"""Freeze the coupled-scale P8 encoder preparation manifest for layers 3..44.
+
+The layer set is ``SUPPORTED_LAYERS`` from :mod:`p8_coupled_scale`.  The
+storage block is derived from that set and from the explicit ``--max-new-bytes``
+ceiling the owner approved; nothing in it is hard-coded to a pilot.
+"""
 from __future__ import annotations
 
 import argparse
@@ -31,6 +36,12 @@ TARGET_EXPERTS = 288
 TARGET_HIDDEN = 4096
 TARGET_INTERMEDIATE = 2048
 FROZEN_INTERMEDIATE_DRAW = COUPLED_SIGN_DRAW
+WEIGHTS_PER_LAYER = TARGET_EXPERTS * 3 * TARGET_HIDDEN * TARGET_INTERMEDIATE
+K4_PAYLOAD_BYTES_PER_LAYER = WEIGHTS_PER_LAYER * 17 // 32  # 4.25 bpw exactly
+# Measured on the three encoded layers: four rank files of 963,497,456 bytes.
+COUPLED_SIDECAR_BYTES_PER_LAYER = 4 * 963_497_456
+FIT_CAPTURE_BYTES_PER_LAYER = 1_080_033_280  # 64 sealed fit windows, sparse
+DENSE_BF16_BYTES_PER_LAYER = WEIGHTS_PER_LAYER * 2
 
 
 def _canonical_json(value: object) -> bytes:
@@ -96,7 +107,26 @@ def main() -> None:
     scale_source.add_argument("--exl3-scale", action="append")
     scale_source.add_argument("--exl3-checkpoint", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--max-new-bytes",
+        type=int,
+        required=True,
+        help="owner-approved aggregate new-byte ceiling for this encoding campaign",
+    )
+    parser.add_argument(
+        "--already-encoded-layer",
+        type=int,
+        action="append",
+        default=[],
+        help="layer whose coupled sidecars already exist and are reused unchanged",
+    )
     args = parser.parse_args()
+    if args.max_new_bytes <= 0:
+        raise ValueError("--max-new-bytes must be positive")
+    if any(layer not in SUPPORTED_LAYERS for layer in args.already_encoded_layer):
+        raise ValueError("--already-encoded-layer must name a supported routed layer")
+    if len(set(args.already_encoded_layer)) != len(args.already_encoded_layer):
+        raise ValueError("duplicate --already-encoded-layer")
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite {args.output}")
     capture_manifest = args.capture_root / "capture-manifest.json"
@@ -210,18 +240,25 @@ def main() -> None:
             "trellis": "existing repository P8 K4 procedural MCG E4M3 codec",
         },
         "storage_budget": {
-            "max_new_bytes": 30000000000,
-            "weights_per_layer": 7247757312,
-            "k4_4_25bpw_bytes_per_layer": 3850371072,
-            "three_layer_weight_payload_bytes": 11551113216,
-            "forecast_chunk_plus_tp4_bytes": 23123890176,
-            "other_new_bytes_allowance": 6876109824,
-            "dense_bf16_three_layer_bytes": 43486543872,
+            "max_new_bytes": args.max_new_bytes,
+            "layers": len(SUPPORTED_LAYERS),
+            "already_encoded_layers": sorted(args.already_encoded_layer),
+            "weights_per_layer": WEIGHTS_PER_LAYER,
+            "k4_4_25bpw_bytes_per_layer": K4_PAYLOAD_BYTES_PER_LAYER,
+            "coupled_sidecar_bytes_per_layer": COUPLED_SIDECAR_BYTES_PER_LAYER,
+            "full_coupled_sidecar_bytes": COUPLED_SIDECAR_BYTES_PER_LAYER * len(SUPPORTED_LAYERS),
+            "remaining_sidecar_bytes": COUPLED_SIDECAR_BYTES_PER_LAYER
+            * (len(SUPPORTED_LAYERS) - len(set(args.already_encoded_layer))),
+            "transient_chunk_bytes_per_layer": COUPLED_SIDECAR_BYTES_PER_LAYER,
+            "transient_fit_capture_bytes_per_layer": FIT_CAPTURE_BYTES_PER_LAYER,
+            "dense_bf16_bytes_per_layer": DENSE_BF16_BYTES_PER_LAYER,
             "dense_output": "prohibited",
             "peak_gate": (
                 "before every write require projected campaign bytes including "
-                "safetensors headers, receipts, temporary files, and caches <=30000000000; "
-                "also require filesystem free bytes >= projected remaining writes"
+                "safetensors headers, receipts, temporary files, and caches "
+                f"<= {args.max_new_bytes}; also require filesystem free bytes >= "
+                "one layer of transient chunks plus fit capture plus the remaining "
+                "sidecar writes"
             ),
         },
     }

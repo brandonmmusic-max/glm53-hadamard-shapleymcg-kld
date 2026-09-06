@@ -48,7 +48,7 @@ def verify_postwrite(
     """Verify all four written ranks against their source chunk tensors."""
 
     if layer not in SUPPORTED_LAYERS:
-        raise ValueError("coupled verifier is frozen to layers 3/20/22")
+        raise ValueError("coupled verifier requires GLM routed layers 3..44")
     if len(chunks) != 4 or len({path.resolve() for path in chunks}) != 4:
         raise ValueError("postwrite closure requires four distinct encoder chunks")
     if len(sidecars) != 4 or len({path.resolve() for path in sidecars}) != 4:

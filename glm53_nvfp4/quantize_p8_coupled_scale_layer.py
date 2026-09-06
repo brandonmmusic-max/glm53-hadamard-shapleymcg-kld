@@ -140,8 +140,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.dense_output is not None:
         raise ValueError(
-            "--dense-output is prohibited for the three-layer pilot: its "
-            "43,486,543,872-byte BF16 payload exceeds the 30 GB campaign cap"
+            "--dense-output is prohibited in this campaign: decoded BF16 "
+            "carriers cost 14,495,514,624 bytes per layer and are never needed "
+            "for the native P8 sidecar product"
         )
     outputs = [args.codec_output, args.receipt]
     if args.dense_output is not None:

@@ -47,7 +47,7 @@ def _load_rank_coupled(
     expected_intermediate: int | None = None,
 ) -> tuple[dict[str, torch.Tensor], list[dict[str, object]], str, str]:
     if layer not in SUPPORTED_LAYERS or world_size != 4 or not 0 <= rank < world_size:
-        raise ValueError("coupled sidecars are frozen to layers 3/20/22 and TP4")
+        raise ValueError("coupled sidecars require GLM routed layers 3..44 and TP4")
     gate_payload: list[torch.Tensor] = []
     up_payload: list[torch.Tensor] = []
     down_payload: list[torch.Tensor] = []
