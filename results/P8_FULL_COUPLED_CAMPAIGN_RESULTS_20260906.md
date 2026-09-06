@@ -204,9 +204,10 @@ Protocol hashes for the damage pass: fit roles
 `f1a6fe7b8828b3461e81ee533d417dd1524355ef6a205145850116560197f81a`, EXL3 scale source
 `092be1ffa8db66bf02d4c370d0433a57aa48d4a6e5ce89723ef6a3bb7ca32643`.
 
-## 5. Measured layer damage
+## 5. Measured layer damage, and how concentrated it is
 
 All 42 layers were scored at K4 with no new encoding, since the K4 sidecars already exist.
+The headline is not the total but its distribution.
 
 | Quantity | Value |
 |---|---:|
@@ -215,9 +216,123 @@ All 42 layers were scored at K4 with no new encoding, since the K4 sidecars alre
 | Lowest layer (12) | 442 |
 | Ratio, highest to lowest | 261 |
 
-Damage is heavily concentrated: the 16 layers selected for upgrade hold **89.5%** of the total,
-while the 17 selected for downgrade hold **2.8%**. That concentration is what makes a same-size
-swap arithmetically plausible here, and it is measured, not assumed.
+### Across layers
+
+| Layers, worst first | Share of total damage |
+|---|---:|
+| top 4 | 46.1% |
+| top 8 | 69.2% |
+| top 16 | 89.5% |
+| top 21 | 95.1% |
+
+By depth, the damage sits in the second half of the stack, with a secondary early peak:
+
+| Layer band | Damage | Share |
+|---|---:|---:|
+| 3-9 | 32,687 | 4.6% |
+| 10-16 | 8,768 | 1.2% |
+| 17-23 | 61,164 | 8.5% |
+| 24-30 | 181,431 | 25.4% |
+| 31-37 | 103,401 | 14.5% |
+| 38-44 | 328,015 | 45.8% |
+
+### Per layer
+
+K5 damage is shown where that layer was encoded and scored at K5; the ratio is measured,
+not assumed.
+
+| Layer | K4 damage | Share | Top expert's share of the layer | K5 damage | K5/K4 |
+|---:|---:|---:|---:|---:|---:|
+| 29 | 115,230 | 16.11% | 97.0% | 31,710 | 0.2752 |
+| 40 | 79,710 | 11.14% | 88.3% | 27,996 | 0.3512 |
+| 41 | 71,328 | 9.97% | 81.9% | 23,883 | 0.3348 |
+| 43 | 63,471 | 8.87% | 78.5% | 23,000 | 0.3624 |
+| 38 | 59,975 | 8.38% | 88.5% | 18,815 | 0.3137 |
+| 34 | 42,588 | 5.95% | 89.7% | 13,898 | 0.3263 |
+| 25 | 34,114 | 4.77% | 95.9% | 9,129 | 0.2676 |
+| 3 | 28,511 | 3.98% | 6.1% | 11,714 | 0.4109 |
+| 33 | 26,826 | 3.75% | 81.1% | 11,247 | 0.4193 |
+| 42 | 25,192 | 3.52% | 34.7% | 14,833 | 0.5888 |
+| 44 | 21,030 | 2.94% | 40.1% | 11,566 | 0.5500 |
+| 21 | 18,969 | 2.65% | 94.6% | 4,347 | 0.2292 |
+| 19 | 18,722 | 2.62% | 95.3% | 5,996 | 0.3203 |
+| 22 | 14,802 | 2.07% | 95.0% | 4,170 | 0.2817 |
+| 36 | 10,060 | 1.41% | 47.4% | 4,347 | 0.4321 |
+| 30 | 9,483 | 1.33% | 57.5% | 3,031 | 0.3196 |
+| 28 | 8,910 | 1.25% | 72.7% | 3,285 | 0.3687 |
+| 24 | 8,797 | 1.23% | 87.8% | 2,469 | 0.2806 |
+| 31 | 8,485 | 1.19% | 49.7% | 3,831 | 0.4515 |
+| 39 | 7,309 | 1.02% | 11.8% | not scored | - |
+| 37 | 6,814 | 0.95% | 13.8% | not scored | - |
+| 32 | 4,431 | 0.62% | 7.1% | not scored | - |
+| 35 | 4,197 | 0.59% | 5.9% | not scored | - |
+| 18 | 3,601 | 0.50% | 57.4% | not scored | - |
+| 26 | 3,078 | 0.43% | 40.9% | not scored | - |
+| 23 | 2,446 | 0.34% | 69.2% | not scored | - |
+| 16 | 2,190 | 0.31% | 58.2% | not scored | - |
+| 14 | 2,000 | 0.28% | 9.3% | not scored | - |
+| 27 | 1,819 | 0.25% | 5.4% | not scored | - |
+| 15 | 1,520 | 0.21% | 3.1% | not scored | - |
+| 17 | 1,513 | 0.21% | 46.7% | not scored | - |
+| 13 | 1,239 | 0.17% | 3.8% | not scored | - |
+| 20 | 1,111 | 0.16% | 23.7% | not scored | - |
+| 6 | 1,038 | 0.15% | 11.6% | not scored | - |
+| 10 | 849 | 0.12% | 6.5% | not scored | - |
+| 5 | 745 | 0.10% | 14.6% | not scored | - |
+| 7 | 671 | 0.09% | 15.8% | not scored | - |
+| 4 | 579 | 0.08% | 2.8% | not scored | - |
+| 8 | 572 | 0.08% | 12.9% | not scored | - |
+| 9 | 572 | 0.08% | 8.8% | not scored | - |
+| 11 | 528 | 0.07% | 2.5% | not scored | - |
+| 12 | 442 | 0.06% | 11.2% | not scored | - |
+
+### Inside a layer, the damage is concentrated on individual experts
+
+Each layer has 288 routed experts and the per-expert credit is the exact Shapley value of
+the per-token quadratic game, so these shares sum to the layer damage exactly.
+
+| Measure | Value |
+|---|---:|
+| Layers where one expert holds more than half the layer's damage | 17 of 42 |
+| Largest single-expert share (layer 29, expert 2) | 97.02% |
+| Share held by the top 100 of all 12,096 layer-expert pairs | 80.12% |
+| Share held by the top 1,000 pairs | 89.67% |
+
+The concentrated layers are exactly the high-damage ones. In the diffuse low-damage layers
+the top expert holds only 2.5% to 16%.
+
+### This is not a weight-quantization effect
+
+The obvious explanation would be that the dominant expert quantizes badly. It does not.
+For layer 29, per-expert transformed-weight NMSE ranges only from 0.00700 to 0.00790 across
+all 288 experts, and expert 2, which carries 97.02% of the layer's damage, sits at 0.00746,
+which is 0.99 times the median and **203rd of 288** by weight error. The dominant expert
+index also differs from layer to layer (2, 21, 5, 204, 259, 109, 223, ...), so this is not one
+global outlier expert.
+
+The damage is the routed output error, sum_t || sum_e w_te (f_q,e - f_e) ||^2, so it scales
+with routing weight and activation magnitude, not with weight error alone. The measurement
+says a small number of expert-token pairs carry very large activations, and their ordinary
+quantization error is amplified there.
+
+### Consequence for allocation granularity
+
+This is the most actionable result of the campaign so far, and it argues against the
+granularity the current kernels force.
+
+| Strategy | Bytes to upgrade | Damage addressed |
+|---|---:|---:|
+| 16 whole layers to K5 (what the ABI allows today) | 14,495,514,624 | 89.5% |
+| Top 100 layer-expert pairs to K5 | 314,572,800 | 80.1% |
+
+One expert at one rate step costs 3,145,728 B against 905,969,664 B for a whole layer.
+Reaching 80% of the damage costs about 46 times fewer bytes per-expert than per-layer.
+
+The running campaign remains layer-granular because the sidecar ABI stores one rate per layer
+and the compiled small-M kernel reads one rate per layer; per-expert rates need pool dispatch
+in the kernel. That work is now clearly worth doing, and this measurement is the evidence for
+it. No per-expert claim is made here beyond the proxy: like every damage number in this
+document it is fit-role routed-output error, not KLD.
 
 ## 6. Assumed versus measured rate ratios
 
