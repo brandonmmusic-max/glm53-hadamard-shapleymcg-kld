@@ -88,6 +88,34 @@ def packed_decode_mcg2_to_e4m3x8(win_a, win_b, bits: int, *, loc=None, ip=None):
 def _mcg_decode_both(smem_base, base, ia, ib, s2, bits):
     a = Uint32(ld_shared_u32(smem_base + ((base + ia) << Int32(2))))
     b = Uint32(ld_shared_u32(smem_base + ((base + ib) << Int32(2))))
+    if cutlass.const_expr(int(bits) == 5):
+        # A lane's eight overlapping L16 windows span 16 + 7*bits bits: 37 at
+        # K3, 44 at K4, 51 at K5.  With the ring geometry's funnel alignment the
+        # K3 and K4 spans always fit in the two ring words (ia, ib), but at K5
+        # half the lanes start deep enough into their first word that the span
+        # crosses into a third word, which the two-word merge skipped (device
+        # closure: input carriers exact, middle payload 4030/4096 bytes wrong).
+        # Read the middle ring word too and take each 32-bit window from the
+        # 64-bit pair that contains it: (mid:last) covers bits [0, 64) of the
+        # 96-bit read and (first:mid) covers [32, 96).  Two-word lanes keep
+        # (first:last) as the low pair with a zero top word, which reproduces
+        # the original arithmetic exactly.
+        ring = Int32(8 * int(bits))
+        im = ia + Int32(1)
+        im = im - ring * (im >= ring).to(Int32)
+        m = Uint32(ld_shared_u32(smem_base + ((base + im) << Int32(2))))
+        top = Uint32(0)
+        mid = a
+        if ib != im:
+            top = a
+            mid = m
+        lo64 = (Int64(mid) << Int64(32)) | Int64(b)
+        hi64 = (Int64(top) << Int64(32)) | Int64(mid)
+        t = s2 + Int32(4 * int(bits))
+        win_b = Uint32(lo64 >> Int64(t))
+        if t >= Int32(32):
+            win_b = Uint32(hi64 >> Int64(t - Int32(32)))
+        return packed_decode_mcg2_to_e4m3x8(Uint32(lo64 >> Int64(s2)), win_b, int(bits))
     merged = (Int64(a) << Int64(32)) | Int64(b)
     return packed_decode_mcg2_to_e4m3x8(
         Uint32(merged >> Int64(s2)),
