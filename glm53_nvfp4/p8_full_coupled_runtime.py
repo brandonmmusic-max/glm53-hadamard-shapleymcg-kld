@@ -246,17 +246,25 @@ def validate_image_receipt(path: Path, *, docker_inspect=None) -> dict:
             "labels": value.get("labels")}
 
 
+KV_DTYPES = ("nvfp4_ds_mla", "fp8_ds_mla")
+
+
 def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output: Path,
                 model_root: Path, sidecar_dir: Path, designs: list[Path],
-                transform: Path | None, *, port: int = PORT) -> list[str]:
+                transform: Path | None, *, port: int = PORT, kv_dtype: str = "nvfp4_ds_mla") -> list[str]:
     """Derive one arm's ``docker create`` argv from the authenticated serving recipe.
 
     The recipe is the ``docker inspect`` record of the reference P8 server.  Only
-    the served model name, port, model mount, sidecar mount, design mounts and the
-    explicit P8 environment differ between arms; topology flags are re-checked.
+    the served model name, port, model mount, sidecar mount, design mounts, the
+    explicit P8 environment and the KV-cache dtype differ between arms; every
+    other topology flag is re-checked.  The recipe itself must carry the
+    nvfp4_ds_mla reference cache; ``kv_dtype`` selects what the arm serves with
+    and is recorded in the runtime manifest, the seal and the analysis conditions.
     """
     if arm not in ARMS:
         raise ValueError("undeclared arm")
+    if kv_dtype not in KV_DTYPES:
+        raise ValueError(f"undeclared KV-cache dtype: {kv_dtype!r}")
     config, host = recipe["Config"], recipe["HostConfig"]
     raw_command = config.get("Cmd", [])
     if len(raw_command) != 2 or raw_command[0] != "-lc":
@@ -282,6 +290,7 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
 
     replace("--port", str(port))
     replace("--served-model-name", SERVED_NAME.format(arm=arm))
+    replace("--kv-cache-dtype", kv_dtype)
     tokens[tokens.index("serve") + 1] = "/model"
     name = SERVED_NAME.format(arm=arm)
     argv = ["docker", "create", "--name", name, "--network", "host", "--ipc", "host",

@@ -82,7 +82,9 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
     arms = tuple(value.get("arms_in_order") or ())
     if (value.get("schema") != MANIFEST_SCHEMA or value.get("status") != "sealed-before-execution"
             or value.get("execution_authority") is not False or not arms or arms != ARMS[: len(arms)]
-            or set(value.get("arms", {})) != set(arms) or value.get("runtime") != RUNTIME_LABELS):
+            or set(value.get("arms", {})) != set(arms)
+            or (value.get("runtime") or {}).get("kv_dtype") not in runtime.KV_DTYPES
+            or value.get("runtime") != {**RUNTIME_LABELS, "kv_dtype": value["runtime"]["kv_dtype"]}):
         raise ValueError("prepared runtime protocol differs")
     prereg = Path(value["preregistration"]["path"])
     if runtime.sha(prereg) != value["preregistration"]["sha256"] or json.loads(prereg.read_text()).get(
@@ -169,7 +171,7 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
         if arm_root != arm_root.resolve() or arm_root.name != arm:
             raise ValueError(f"{arm}: capture root must be canonical and arm-named")
         expected_argv = runtime.launch_argv(recipe, image["image_id"], arm, environment, arm_root, carrier,
-                                            sidecars, arm_designs, transform)
+                                            sidecars, arm_designs, transform, kv_dtype=value["runtime"]["kv_dtype"])
         if entry["launch_argv"] != expected_argv:
             raise ValueError(f"{arm}: launch argv differs from authenticated source recipe")
         roots.add(str(arm_root.parent))
@@ -279,9 +281,12 @@ def _capture_budget(seal: dict, manifest: dict, output: Path, *, reserve_next_ra
 
 
 def audit_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str], image_id: str, bpw: float,
-                      completed: list[str] | None = None, bits_by_layer: dict[int, int] | None = None) -> dict:
+                      completed: list[str] | None = None, bits_by_layer: dict[int, int] | None = None,
+                      kv_dtype: str = "nvfp4_ds_mla") -> dict:
+    if kv_dtype not in runtime.KV_DTYPES:
+        raise ValueError(f"undeclared KV-cache dtype: {kv_dtype!r}")
     for marker in ("Using V2 Model Runner", "tensor_parallel_size=4", "decode_context_parallel_size=1",
-                   "speculative_config=None", "kv_cache_dtype=nvfp4_ds_mla", "quantization=modelopt_mixed"):
+                   "speculative_config=None", f"kv_cache_dtype={kv_dtype}", "quantization=modelopt_mixed"):
         if marker not in text:
             raise ValueError(f"runtime marker missing: {marker}")
     if "'enable_expert_parallel': True" in text or "enable_expert_parallel=True" in text:
@@ -295,7 +300,7 @@ def audit_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str], i
         raise ValueError("capture warmup closure differs")
     native = runtime.verify_runtime_log(text, arm, design_by_layer=design_by_layer, bits_by_layer=bits_by_layer)
     rates = sorted(set(bits_by_layer.values())) if bits_by_layer else [4]
-    conditions = {"attention": "B12X_MLA_SPARSE", "kv_dtype": "nvfp4_ds_mla",
+    conditions = {"attention": "B12X_MLA_SPARSE", "kv_dtype": kv_dtype,
                   "moe_backend": "native-p8-mxf8f6f4-n128-" + native["boundary"],
                   "activation_precision": "E4M3 UE8M0_K32 at native P8 MMA boundaries",
                   "bpw": bpw, "layers": "3-44", "image_id": image_id,
@@ -442,7 +447,8 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
                 logs = cold.pilot.command(["docker", "logs", cid])
                 proof_log = logs.stdout + logs.stderr
                 _private_save(out / "runtime-proof.private.log", proof_log)
-                _save(runtime_path, audit_runtime_log(proof_log, arm, design_by_layer=design_by_layer,
+                _save(runtime_path, audit_runtime_log(proof_log, arm, kv_dtype=manifest["runtime"]["kv_dtype"],
+                                                      design_by_layer=design_by_layer,
                                                       image_id=image, bpw=entry["bpw"], bits_by_layer=bits_by_layer))
             score = score_retire_window(arm=arm, window=window, teacher_root=Path(manifest["roles"]["teacher_root"]),
                                         capture_root=out / "captures", receipt_root=out / "scores",
@@ -471,7 +477,8 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
                     raise ValueError("owned cleanup did not preserve the mandatory final runtime log")
                 final = final_path.read_text(errors="replace")
                 _save(out / "runtime-final-audit.json",
-                      audit_runtime_log(final, arm, design_by_layer=design_by_layer, image_id=image,
+                      audit_runtime_log(final, arm, kv_dtype=manifest["runtime"]["kv_dtype"],
+                                        design_by_layer=design_by_layer, image_id=image,
                                         bpw=entry["bpw"], completed=[w["id"] for w in windows],
                                         bits_by_layer=bits_by_layer))
             except BaseException as error:

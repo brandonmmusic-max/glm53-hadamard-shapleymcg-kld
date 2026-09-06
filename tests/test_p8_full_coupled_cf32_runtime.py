@@ -142,6 +142,34 @@ def test_identity_manifest_validation_requires_pinned_design(tmp_path: Path, mon
         runtime.validate_identity_manifest(manifest, sidecar_dir=sidecars, design=design)
 
 
+def _minimal_recipe() -> dict:
+    serve = ("exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model --served-model-name ref "
+             "--port 8021 --tensor-parallel-size 4 --decode-context-parallel-size 1 "
+             "--attention-backend B12X_MLA_SPARSE --kv-cache-dtype nvfp4_ds_mla --max-num-seqs 1 "
+             "--quantization modelopt")
+    return {"Config": {"Cmd": ["-lc", serve], "Env": ["VLLM_EXL3_EXT_PATH=/opt/exllamav3"]},
+            "HostConfig": {"ShmSize": 1 << 30, "Runtime": "nvidia", "Binds": []}}
+
+
+def test_launch_argv_selects_the_kv_cache_dtype_and_records_nothing_else_different(tmp_path: Path):
+    env = runtime.arm_environment("coupled_full", ["conditional-fit-0003"], design_count=1)
+    common = dict(recipe=_minimal_recipe(), image="sha256:" + "a" * 64, arm="coupled_full", env=env,
+                  output=tmp_path / "out", model_root=tmp_path / "model", sidecar_dir=tmp_path / "sc",
+                  designs=[tmp_path / "d.json"], transform=tmp_path / "t.json")
+    ref = runtime.launch_argv(**common)
+    fp8 = runtime.launch_argv(**common, kv_dtype="fp8_ds_mla")
+    assert "--kv-cache-dtype nvfp4_ds_mla" in ref[-1] and "--kv-cache-dtype fp8_ds_mla" in fp8[-1]
+    assert ref[:-1] == fp8[:-1], "only the serving command's KV flag may differ between the two"
+    assert ref[-1].replace("nvfp4_ds_mla", "fp8_ds_mla") == fp8[-1]
+    with pytest.raises(ValueError, match="undeclared KV-cache dtype"):
+        runtime.launch_argv(**common, kv_dtype="fp8")
+    # The source recipe must still carry the reference cache; the arm selects, it does not rewrite history.
+    wrong = _minimal_recipe()
+    wrong["Config"]["Cmd"][1] = wrong["Config"]["Cmd"][1].replace("nvfp4_ds_mla", "fp8_ds_mla")
+    with pytest.raises(ValueError, match="topology differs"):
+        runtime.launch_argv(**{**common, "recipe": wrong}, kv_dtype="fp8_ds_mla")
+
+
 def test_preparer_canonical_path_check_skips_non_path_repeatable_options(tmp_path: Path, monkeypatch):
     """--arm appends arm names, not paths; the canonical-path rule must not call .resolve() on them."""
     import importlib.util
