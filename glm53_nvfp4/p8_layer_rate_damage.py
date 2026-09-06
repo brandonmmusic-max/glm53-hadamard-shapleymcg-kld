@@ -8,11 +8,11 @@ sample of fit-role tokens.  The payoff is the squared routed-output error in the
 residual stream::
 
     z_e(t) = w_te (f_q,e(x_t) - f_e(x_t))        S(t) = sum_e z_e(t)
-    D_L(r) = sum_t ||S(t)||^2                      psi_e = sum_t 1/2 <z_e(t), S(t)>
+    D_L(r) = sum_t ||S(t)||^2                      psi_e = sum_t <z_e(t), S(t)>
 
 ``psi_e`` is the exact Shapley value of the quadratic per-token game whose
 grand-coalition value is ``1/2 ||S(t)||^2`` (cross terms shared symmetrically),
-so ``sum_e psi_e = D_L(r) / 2``.  This is a local, fit-role proxy in the style of
+so ``sum_e psi_e = D_L(r)`` exactly (efficiency).  This is a local, fit-role proxy in the style of
 the owner's ShapleyMCG/SQG work; the end-to-end CF32 KLD of the installed
 allocation is the only quality claim.
 
@@ -170,7 +170,9 @@ def select_tokens(capture: LayerCapture, tokens_per_window: int) -> dict:
 def shapley_split(z: torch.Tensor, ids: torch.Tensor, experts: int = EXPERTS) -> tuple[torch.Tensor, torch.Tensor]:
     """Return (S, psi) for z[T, K, H] error contributions routed by ids[T, K]."""
     total = z.double().sum(dim=1)  # S(t), accumulated in float64
-    inner = 0.5 * (z.double() * total[:, None, :]).sum(dim=-1)  # <z_e(t), S(t)>/2 per slot
+    # Shapley value of expert e in the quadratic game v(C) = ||sum_{f in C} z_f||^2:
+    # phi_e = ||z_e||^2 + sum_{f != e} <z_e, z_f> = <z_e, S>, and sum_e phi_e = ||S||^2 exactly.
+    inner = (z.double() * total[:, None, :]).sum(dim=-1)  # <z_e(t), S(t)> per slot
     psi = torch.zeros(experts, dtype=torch.float64, device=z.device)
     psi.index_add_(0, ids.reshape(-1), inner.reshape(-1))
     return total, psi
@@ -241,8 +243,8 @@ def score_layer(*, layer: int, source: IndexedCheckpoint, scales, tokens: dict, 
         "receipt_nmse_check": nmse_check,
         "elapsed_seconds": time.time() - started,
     }
-    if not math.isclose(result["shapley_psi_sum_check"], result["damage_sum"] / 2, rel_tol=1e-6, abs_tol=1e-9):
-        raise RuntimeError("Shapley shares do not close to half the squared routed damage")
+    if not math.isclose(result["shapley_psi_sum_check"], result["damage_sum"], rel_tol=1e-6, abs_tol=1e-9):
+        raise RuntimeError("Shapley shares do not close to the squared routed damage")
     return result, base
 
 
@@ -316,7 +318,7 @@ def main() -> None:
         "fit_windows": [int(w) for w in capture.window_indices],
         "token_rows": [int(r) for r in tokens["rows"]],
         "payoff": "sum_t ||sum_e w_te (f_q,e(x_t) - f_e(x_t))||^2 on fit tokens; residual-stream units; quantized E4M3 carriers",
-        "shapley": "psi_e = sum_t 1/2 <z_e(t), S(t)>; exact for the quadratic per-token game; sum_e psi_e = damage/2",
+        "shapley": "psi_e = sum_t <z_e(t), S(t)>; exact Shapley value of the per-token quadratic game v(C) = ||sum_{e in C} z_e||^2; sum_e psi_e = damage_sum exactly (efficiency); this is the layer's routed-output error, not the model KLD",
         "scale_source_sha256": scales.source_sha256,
         "capture_manifest_sha256": sha256_file(args.capture_root / "capture-manifest.json"),
         "roles_sha256": sha256_file(args.roles),

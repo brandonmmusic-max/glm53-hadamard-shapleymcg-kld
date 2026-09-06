@@ -132,10 +132,26 @@ def test_preliminary_pass_estimates_and_widens_candidates(tmp_path: Path):
     assert result["receipts"]["10"].endswith("k4-only/damage-layer-010.json") or 10 in set(cands["3"]) | set(cands["5"])
 
 
-def test_shapley_split_closes_to_half_squared_damage():
+def test_shapley_split_is_the_exact_efficient_shapley_value_of_the_quadratic_game():
+    import itertools
     gen = torch.Generator().manual_seed(3)
     z = torch.randn(5, 8, 16, generator=gen)
     ids = torch.randint(0, 288, (5, 8), generator=gen)
     total, psi = shapley_split(z, ids)
     assert torch.allclose(total, z.double().sum(dim=1))
-    assert abs(psi.sum().item() - 0.5 * total.square().sum().item()) < 1e-9
+    # Efficiency: the expert shares sum exactly to the squared routed damage.
+    assert abs(psi.sum().item() - total.square().sum().item()) < 1e-9
+    # Brute-force Shapley on one token with 4 players: phi_e = mean over orderings of marginal gains.
+    zt = z[0, :4].double()
+    players = list(range(4))
+    phi = [0.0] * 4
+    for order in itertools.permutations(players):
+        acc = torch.zeros(16, dtype=torch.float64)
+        before = 0.0
+        for e in order:
+            acc = acc + zt[e]
+            after = float(acc.square().sum())
+            phi[e] += (after - before) / 24
+            before = after
+    closed = (zt * zt.sum(dim=0)).sum(dim=-1)
+    assert all(abs(phi[e] - float(closed[e])) < 1e-9 for e in players)
