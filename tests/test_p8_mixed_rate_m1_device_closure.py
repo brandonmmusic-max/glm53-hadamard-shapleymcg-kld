@@ -45,8 +45,9 @@ def test_default_invocation_is_protocol_only_and_never_touches_cuda() -> None:
     )
     record = json.loads(result.stdout)
     assert record["protocol_sha256"] == (
-        "9556885c32385574530acf7b07c1d5636b46852ca9714c27883f98f17368efe1"
+        "ae87e8fc90e8113bb9eda84f8a6bac97b9a73e196a894f05fac19cdc807d0781"
     )
+    assert record["protocol"]["schema"] == "glm53.p8-mixed-rate-m1-device-closure.v1"
     assert record["protocol"]["geometry"]["tokens"] == 1
     assert record["protocol"]["exact_gates"][-1] == (
         "five eager final outputs are bitwise identical"

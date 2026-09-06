@@ -96,8 +96,9 @@ link_candidate_layer() {
   local layer=$1 bits=$2 l3 src; printf -v l3 '%03d' "$layer"
   src=$CANDIDATE_ROOT/layer-$l3/k$bits
   [ -f "$src/receipt.json" ] && [ -f "$src/postwrite.json" ] || return 1
-  support reuse-layer --layer "$layer" --source-dir "$src" --source-packer-receipt "$src/receipt.json" \
-    --source-postwrite-receipt "$src/postwrite.json" --sidecars "$SIDECARS" --receipts "$RECEIPTS" \
+  mixed reuse-layer --layer "$layer" --allocation "$ALLOCATION" --source-dir "$src" \
+    --source-packer-receipt "$src/receipt.json" --source-postwrite-receipt "$src/postwrite.json" \
+    --sidecars "$SIDECARS" --receipts "$RECEIPTS" \
     --reason "allocation selects K$bits; candidate sidecars packed during the scoring pass" >"$LOGS/layer-$l3-reuse.json"
   layer_complete "$layer"
 }

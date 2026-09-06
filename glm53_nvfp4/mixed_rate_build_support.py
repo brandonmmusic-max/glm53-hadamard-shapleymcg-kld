@@ -137,6 +137,62 @@ def cmd_layer_complete(args: argparse.Namespace) -> dict:
                         allowed_design_sha256=set(args.allow_design_sha256), rehash=not args.trust_receipt_hashes)
 
 
+def cmd_reuse_layer(args: argparse.Namespace) -> dict:
+    """Hard-link (or copy) already packed rank sidecars of the allocated rate into the flat checkpoint."""
+    import os
+    import shutil
+
+    assignment = load_allocation(args.allocation)
+    layer, bits = args.layer, assignment[args.layer]
+    packer = json.loads(Path(args.source_packer_receipt).read_text())
+    if (packer.get("schema") != COUPLED_SIDECAR_SCHEMA or packer.get("layer") != layer or packer.get("world_size") != WORLD_SIZE
+            or packer.get("boundary") != COUPLED_BOUNDARY or packer.get("ldlq") is not False
+            or packer.get("bits", 4) != bits or packer.get("weight_payload_bpw") != bits + 0.25):
+        raise RuntimeError(f"source packer receipt is not a K{bits} layer-{layer} receipt")
+    postwrite = json.loads(Path(args.source_postwrite_receipt).read_text())
+    if (not str(postwrite.get("schema", "")).startswith(POSTWRITE_SCHEMA_PREFIX) or postwrite.get("layer") != layer
+            or postwrite.get("status") != "pass"):
+        raise RuntimeError(f"source postwrite receipt is not a layer-{layer} pass")
+    receipts = Path(args.receipts)
+    targets = {name: receipts / f"layer-{layer:03d}-{name}.json" for name in ("sidecars", "postwrite", "reuse")}
+    for target in targets.values():
+        if target.exists():
+            raise FileExistsError(f"refusing to overwrite {target}")
+    Path(args.sidecars).mkdir(parents=True, exist_ok=True)
+    receipts.mkdir(parents=True, exist_ok=True)
+    links = []
+    for entry in packer["ranks"]:
+        rank = int(entry["rank"])
+        source = Path(args.source_dir) / rank_path(Path("."), layer, rank).name
+        if not source.is_file():
+            raise RuntimeError(f"missing source sidecar {source}")
+        digest = sha256_file(source)
+        if digest != entry["sha256"] or source.stat().st_size != int(entry["bytes"]):
+            raise RuntimeError(f"source sidecar {source} differs from its packer receipt")
+        target = rank_path(args.sidecars, layer, rank)
+        if target.exists():
+            raise FileExistsError(f"refusing to overwrite {target}")
+        mode = "hardlink"
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copy2(source, target)
+            mode = "copy"
+        if sha256_file(target) != digest:
+            raise RuntimeError(f"reused sidecar {target} does not hash like its source")
+        links.append({"rank": rank, "source": str(source.resolve()), "target": str(target.resolve()), "mode": mode,
+                      "sha256": digest, "bytes": int(entry["bytes"])})
+    shutil.copyfile(args.source_packer_receipt, targets["sidecars"])
+    shutil.copyfile(args.source_postwrite_receipt, targets["postwrite"])
+    record = {"schema": "glm53-p8-mixed-rate-layer-reuse.v1", "layer": layer, "bits": bits, "reused_at": utc_now(),
+              "reason": args.reason, "source_dir": str(Path(args.source_dir).resolve()),
+              "source_packer_receipt": {"path": str(Path(args.source_packer_receipt).resolve()), "sha256": sha256_file(args.source_packer_receipt)},
+              "source_postwrite_receipt": {"path": str(Path(args.source_postwrite_receipt).resolve()), "sha256": sha256_file(args.source_postwrite_receipt)},
+              "links": links}
+    targets["reuse"].write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return record
+
+
 def cmd_manifest(args: argparse.Namespace) -> dict:
     output = Path(args.output)
     if output.exists():
@@ -201,6 +257,16 @@ def build_parser() -> argparse.ArgumentParser:
     complete.add_argument("--allow-design-sha256", action="append", required=True)
     complete.add_argument("--trust-receipt-hashes", action="store_true")
     complete.set_defaults(func=cmd_layer_complete)
+    reuse = sub.add_parser("reuse-layer")
+    reuse.add_argument("--layer", type=int, required=True, choices=LAYERS)
+    reuse.add_argument("--allocation", type=Path, required=True)
+    reuse.add_argument("--source-dir", type=Path, required=True)
+    reuse.add_argument("--source-packer-receipt", type=Path, required=True)
+    reuse.add_argument("--source-postwrite-receipt", type=Path, required=True)
+    reuse.add_argument("--sidecars", type=Path, required=True)
+    reuse.add_argument("--receipts", type=Path, required=True)
+    reuse.add_argument("--reason", default="allocated rate already packed and verified")
+    reuse.set_defaults(func=cmd_reuse_layer)
     manifest = sub.add_parser("manifest")
     manifest.add_argument("--allocation", type=Path, required=True)
     manifest.add_argument("--sidecars", type=Path, required=True)

@@ -85,6 +85,33 @@ def test_manifest_installs_allocation_and_enforces_identity_budget(tmp_path: Pat
         mixed.cmd_manifest(args)
 
 
+def test_reuse_layer_links_candidate_sidecars_of_the_allocated_rate(tmp_path: Path):
+    source = tmp_path / "candidate"
+    _layer(source, 17, 5)
+    allocation = tmp_path / "allocation.json"
+    _allocation(allocation, {layer: (5 if layer == 17 else 4) for layer in support.LAYERS})
+    target = tmp_path / "mixed"
+    code = mixed.main(["reuse-layer", "--layer", "17", "--allocation", str(allocation), "--source-dir", str(source / "sidecars"),
+                       "--source-packer-receipt", str(source / "receipts" / "layer-017-sidecars.json"),
+                       "--source-postwrite-receipt", str(source / "receipts" / "layer-017-postwrite.json"),
+                       "--sidecars", str(target / "sidecars"), "--receipts", str(target / "receipts")])
+    assert code == 0
+    record = json.loads((target / "receipts" / "layer-017-reuse.json").read_text())
+    assert record["bits"] == 5 and len(record["links"]) == 4
+    verified = mixed.verify_layer(layer=17, bits=5, sidecars=target / "sidecars",
+                                  packer_receipt=target / "receipts" / "layer-017-sidecars.json",
+                                  postwrite_receipt=target / "receipts" / "layer-017-postwrite.json",
+                                  allowed_design_sha256={DESIGN_A})
+    assert verified["status"] == "pass"
+    # A K3 allocation must refuse the K5 candidate.
+    _allocation(allocation, {layer: (3 if layer == 17 else 4) for layer in support.LAYERS})
+    code = mixed.main(["reuse-layer", "--layer", "17", "--allocation", str(allocation), "--source-dir", str(source / "sidecars"),
+                       "--source-packer-receipt", str(source / "receipts" / "layer-017-sidecars.json"),
+                       "--source-postwrite-receipt", str(source / "receipts" / "layer-017-postwrite.json"),
+                       "--sidecars", str(tmp_path / "other" / "sidecars"), "--receipts", str(tmp_path / "other" / "receipts")])
+    assert code == 1
+
+
 def test_layer_complete_cli_reads_rate_from_allocation(tmp_path: Path):
     _layer(tmp_path, 12, 3)
     allocation = tmp_path / "allocation.json"
