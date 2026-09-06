@@ -105,8 +105,8 @@ fi
 # 2. candidate scoring, layer 3 first (packs K3/K5 sidecars for closure)
 if ! step_done 2; then
   log "scoring layer 3 candidates"
-  GLM53_RATE_LAYERS=3 GLM53_RATE_DESIGN_K3=$DESIGN_K3 GLM53_RATE_DESIGN_K5=$DESIGN_K5 GLM53_MAX_NEW_BYTES=$MAX_NEW_BYTES \
-    bash scripts/score_layer_rates_all42.sh >>"$OUT/score-layer3.log" 2>&1
+  GLM53_RATE_LAYERS=3 GLM53_KEEP_CANDIDATE_LAYERS=3 GLM53_RATE_DESIGN_K3=$DESIGN_K3 GLM53_RATE_DESIGN_K5=$DESIGN_K5 \
+    GLM53_MAX_NEW_BYTES=$MAX_NEW_BYTES bash scripts/score_layer_rates_all42.sh >>"$OUT/score-layer3.log" 2>&1
   mark_done 2
 fi
 
@@ -129,8 +129,8 @@ fi
 
 # 4. candidate scoring for all remaining layers
 if ! step_done 4; then
-  log "scoring candidates for layers 4..44"
-  GLM53_RATE_DESIGN_K3=$DESIGN_K3 GLM53_RATE_DESIGN_K5=$DESIGN_K5 GLM53_MAX_NEW_BYTES=$MAX_NEW_BYTES \
+  log "scoring candidates for layers 4..44 (every layer encoded at K3 and K5; only layer 3 keeps packed candidates)"
+  GLM53_KEEP_CANDIDATE_LAYERS=3 GLM53_RATE_DESIGN_K3=$DESIGN_K3 GLM53_RATE_DESIGN_K5=$DESIGN_K5 GLM53_MAX_NEW_BYTES=$MAX_NEW_BYTES \
     bash scripts/score_layer_rates_all42.sh >>"$OUT/score-all.log" 2>&1
   mark_done 4
 fi
