@@ -30,6 +30,7 @@ THERMAL_RESUME_C=${GLM53_P8_THERMAL_RESUME_C:-85}
 SAMPLES=${GLM53_COUPLED_SAMPLES:-256}
 TOKENS_PER_WINDOW=${GLM53_SCORE_TOKENS_PER_WINDOW:-48}
 LAYERS=${GLM53_RATE_LAYERS:-$(seq 3 44 | tr '\n' ' ')}
+KEEP_CANDIDATE_LAYERS=${GLM53_KEEP_CANDIDATE_LAYERS:-"3"}
 LOCK=/run/lock/klc/model-stack.lock
 
 WORK=$ROOT/work
@@ -158,6 +159,26 @@ score_layer() {
     --device cuda:0 --output "$RECEIPTS/damage-layer-$l3.json" >"$LOGS/layer-$l3-score.log" 2>&1
 }
 
+pack_candidates() {
+  # Keep packed TP4 sidecars for selected layers so K3/K5 kernels can be device-closed
+  # against real payloads before any allocation is installed.
+  local layer=$1 l3 bits; printf -v l3 '%03d' "$layer"
+  for bits in 3 5; do
+    local out=$ROOT/candidate-sidecars/layer-$l3/k$bits
+    [ ! -f "$out/receipt.json" ] || continue
+    mkdir -p "$out"
+    local -a chunk_args=() sidecar_args=()
+    for start in 0 72 144 216; do
+      chunk_args+=(--chunk "$(chunk_path "$layer" "$bits" "$start" $((start + 72)))")
+    done
+    for rank in 0 1 2 3; do sidecar_args+=(--sidecar "$out/p8-layer-$l3-tp4-rank-$rank.safetensors"); done
+    "$PYTHON" -u -m glm53_nvfp4.build_p8_coupled_rate_tp4_sidecars "${chunk_args[@]}" --output-dir "$out" \
+      --receipt "$out/receipt.json" --layer "$layer" --world-size 4 >"$LOGS/layer-$l3-k$bits-pack.log" 2>&1
+    "$PYTHON" -u -m glm53_nvfp4.verify_p8_coupled_rate_tp4_sidecars "${chunk_args[@]}" "${sidecar_args[@]}" \
+      --packer-receipt "$out/receipt.json" --receipt "$out/postwrite.json" --layer "$layer" >"$LOGS/layer-$l3-k$bits-postwrite.log" 2>&1
+  done
+}
+
 release_chunks() {
   local layer=$1 l3; printf -v l3 '%03d' "$layer"
   for bits in 3 5; do
@@ -191,6 +212,10 @@ for layer in $LAYERS; do
   encode_rate "$layer" 5 "$DESIGN_K5"
   log "layer=$layer scoring K3/K4/K5"
   score_layer "$layer"
+  if [[ " $KEEP_CANDIDATE_LAYERS " == *" $layer "* ]]; then
+    log "layer=$layer packing K3/K5 candidate sidecars for device closure"
+    pack_candidates "$layer"
+  fi
   release_chunks "$layer"
   remove_capture "$layer"
   ledger "scored layer $layer"
