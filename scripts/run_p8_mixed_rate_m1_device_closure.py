@@ -26,7 +26,7 @@ from typing import Sequence
 
 
 SEED = 20260905128
-LAYER = 3
+DEFAULT_LAYER = 3
 RANK = 0
 EXPERT_IDS = (0, 1, 17, 63, 127, 191, 255, 287)
 K32_PERM = (
@@ -66,7 +66,7 @@ PROTOCOL = {
     "evidence_level": "gpu-smoke-numerical-closure",
     "product": "P8 K3/K4/K5 procedural MCG alpha2 to E4M3/UE8M0-K32 (rate from --bits)",
     "geometry": {
-        "layer": LAYER,
+        "layer": "from --layer; every routed layer has identical geometry",
         "rank": RANK,
         "tokens": 1,
         "experts": 288,
@@ -100,7 +100,8 @@ PROTOCOL = {
         "hash drift, nonfinite value, or failed numerical gate is a closure failure"
     ),
     "claim_boundary": (
-        "one synthetic layer-3/rank-0 M1 TP-local device closure at the requested rate; not KLD, "
+        "one synthetic single-layer rank-0 M1 TP-local device closure at the requested rate on the "
+        "layer named by --layer; not KLD, "
         "prefill, throughput, serving, all-rank, or full-model qualification"
     ),
     "isa_cost": "mxf8f6f4 uses twice the MMA issue count of NVFP4",
@@ -233,7 +234,7 @@ def _read_selected(handle, name: str, key):
         raise RuntimeError(f"slice-only read unavailable for {name}: {error}") from error
 
 
-def _load_sidecar_reference(path: Path, transform_sha256: str, bits: int):
+def _load_sidecar_reference(path: Path, transform_sha256: str, bits: int, layer: int):
     import torch
     from safetensors import safe_open
     from p8_coupled_scales import SCALE_NAMES, validate_coupled_component
@@ -242,7 +243,7 @@ def _load_sidecar_reference(path: Path, transform_sha256: str, bits: int):
         metadata = handle.metadata() or {}
         required = {
             "schema": "glm53-p8-coupled-h512-h128-tp4-rank.v1",
-            "layer": str(LAYER),
+            "layer": str(layer),
             "rank": str(RANK),
             "world_size": "4",
             "bits": str(bits),
@@ -269,7 +270,7 @@ def _load_sidecar_reference(path: Path, transform_sha256: str, bits: int):
         scales = validate_coupled_component(
             metadata,
             scale_tensors,
-            layer=LAYER,
+            layer=layer,
             rank=RANK,
             experts=288,
             hidden=4096,
@@ -530,7 +531,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
         args.runtime_manifest, args.runtime_manifest_sha256
     )
     metadata, scales, scale_receipts = _load_sidecar_reference(
-        args.sidecar, args.transform_sha256, args.bits
+        args.sidecar, args.transform_sha256, args.bits, args.layer
     )
     if metadata.get("source_design_sha256") != args.design_sha256:
         raise RuntimeError("sidecar source design hash differs")
@@ -546,7 +547,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, object]:
         args.sidecar,
         device=torch.device("cuda"),
         tp_rank=RANK,
-        layer=LAYER,
+        layer=args.layer,
         expected_design_sha256=args.design_sha256,
         expected_transform_sha256=args.transform_sha256,
         topk=8,
@@ -802,6 +803,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-manifest-sha256")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--bits", type=int, choices=(3, 4, 5), default=4)
+    parser.add_argument("--layer", type=int, choices=range(3, 45), default=DEFAULT_LAYER,
+                        help="routed layer whose rank-0 sidecar is closed; every routed layer has "
+                             "identical geometry, so this selects which candidate sidecar to test")
     return parser.parse_args(argv)
 
 

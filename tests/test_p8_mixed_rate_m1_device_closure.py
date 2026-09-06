@@ -44,11 +44,15 @@ def test_default_invocation_is_protocol_only_and_never_touches_cuda() -> None:
         [sys.executable, str(SCRIPT)], text=True, capture_output=True, check=True
     )
     record = json.loads(result.stdout)
+    # Protocol revision 2026-09-06: the closure layer became a parameter, because every routed
+    # layer has identical geometry and the layer-3 pin was an artifact of the pilot. The prior
+    # hash was ae87e8fc90e8113bb9eda84f8a6bac97b9a73e196a894f05fac19cdc807d0781.
     assert record["protocol_sha256"] == (
-        "ae87e8fc90e8113bb9eda84f8a6bac97b9a73e196a894f05fac19cdc807d0781"
+        "cf2cc3b65dfabf864577f696878ab905ac1aa62b8c14a9137ab93f9131a9043e"
     )
     assert record["protocol"]["schema"] == "glm53.p8-mixed-rate-m1-device-closure.v1"
     assert record["protocol"]["geometry"]["tokens"] == 1
+    assert "--layer" in record["protocol"]["geometry"]["layer"]
     assert record["protocol"]["exact_gates"][-1] == (
         "five eager final outputs are bitwise identical"
     )

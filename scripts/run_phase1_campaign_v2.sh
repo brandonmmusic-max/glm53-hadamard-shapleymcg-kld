@@ -164,7 +164,7 @@ if ! step_done 5; then
     "$PY" scripts/run_p8_mixed_rate_m1_device_closure.py --execute --image "$V11_IMAGE" --gpu-device 0 \
       --sidecar "$sidecar" --sidecar-sha256 "$(sha "$sidecar")" --design "$design" --design-sha256 "$(sha "$design")" \
       --transform "$TRANSFORM" --transform-sha256 "$(sha "$TRANSFORM")" --runtime-manifest-sha256 "$V11_MANIFEST_SHA" \
-      --output "$OUT/closure-k$bits" --bits "$bits" >>"$OUT/closure-k$bits.log" 2>&1
+      --output "$OUT/closure-k$bits" --bits "$bits" --layer "$layer" >>"$OUT/closure-k$bits.log" 2>&1
     log "K$bits closure: $(tail -1 "$OUT/closure-k$bits.log")"
   done
   mark_done 5
