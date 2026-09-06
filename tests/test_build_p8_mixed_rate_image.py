@@ -98,11 +98,12 @@ def test_manifest_encodes_exact_parent_and_candidate_call_abis() -> None:
     candidates = manifest["candidate_launch_abi"]
     assert len(candidates["prefill_fc1"]["call_parameters"]) == 18
     assert candidates["prefill_fc1"]["call_parameters"][12] == "scale_component"
-    assert candidates["prefill_fc1"]["constructor_parameters"] == []
+    # Both grouped owners now take the stored rate; K4 remains their default.
+    assert candidates["prefill_fc1"]["constructor_parameters"] == ["trellis_bits"]
     assert candidates["prefill_fc1"]["instance_attributes"]["shared_bytes"] == 65536
     assert len(candidates["prefill_fc2"]["call_parameters"]) == 17
     assert candidates["prefill_fc2"]["call_parameters"][12] == "scale_component"
-    assert candidates["prefill_fc2"]["constructor_parameters"] == []
+    assert candidates["prefill_fc2"]["constructor_parameters"] == ["trellis_bits"]
     assert candidates["prefill_fc2"]["instance_attributes"]["shared_bytes"] == 34816
 
 
