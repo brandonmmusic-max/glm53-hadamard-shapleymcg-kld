@@ -1228,54 +1228,57 @@ class MoEDynamicKernelBackend:
             (self.p8_full_coupled and self.w4a8_m64_materialized) or self.p8_small_m
         )
         _base_bits_unsupported = trellis_bits is not None and int(trellis_bits) not in (2, 3, 4)
-        _base_phase1_bits = None if (_base_bits_unsupported and _p8_owns_phase1) else trellis_bits
-        _base_phase2_bits = None if (_base_bits_unsupported and _p8_owns_phase2) else trellis_bits
+        # An inert base kernel must be inert in every trellis argument, not only the rate:
+        # the parent rejects trellis_scaled/coupled/identity without a payload. Treating the
+        # discarded instance as non-split reproduces the documented inert specialization.
+        _p1_split = self.w4a8_split_materialized and not (_base_bits_unsupported and _p8_owns_phase1)
+        _p2_split = self.w4a8_split_materialized and not (_base_bits_unsupported and _p8_owns_phase2)
         self.materialized_phase1_kernel = W4A8MaterializedPhase1Kernel(
             fast_math=self.fast_math,
             source_tile_m=materialized_source_tile_m,
             deterministic_output=bool(deterministic_output),
             num_topk=self.num_topk,
             trellis_bits=(
-                _base_phase1_bits
-                if self.w4a8_trellis and self.w4a8_split_materialized
+                trellis_bits
+                if self.w4a8_trellis and _p1_split
                 else None
             ),
             trellis_coupled=(
-                self.trellis_coupled and self.w4a8_split_materialized
+                self.trellis_coupled and _p1_split
             ),
             trellis_direct_lut=(
-                self.trellis_direct_lut and self.w4a8_split_materialized
+                self.trellis_direct_lut and _p1_split
             ),
             # This helper is gated-only and is never launched unless the split
             # materialized path is active.  Use a valid inert specialization for
             # non-split activations (notably ReLU2) instead of rejecting them
             # during otherwise valid monolithic-kernel construction.
-            activation=self.activation if self.w4a8_split_materialized else "silu",
+            activation=self.activation if _p1_split else "silu",
             trellis_codebook=(
-                self.trellis_codebook if self.w4a8_split_materialized else "none"
+                self.trellis_codebook if _p1_split else "none"
             ),
-            trellis_scaled=self.trellis_scaled and self.w4a8_split_materialized,
+            trellis_scaled=self.trellis_scaled and _p1_split,
             trellis_identity_boundary=(
-                self.trellis_identity_boundary and self.w4a8_split_materialized
+                self.trellis_identity_boundary and _p1_split
             ),
         )
         self.materialized_phase2_kernel = W4A8MaterializedPhase2Kernel(
             source_tile_m=materialized_source_tile_m,
             deterministic_output=bool(deterministic_output),
             trellis_bits=(
-                _base_phase2_bits
-                if self.w4a8_trellis and self.w4a8_split_materialized
+                trellis_bits
+                if self.w4a8_trellis and _p2_split
                 else None
             ),
             trellis_direct_lut=(
-                self.trellis_direct_lut and self.w4a8_split_materialized
+                self.trellis_direct_lut and _p2_split
             ),
             trellis_codebook=(
-                self.trellis_codebook if self.w4a8_split_materialized else "none"
+                self.trellis_codebook if _p2_split else "none"
             ),
-            trellis_scaled=self.trellis_scaled and self.w4a8_split_materialized,
+            trellis_scaled=self.trellis_scaled and _p2_split,
             trellis_identity_boundary=(
-                self.trellis_identity_boundary and self.w4a8_split_materialized
+                self.trellis_identity_boundary and _p2_split
             ),
         )
         if self.p8_small_m:
