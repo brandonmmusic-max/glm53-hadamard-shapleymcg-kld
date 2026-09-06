@@ -188,7 +188,10 @@ def test_build_is_opt_in_and_uses_offline_immutable_recipe(tmp_path, monkeypatch
     assert command[command.index("--network=none")] == "--network=none"
     assert builder.PARENT in DOCKERFILE_PATH.read_text()
     assert builder.TAG == "klc/glm53-p8-mixed-rate:v11"
-    assert builder.INTEGRATION_BASE == "336e082785904e4c0c2bd887fe437ae14adad209"
+    # Post-rewrite hash of the same audited integration commit; the repository history was
+    # rewritten 2026-09-05 and the pre-rewrite hash was
+    # 336e082785904e4c0c2bd887fe437ae14adad209.
+    assert builder.INTEGRATION_BASE == "a1e27f6fc6e2f7b2db4a1793253335aa454fb3d1"
     assert builder.load_manifest()["runtime_commit"] == builder.INTEGRATION_BASE
 
 

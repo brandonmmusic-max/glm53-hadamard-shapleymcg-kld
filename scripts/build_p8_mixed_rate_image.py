@@ -25,7 +25,10 @@ MANIFEST = REPO / "runtime_patch/p8_mixed_rate_image/image_manifest.json"
 VERIFY_IN_IMAGE = "/opt/p8-coupled-runtime/verify_image.py"
 PARENT = "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745"
 TAG = "klc/glm53-p8-mixed-rate:v11"
-INTEGRATION_BASE = "336e082785904e4c0c2bd887fe437ae14adad209"
+# "Fix proven token-channel mixing in coupled prefill input loads". The repository history was
+# rewritten on 2026-09-05; this is the post-rewrite hash of that same commit, mapped through
+# commit-map-all.txt. Pre-rewrite it was 336e082785904e4c0c2bd887fe437ae14adad209.
+INTEGRATION_BASE = "a1e27f6fc6e2f7b2db4a1793253335aa454fb3d1"
 TAIL_V2_SHA256 = "494192195da43c46d99a684555fc10fd13a19e89288cb9f51da2536ccdf1f251"
 
 
