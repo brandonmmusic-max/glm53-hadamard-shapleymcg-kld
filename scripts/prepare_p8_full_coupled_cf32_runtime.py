@@ -33,11 +33,18 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
     if (preregistration.get("schema") != "glm53.p8-full-coupled-cf32-preregistration.v1"
             or preregistration.get("arms_in_order") != list(runtime.ARMS)):
         raise ValueError("preregistration differs from the executor protocol")
+    requested = tuple(args.arm) if args.arm else ("coupled_full",)
+    if requested != tuple(runtime.ARMS[: len(requested)]):
+        raise ValueError("arms must be a prefix of the preregistered order: coupled_full, identity_full")
     image = runtime.validate_image_receipt(args.image_build_receipt, docker_inspect=docker_inspect)
     stock = carrier_receipts.validate_stock_carrier_receipt(args.stock_carrier_receipt, args.model_root)
     extras = carrier_receipts.validate_stock_carrier_extras(args.stock_carrier_extras_receipt, args.model_root)
-    identity = runtime.validate_identity_manifest(
-        args.identity_manifest, sidecar_dir=args.identity_sidecars, design=args.identity_design)
+    identity = None
+    if "identity_full" in requested:
+        if not (args.identity_manifest and args.identity_sidecars and args.identity_design):
+            raise ValueError("identity_full requires --identity-manifest, --identity-sidecars and --identity-design")
+        identity = runtime.validate_identity_manifest(
+            args.identity_manifest, sidecar_dir=args.identity_sidecars, design=args.identity_design)
     coupled = runtime.validate_full_coupled_manifest(
         args.coupled_manifest, sidecar_dir=args.coupled_sidecars, transform=args.transform)
     design_shas = {runtime.sha(path): path for path in args.coupled_design}
@@ -60,7 +67,7 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
     if args.max_new_bytes <= 0:
         raise ValueError("--max-new-bytes must be positive")
     arms = {}
-    for arm in runtime.ARMS:
+    for arm in requested:
         arm_out = output_root / arm
         if arm == "coupled_full":
             sidecars, designs, transform = args.coupled_sidecars, coupled_designs, args.transform
@@ -109,10 +116,10 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
         },
         "roles": {"path": str(args.roles), "sha256": runtime.ROLE_SHA256, "window_ids": ids,
                   "teacher_root": str(args.teacher_root), "teacher_bytes_verified": True},
-        "identity_inputs": {"manifest": {"path": str(args.identity_manifest), "sha256": identity["manifest_sha256"]},
-                            "sidecar_dir": str(args.identity_sidecars),
-                            "design": {"path": str(args.identity_design), "sha256": identity["design_sha256"]},
-                            "files": identity["files"]},
+        "identity_inputs": ({"manifest": {"path": str(args.identity_manifest), "sha256": identity["manifest_sha256"]},
+                             "sidecar_dir": str(args.identity_sidecars),
+                             "design": {"path": str(args.identity_design), "sha256": identity["design_sha256"]},
+                             "files": identity["files"]} if identity is not None else None),
         "coupled_inputs": {"manifest": {"path": str(args.coupled_manifest), "sha256": coupled["manifest_sha256"]},
                            "sidecar_dir": str(args.coupled_sidecars),
                            "designs": [{"path": str(path), "sha256": digest} for digest, path in sorted(design_shas.items())],
@@ -121,7 +128,7 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
         "storage": {"max_new_bytes": args.max_new_bytes,
                     "campaign_paths": [str(path) for path in campaign_paths],
                     "one_window_raw_bytes": 2047 * protocol.VOCAB_LIMIT * 4},
-        "arms_in_order": list(runtime.ARMS),
+        "arms_in_order": list(requested),
         "arms": arms,
         "runtime": RUNTIME_LABELS,
         "lifecycle": "never starts/restores production; raw capture streamed one window at a time by the executor",
@@ -131,9 +138,13 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("output", "image-build-receipt", "source-recipe", "model-root", "stock-carrier-receipt",
-                 "stock-carrier-extras-receipt", "identity-manifest", "identity-sidecars", "identity-design",
-                 "coupled-manifest", "coupled-sidecars", "transform", "roles", "teacher-root"):
+                 "stock-carrier-extras-receipt", "coupled-manifest", "coupled-sidecars", "transform",
+                 "roles", "teacher-root"):
         parser.add_argument("--" + name, type=Path, required=True)
+    for name in ("identity-manifest", "identity-sidecars", "identity-design"):
+        parser.add_argument("--" + name, type=Path, help="required only when --arm identity_full is requested")
+    parser.add_argument("--arm", action="append", choices=list(runtime.ARMS),
+                        help="arms to prepare in preregistered order; default coupled_full only")
     parser.add_argument("--coupled-design", type=Path, action="append", required=True,
                         help="every encoder design whose hash appears in the coupled manifest")
     parser.add_argument("--campaign-path", type=Path, action="append", required=True,

@@ -164,3 +164,10 @@ def test_analysis_requires_matched_conditions_and_reports_strict_claim():
     arms["identity_full"]["conditions"]["image_id"] = "sha256:y"
     with pytest.raises(ValueError, match="not matched"):
         analysis.analyze(windows, arms)
+    single = analysis.analyze(windows, {"coupled_full": arms["coupled_full"]})
+    assert single["decision"] == "measured" and single["comparison"] is None
+    assert single["arms_present"] == ["coupled_full"]
+    assert abs(single["arms"]["coupled_full"]["true_decode_mean_kld"] - (0.036 + 0.001 * (sum(i % 3 for i in range(32)) / 32))) < 1e-12
+    assert len(single["arms"]["coupled_full"]["per_window_true_decode_kld"]) == 32
+    with pytest.raises(ValueError, match="requires coupled_full"):
+        analysis.analyze(windows, {"identity_full": arms["identity_full"]})

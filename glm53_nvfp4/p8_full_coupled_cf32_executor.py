@@ -79,9 +79,10 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
     if runtime.sha(path) != path.with_suffix(".sha256").read_text().split()[0]:
         raise ValueError("prepared runtime manifest seal differs")
     value = json.loads(path.read_text())
+    arms = tuple(value.get("arms_in_order") or ())
     if (value.get("schema") != MANIFEST_SCHEMA or value.get("status") != "sealed-before-execution"
-            or value.get("execution_authority") is not False or value.get("arms_in_order") != list(ARMS)
-            or value.get("runtime") != RUNTIME_LABELS):
+            or value.get("execution_authority") is not False or not arms or arms != ARMS[: len(arms)]
+            or set(value.get("arms", {})) != set(arms) or value.get("runtime") != RUNTIME_LABELS):
         raise ValueError("prepared runtime protocol differs")
     prereg = Path(value["preregistration"]["path"])
     if runtime.sha(prereg) != value["preregistration"]["sha256"] or json.loads(prereg.read_text()).get(
@@ -105,24 +106,28 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
             or value["stock_carrier"].get("resolved_total_bytes") != stock["index"]["resolved_total_bytes"]
             or value["stock_carrier"].get("unreferenced_safetensors") != [row["name"] for row in extras["files"]]):
         raise ValueError("stock carrier shard inventory differs")
-    identity_input, coupled_input = value["identity_inputs"], value["coupled_inputs"]
-    identity = runtime.validate_identity_manifest(
-        Path(identity_input["manifest"]["path"]), sidecar_dir=Path(identity_input["sidecar_dir"]),
-        design=Path(identity_input["design"]["path"]))
+    identity_input, coupled_input = value.get("identity_inputs"), value["coupled_inputs"]
+    identity = None
+    if "identity_full" in arms:
+        if not identity_input:
+            raise ValueError("identity_full arm without identity inputs")
+        identity = runtime.validate_identity_manifest(
+            Path(identity_input["manifest"]["path"]), sidecar_dir=Path(identity_input["sidecar_dir"]),
+            design=Path(identity_input["design"]["path"]))
+        if (identity["manifest_sha256"] != identity_input["manifest"]["sha256"]
+                or identity["files"] != identity_input["files"]
+                or runtime.sha(Path(identity_input["design"]["path"])) != identity["design_sha256"]):
+            raise ValueError("prepared identity checkpoint inventory differs")
     coupled = runtime.validate_full_coupled_manifest(
         Path(coupled_input["manifest"]["path"]), sidecar_dir=Path(coupled_input["sidecar_dir"]),
         transform=Path(coupled_input["transform"]["path"]))
-    if (identity["manifest_sha256"] != identity_input["manifest"]["sha256"]
-            or identity["files"] != identity_input["files"]
-            or coupled["manifest_sha256"] != coupled_input["manifest"]["sha256"]
+    if (coupled["manifest_sha256"] != coupled_input["manifest"]["sha256"]
             or coupled["files"] != coupled_input["files"] or coupled["payload"] != coupled_input["payload"]):
-        raise ValueError("prepared checkpoint inventory differs")
+        raise ValueError("prepared coupled checkpoint inventory differs")
     designs = {row["sha256"]: Path(row["path"]) for row in coupled_input["designs"]}
     if (set(designs) != set(coupled["design_by_layer"].values())
             or any(runtime.sha(path) != digest for digest, path in designs.items())):
         raise ValueError("coupled design files differ from the manifest")
-    if runtime.sha(Path(identity_input["design"]["path"])) != identity["design_sha256"]:
-        raise ValueError("identity design differs")
     roles = Path(value["roles"]["path"])
     windows = protocol.load_role_inputs(roles, Path(value["roles"]["teacher_root"]), verify_teacher_bytes=True)
     if runtime.sha(roles) != runtime.ROLE_SHA256 or [row["id"] for row in windows] != value["roles"]["window_ids"]:
@@ -137,7 +142,7 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
         raise ValueError("storage policy differs")
     expected_ids = [row["id"] for row in windows]
     roots = set()
-    for arm in ARMS:
+    for arm in arms:
         entry = value["arms"][arm]
         if arm == "coupled_full":
             sidecars = Path(coupled_input["sidecar_dir"])
@@ -202,7 +207,7 @@ def make_execution_seal(manifest_path: Path, seal_path: Path, global_root: Path,
              "runtime_manifest": str(manifest_path), "runtime_manifest_sha256": runtime.sha(manifest_path),
              "output": str(output), "global_capture_root": str(global_root),
              "global_retained_capture_inventory": inventory, "storage": state,
-             "one_window_raw_bytes": RAW_BYTES, "arm_order": list(ARMS),
+             "one_window_raw_bytes": RAW_BYTES, "arm_order": list(manifest["arms_in_order"]),
              "window_order": [row["id"] for row in windows], "image_id": manifest["image"]["image_id"],
              "production": production, "gpus_idle": gpus,
              "capture_policy": "one window raw at a time; durable score/hash receipt before exact raw unlink; never dense32",
@@ -220,15 +225,16 @@ def authenticate_execution_seal(path: Path, *, docker_inspect=None) -> tuple[dic
         raise ValueError("execution seal identity differs")
     seal = json.loads(path.read_text())
     if (seal.get("schema") != SEAL_SCHEMA or seal.get("status") != "authorized-before-gpu-execution"
-            or seal.get("arm_order") != list(ARMS) or seal.get("one_window_raw_bytes") != RAW_BYTES
+            or seal.get("one_window_raw_bytes") != RAW_BYTES
             or seal.get("protected_roles_opened") != [] or seal.get("restoration_policy") != RESTORATION_POLICY):
         raise ValueError("execution protocol differs")
     manifest_path = Path(seal["runtime_manifest"])
     if runtime.sha(manifest_path) != seal["runtime_manifest_sha256"]:
         raise ValueError("runtime manifest changed after execution authorization")
     manifest, windows = authenticate_runtime_manifest(manifest_path, docker_inspect=docker_inspect)
-    if seal["window_order"] != [row["id"] for row in windows] or seal["image_id"] != manifest["image"]["image_id"]:
-        raise ValueError("window order or image differs")
+    if (seal["window_order"] != [row["id"] for row in windows] or seal["image_id"] != manifest["image"]["image_id"]
+            or seal.get("arm_order") != list(manifest["arms_in_order"])):
+        raise ValueError("window order, arm order or image differs")
     if set(seal["source_sha256"]) != set(SOURCE_FILES):
         raise ValueError("executor source inventory differs")
     for name, expected in seal["source_sha256"].items():
@@ -472,7 +478,7 @@ def _analyze(manifest: dict, windows: list[dict]) -> dict:
     arms = {}
     output = Path(manifest["arms"][ARMS[0]]["capture_root"]).parent
     expected_ids = [window["id"] for window in windows]
-    for arm in ARMS:
+    for arm in manifest["arms_in_order"]:
         root = output / arm
         audit = json.loads((root / "runtime-audit.json").read_text())
         final_audit = json.loads((root / "runtime-final-audit.json").read_text())
@@ -534,7 +540,8 @@ def execute(seal_path: Path, *, arm_runner=run_arm, docker_inspect=None) -> dict
         production_before = support.production_off()
         output = Path(seal["output"])
         output.mkdir(mode=0o700)
-        record = {"schema": EXECUTION_SCHEMA, "seal_sha256": runtime.sha(seal_path), "arm_order": list(ARMS),
+        record = {"schema": EXECUTION_SCHEMA, "seal_sha256": runtime.sha(seal_path),
+                  "arm_order": list(manifest["arms_in_order"]),
                   "completed_arms": [], "exit_code": 1, "restoration_attempted": False,
                   "protected_roles_opened": [], "production_before": production_before,
                   "root_lock": str(LOCK), "root_lock_mode": "LOCK_EX|LOCK_NB"}
@@ -550,7 +557,7 @@ def execute(seal_path: Path, *, arm_runner=run_arm, docker_inspect=None) -> dict
             if inspect(image) != image:
                 raise ValueError("immutable v10 image unavailable")
             _save(output / "hardware-inventory.json", cold.inventory())
-            for arm in ARMS:
+            for arm in manifest["arms_in_order"]:
                 arm_runner(seal, manifest, windows, arm, runtime.sha(seal_path) + ":" + arm)
                 record["completed_arms"].append(arm)
             final_manifest, final_windows = authenticate_runtime_manifest(Path(seal["runtime_manifest"]),
