@@ -1,275 +1,239 @@
-# Fable takeover prompt — GLM-5.3-Flash coupled P8 experiment
+# Fable takeover prompt — full coupled K4 P8 with same-size Shapley allocation
 
-You are taking over Brandon Music's local experiment. The matched measurement
-is now COMPLETE. Do not rerun it or restart planning/encoding from scratch.
-Revalidate live state before any new work. Earlier live-run details below are
-retained as historical context and are superseded by this final result.
+## Latest user directive — governing objective
 
-## Final result — authoritative takeover state
+Build the full GLM-5.3-Flash coupled Hadamard + input/output-scale P8 model
+across **all 42 relevant routed layers (3–44)**, perform genuine Shapley-based
+global allocation **without increasing the existing K4-equivalent size**, and
+measure full-model end-to-end teacher KLD with exactly:
 
-Executor session26404 and PID2766432 terminated successfully (exit0).
-Both arms completed32/32; final audits, score/hash replay and cross-arm input
-reauthentication passed. All owned containers are cleaned up; production OFF.
+- B12X_MLA_SPARSE attention.
+- nvfp4_ds_mla KV cache.
+- Tail V2.
+- Native P8 MoE with fused trellis decode to the E4M3 MMA path.
+- E4M3 activations.
+- 4.25 payload bpw target / existing K4-equivalent global storage budget.
+- TP4, DCP1, no EP, CUDA graphs on, MTP off.
 
-- Coupled true-decode KLD: **0.05499088068580576**.
-- Matched identity true-decode KLD: **0.052847380391592064**.
-- Coupled-minus-identity: **+0.0021435002942136946**, mean **4.0560% worse**.
-- Paired95% BCa: **[-0.0010680525204973161,+0.007625670904706085]**;
- 17/32 coupled wins. Interval spans zero; not a resolved regression.
-- **Predeclared development gate FAIL**, because coupled mean is higher.
+**Small-scale exploratory block testing is finished for this direction.**
+Do not send this work back through another three-layer pass/fail pilot.
+The user explicitly superseded the previous pilot-pass requirement for an
+all-layer build. Preserve that pilot's failed result, but do not use it to
+block the full-model experiment. Full-model success remains unproven.
+Do not substitute H16, a global K5/5.25-bpw model, native FP6, or the old
+6-bpw allocation objective. Do not make another BlockLDLQ pilot a prerequisite.
 
-Conditions: layers3/20/22 intervention, reststock; B12X_MLA_SPARSE,
-nvfp4_ds_mla KV, TailV2, native P8 mxf8f6f4 N128 MoE, E4M3 UE8M0_K32
-activations, TP4/DCP1/noEP/graphs/MTPoff; identity4.25 versus coupled
-4.2539798595 selected-projection tensor bpw. This is not a stock-only comparison.
+This is the updated target for Fable to implement, not a claim that it has
+already been built or that coupling/Shapley is guaranteed to improve KLD.
+This prompt edit does not launch a new job in Codex.
 
-Read `results/P8_COUPLED_CF32_FINAL_V3.md` and
-`evidence/cf32-coupled-comparison-v3/analysis.json` first. Analysis SHA256:
-`019fe64ed14a859b852cf9f6910ba888f49e4ed9e83c271ef52a6720d8a22a52`.
-Local final execution and analysis are under the v3 capture root below.
+## Meaning of “same size” and “Shapley allocation”
 
-No all42 coupled build should start under the failed pass rule. The prior
-authorized fallback is an encoder-only calibrated inter-block BlockLDLQ
-three-layer pilot preserving P8 ABI; no fallback job has been launched.
-Brandon requested this handoff due to remaining usage. Do not launch work
-that conflicts with his newest instructions; inspect results, report bounded
-conclusions, then pursue the next authorized step within storage limits.
+Pin the existing full uncoupled K4 P8 manifest and actual packed-byte budget
+before allocating. Keep the same tensor coverage and unchanged carrier
+tensors. Report both nominal codec payload bpw and actual packed/model bytes.
+Count scales, suh/svh vectors, signs, padding, allocation maps, codebooks and
+headers explicitly; do not hide their cost behind a rounded “4.25 bpw.”
 
-## Immediate priority and latest user direction
+The prior full routed-weight payload was 161,715,585,024 bytes for
+304,405,807,104 weights (4.25 payload bpw); revalidate those values against
+the actual immutable checkpoint. This is not its total disk size.
+The three-layer coupled encoding cost about 4.2539798595 tensor bpw including
+its extra metadata. Resolve that overhead within the fixed global budget;
+do not silently enlarge the requested model or call a larger model equal-size.
 
-Get the end-to-end teacher KLD measurement for the newly encoded **coupled
-Hadamard + input/output-scale P8 layers 3, 20, 22** done ASAP. Candidate first.
-Do not run a fresh stock baseline, cold repetitions, speed tests, new rotation
-searches, or other side projects before this measurement.
+Shapley must actually determine and install an allocation, not merely be
+mentioned in the model name. Explicitly define the players, admissible
+choices, payoff, calibration roles and exact byte constraint; preserve
+attribution values and the selected allocation manifest. Use existing
+evidence and interaction structure to size the attribution work, not an
+arbitrary 84-endpoint campaign.
 
-The earlier full 42-layer P8 model is **identity/unrotated P8**, not this new
-coupled encoding. Only layers 3,20,22 have the new encoding. All are completely
-encoded, packed, and real-TP4-loader checked. The complete candidate's
-32-window true-decode KLD is now **0.05499088068580576**; matched identity is
-running. Do not describe packing/loader or synthetic-kernel tests
-as end-to-end quality proof.
+Keep the full coupled boundary on all relevant layers. If K4 is fixed at every
+weight, Shapley must allocate meaningful equal-cost encoding choices or a
+defined finite encoding resource; it cannot redistribute bits when no rate
+choices exist. If using mixed rates to achieve an aggregate K4-equivalent
+budget, first state the exact rate menu, demonstrate native P8 ABI support,
+and clarify that this is a mixed-rate model, not uniform K4. Do not silently
+introduce a K3 arm or global K5 product against the user's earlier constraints.
+If a rate-menu choice requires new user direction, ask that narrow question
+without restarting small-scale research. Do not claim allocation is implemented
+until the selected choices are present in the packed checkpoint and runtime.
 
-## Historical live-run details — now terminal, do not relaunch
+## Execution priorities
 
-Execution host: Brandon's Pop!_OS machine. All work stays local.
+1. Read the existing artifacts and recover completed work; do not start over.
+   Verify no other agent or job owns the GPUs. Predeclare the full-model
+   evaluation and exact allocation budget before inspecting new results.
+2. Refresh the storage ledger and produce a bounded build schedule. Reuse
+   valid layers 3,20,22 where their design matches; encode the remaining routed
+   layers from pinned BF16 with the matching coupled transforms/scales.
+   Retain fit-only domain-balanced calibration and existing GPTQ-style
+   inter-group feedback. No new error-feedback scheme is required by this directive.
+3. Complete and install the same-size Shapley allocation across the full
+   relevant model. A uniform full coupled build is a useful intermediate or
+   allocation comparator, **not the final requested deliverable**.
+4. Prove all 42 layers × 4 ranks load and execute the intended coupled native
+   P8 path, including correct activation transforms and input/output scales.
+   Necessary ABI, bit-exactness and serving-correctness checks remain; they
+   are not authorization for another exploratory block/layer search.
+5. Measure the final full-model KLD on the same 32 conditional-fit windows.
+   Compare against the existing **full-model uncoupled K4 P8** endpoint when
+   identities/runtime/masks match. Never compare a full coupled model against
+   a three-layer identity intervention as if it were a matched full-model control.
+   Reuse valid saved controls; do not run fresh stock or cold speed repetitions
+   simply for housekeeping. Disclose any mismatch that prevents valid reuse.
+6. Report absolute KLD, paired delta, relative improvement, paired BCa, window
+   wins, domain breakdown, exact achieved bytes/bpw, and full runtime labels.
+   To attribute an improvement specifically to Shapley, retain a full coupled
+   uniform/no-allocation comparator at a reconciled byte budget; otherwise
+   label the measured effect as the combined coupling-plus-allocation change.
+7. Push reproducible code, receipts, decisions, allocation and final results
+   to the existing PRIVATE repo. Do not launch unrelated work before the
+   requested full-model measurement.
+
+Full-model improvement is the objective, not a guaranteed outcome. Keep the
+user's nonblocking-CI development policy: report uncertainty honestly, but
+do not reintroduce the discarded three-layer screening gate. No linear
+extrapolation from the pilot, and no claim of untouched final qualification
+from already-opened CF32.
+
+## Completed evidence — preserve, do not rerun
+
+The matched three-layer pilot completed both32-window arms successfully:
+
+| Intervention on layers3/20/22; all other layers stock | True-decode KLD |
+|---|---:|
+| Identity K4 P8 | 0.052847380391592064 |
+| Coupled H512/H128 + suh/svh K4 P8 | 0.05499088068580576 |
+
+Coupled minus identity +0.0021435002942136946, mean4.0560% worse;
+17/32 coupled wins; paired95% BCa
+[-0.0010680525204973161,+0.007625670904706085]. The old development rule failed.
+This remains valid historical evidence, not evidence that the full coupled
+model necessarily loses. It does not isolate rotation, scales or each layer.
+
+Pilot conditions: B12X_MLA_SPARSE, nvfp4_ds_mla KV, TailV2, native P8
+mxf8f6f4 N128 MoE, E4M3 UE8M0_K32 activations, TP4/DCP1/noEP/graphs/MTPoff;
+identity4.25 versus coupled4.2539798595 selected-projection tensor bpw.
+
+Read results/P8_COUPLED_CF32_FINAL_V3.md and
+evidence/cf32-coupled-comparison-v3/analysis.json.
+Analysis SHA256:
+019fe64ed14a859b852cf9f6910ba888f49e4ed9e83c271ef52a6720d8a22a52.
+Score/retirement/runtime receipts are under that evidence directory and
+evidence/cf32-coupled-candidate-v3/.
+
+The older **full42-layer uncoupled/identity K4 P8**, without Shapley allocation,
+measured approximately0.03730955956731441 true-decode KLD on CF32 with the
+requested B12X/NVFP4-KV/TailV2/TP4-DCP1/graphs/MTPoff path. Authenticate the
+saved per-window receipts and exact conditions before paired reuse.
+A different earlier full-model run measured0.0400213948 with FP8 KV,
+FlashInfer attention and eager mode; do NOT interchange these references.
+The old0.0533314176 decoded-GPTQ reference is also not the requested matched
+NVFP4-KV/native-P8 endpoint.
+
+## Local environment and reusable artifacts
+
+Execution remains on Brandon's Pop!_OS machine.
 
 Repository:
-`/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-coupled-integration-v1`
-
-Branch: `p8-coupled-integration-v1`. Runtime source HEAD when launched:
-`86ceac2f46a813aec51b6efaf6c5b290ef287dc5`.
+ /home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53-p8-coupled-integration-v1
+Branch: p8-coupled-integration-v1
+Git remote: github
+Private repo:
+ https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld.git
 
 Campaign root:
-`/media/brandonmusic/nvme1n1p3/glm53-trellismx-native6`
+ /media/brandonmusic/nvme1n1p3/glm53-trellismx-native6
 
-The currently running command is:
+- Coupled pilot chunks, sidecars, all864 experts and receipts:
+  <campaign-root>/p8-coupled-three-layer-v1
+- Full identity checkpoint:
+  <campaign-root>/uniform-p8-all42-v1/manifest.json and sidecars/
+- Earlier full identity CF32 TailV2 result:
+  <campaign-root>/tail-v2-p8-exl3-cf32-product-validation-v1b/quality/
+- Final pilot output:
+  <campaign-root>/p8-coupled-three-layer-cf32-v3-captures/
+- Pilot runtime manifest / execution seal / storage ledger:
+  <campaign-root>/p8-coupled-three-layer-cf32-v3.json
+  <campaign-root>/p8-coupled-three-layer-cf32-execution-v3.json
+  <campaign-root>/p8-coupled-cf32-storage-v3.json
+- BF16 source:
+  /media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16
+- Exact Flash EXL3 suh/svh scale source:
+  /home/brandonmusic/models/GLM-5.3-Flash-EXL3-4bpw
+- Stock unchanged carrier:
+  /home/brandonmusic/models/GLM-5.3-Flash-NVFP4
+  (44 indexed shards plus3 extras have pinned hashes).
+- Design: results/P8_COUPLED_SCALE_FLASH_EVIDENCE_PREPARATION_V3.json
+- Transform: experiments/p8-coupled-transform-draw0-silu10-v1.json
+- Identity design:
+  /home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/experiments/p8-kld-shapley-native6-v2.json
+- Encoder: glm53_nvfp4/quantize_p8_coupled_scale_layer.py
+- Runner: glm53_nvfp4/p8_coupled_cf32_executor.py
+  This is a THREE-LAYER runner, not already a full-model/allocation runner.
+  Extend its checks explicitly; never launch it and call that all42 coverage.
+- Runtime preparer: scripts/prepare_p8_coupled_three_layer_cf32_runtime.py
+- Pilot analysis: glm53_nvfp4/analyze_p8_coupled_cf32.py
 
-```bash
-PYTHONPATH=. python3 -m glm53_nvfp4.p8_coupled_cf32_executor execute --seal /media/brandonmusic/nvme1n1p3/glm53-trellismx-native6/p8-coupled-three-layer-cf32-execution-v3.json
-```
+Immutable coupled runtime image:
+ sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3
 
-Snapshot host PID: **2766432**. Codex PTY session: **26404** (Fable may not
-have this handle; inspect the exact PID/command and Docker state instead).
-Current container: `glm53-p8-three-layer-cf32-identity_p8`, port **8032**.
-The coupled container completed and was cleaned up by the owned executor.
-The container is past the shell-launch error. At23:27:19 UTC its log reported
-application startup complete, followed by a successful GET /v1/models.
-All32 candidate windows completed: true-decode mean **0.05499088068580576**,
-including-prefill mean **0.05601149974746436**. Root replayed all32 score NPZ
-hashes/means and retirement hashes; arm execution exit0, cleanup PASS, final
-runtime audit PASS with all32 IDs in order. This is not yet a matched
-improvement claim. Conditions: B12X/nvfp4_ds_mla/native coupled P8/E4M3/
-~4.25398bpw, TP4/DCP1/noEP/graphs/MTPoff, layers3/20/22 coupled, reststock.
-Read `results/P8_COUPLED_CF32_CANDIDATE_RESULT_V3.json`. Let the active
-matched identity arm finish, then obtain paired delta and BCa from analysis.
+Reuse fixed coupled H512/H128, draw0, exact Flash suh/svh, capped SiLU
+(gate max10, up -10..10). Existing fit-only calibration is domain-balanced;
+layer20/22 verified capture is <campaign-root>/fit-capture-l20-l22-v1.
+Acquire/verify appropriate fit coverage for remaining layers rather than
+assuming those two layers' captures cover the full model.
 
-Seal SHA256:
-`41af897c4f52237a74af8eca7f1d6c8ef1f274edf10c1697f942a4a7d0f000d6`
+Pilot source implementation86ceac2 passed33 focused tests and independent
+review. Synthetic M1/M2/M64/M65, five eager repetitions, CUDA-graph logical
+tensor checks and all3 real four-rank loaders passed. The completed pilot
+also passed real serving dispatch and final cross-arm reauthentication.
 
-Related files under campaign root:
+## Evaluation and hard operational limits
 
-- `p8-coupled-three-layer-cf32-v3.json`: authenticated runtime manifest.
-- `p8-coupled-cf32-storage-v3.json`: current sealed storage ledger.
-- `p8-coupled-three-layer-cf32-execution-v3.json`: execution seal.
-- `p8-coupled-three-layer-cf32-v3-captures/`: live output root.
-- Within each arm: `scores/<arm>/*.score.json`, `*.scores.npz`, retirement
-  receipts, `runtime-audit.json`, final runtime audit, and `execution.json`.
-  Inspect actual filenames; score receipts specify their NPZ paths.
-- Root `analysis.json` exists only after both arms complete and final
-  authentication succeeds. Root `execution.json` is written at termination.
+CF32 roles:
+ /media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json
+Role SHA256:
+ b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14
+Teacher root:
+ /media/brandonmusic/klcstore/bmxfp4-glm53/teacher
+Correct teacher lineage:
+ brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits
 
-Safe initial commands:
+Use32 windows,8/domain;2047 prediction rows/window, exclude only row0
+one-token prefill from true decode. Equal-window mean KL(teacher||student),
+FP64 CPU. Paired95% BCa over windows, B20000, seed20260902. Preserve exact
+tokens/teacher hashes and causal mask. No selective exclusions or rerolls.
+Define Shapley fit/conditional-fit/selection use explicitly and disclose
+adaptive reuse; keep the28 protected confirmation logits unopened.
 
-```bash
-ps -p 2766432 -o pid,etime,stat,args
-docker ps --format '{{.Names}} {{.Status}}'
-docker logs --tail 50 glm53-p8-three-layer-cf32-identity_p8
-```
+- Production stays OFF: user service klc-backend.service and SYSTEM timer
+  klc-model-stack.timer; never restore automatically. Port8000 stays unbound.
+- The pilot executor terminated exit0; all owned containers were cleaned up.
+  Old PID2766432 and session26404 are TERMINAL, not jobs to resume/relaunch.
+  Recheck live state in case Fable or another agent has since started work.
+- Respect /run/lock/klc/model-stack.lock and avoid competing GPU jobs.
+- Maximum aggregate new NVMe use remains30,000,000,000B without asking.
+  The last projection was about29.748GB, so a full build needs a fresh,
+  realistic storage plan and likely explicit additional storage approval.
+  The new full-model objective does NOT silently waive that limit.
+  Preserve original cutoff1788632160 and prior charges; no per-run reset.
+  No large new writes to klcstore. Do not delete reusable chunks/checkpoints
+  or replace the existing full identity checkpoint without permission.
+- Stream one window at a time; raw1,268,157,440B. Persist and hash scores/NPZ
+  before retiring that exact transient raw. No dense32/81GB capture batches.
+- Thermal abort90C; user accepts89C. Keep existing safety gates.
+- Native P8 E4M3 mxf8f6f4 costs twice NVFP4's MMA issue count. It is not P4
+  speed class. Never claim one native FP4 matmul or guaranteed speedup.
+- Keep the repo private and preserve ExLlamaV3, KQuant, QSRT and
+  w4a8_trellis port attribution and existing licensing.
 
-A missing final receipt does not mean a live process stopped. A polling timeout
-does not authorize restart. Never launch a second executor while this one lives.
-If a failure is terminal, inspect `error.private.txt`, the arm execution receipt,
-and `server-final.private.log`; preserve the attempt before any amended retry.
-Do not publish raw private launch/environment/request files without checking
-for secrets and private corpus content.
+Historical failed launches remain preserved: v1 duplicate exec before any
+window; v2 canceled prelaunch to remove stock-first scheduling; v3 completed.
+The latest directive supersedes only future experimental scope and the
+small-pilot gate, not those receipts, the recorded result, or safety limits.
 
-## Fixed experiment
-
-Order: **coupled_p8 → identity_p8**, exactly 32 conditional-fit windows per arm.
-Both replace only layers 3,20,22; all other layers use the same authenticated
-stock NVFP4 carrier. This is a full-model output KLD measurement of a three-layer
-intervention, not layer-local weight NMSE.
-
-Candidate: fixed coupled H512/H128 sign-Hadamard, draw0, exact Flash EXL3
-`suh`/`svh` scales, target Flash capped SiLU (gate max10, up -10..10).
-K4 procedural MCG trellis → E4M3 weights, UE8M0 scales/32.
-Nominal payload 4.25 bpw; coupled tensor payload including scale/draw metadata
-approximately **4.2539798595 bpw**, not a verified whole-model disk rate.
-Existing full-Hessian GPTQ-style inter-group feedback remains; no new BlockLDLQ.
-
-Runtime: **TP4, DCP1, no EP, B12X_MLA_SPARSE attention, nvfp4_ds_mla KV,
-Tail V2, E4M3 P8 activations, CUDA graphs, MTP off**. Other stock layers retain
-their stock paths. The immutable image is:
-`sha256:ad6b26bf6d1f265d99b09383485ddef82a4acfaea43e28af46341ebb41da24e3`.
-
-The P8 runtime decodes to the native E4M3 MMA path; `mxf8f6f4` has **twice
-NVFP4's MMA issue count**. Do not call it native P4 speed class or promise a
-speed gain. Actual coupled dispatch for all 3 layers × 4 ranks must pass the
-runtime audit. A generic startup banner currently contains the word `identity`;
-do not use that banner alone either to prove or disprove coupled installation.
-Use the sidecar metadata and exact weight/forward hooks checked by the runner.
-
-The identity comparison is the existing immutable encoder output, not a freshly
-re-encoded identical pipeline. Therefore this tests the **whole coupled
-candidate**, not isolated causal attribution to Hadamard or scales individually.
-
-## Metric and decision — do not change after reading results
-
-Role manifest:
-`/media/brandonmusic/klcstore/bmxfp4-glm53/roles/roles-codec-conditional-fit32-v1.json`
-SHA `b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14`.
-Teacher root: `/media/brandonmusic/klcstore/bmxfp4-glm53/teacher`.
-Correct HF teacher lineage is `brandonmusic/GLM-5.3-Flash-BF16-Teacher-Logits`;
-use pinned local teacher bytes, no new download.
-
-32 windows, 8 per domain. Exactly 2047 captured prediction rows/window.
-Row0 is the one-token prefill row: report separately. **Rows1..2046** enter
-true-decode KLD. Equal-window mean; no selective exclusions/replacements.
-Paired 95% BCa over windows, B=20000, seed=20260902.
-
-Development pass = coupled mean KLD below identity mean. **CI is reported but
-nonblocking**, per explicit user revision. No fixed minimum percentage hurdle.
-Stock metric is **not tested**, not zero or inferred from unrelated old runs.
-Already-opened CF32 is development evidence, not untouched final qualification.
-
-Preregistered amendment:
-`experiments/p8-coupled-three-layer-cf32-candidate-first-v3.json`.
-Analysis: `glm53_nvfp4/analyze_p8_coupled_cf32.py`.
-Runner: `glm53_nvfp4/p8_coupled_cf32_executor.py`.
-Preparer: `scripts/prepare_p8_coupled_three_layer_cf32_runtime.py`.
-
-Report the candidate mean as soon as all32 candidate windows are valid, clearly
-labeling it candidate-only pending the matched identity comparison. Do not wait
-for unrelated side work to tell Brandon the result. Then let the scheduled
-identity arm finish and report absolute delta, relative improvement, BCa,
-per-window wins, per-domain results and any failures. Every numeric report must
-carry attention backend, KV dtype, MoE backend, activation precision and bpw.
-
-## Artifact locations — no re-encoding needed for the pilot
-
-Coupled chunks/sidecars/receipts:
-`<campaign-root>/p8-coupled-three-layer-v1`
-Sidecars: `sidecars/layer-003`, `layer-020`, `layer-022`, four ranks each.
-864 experts total, all packed and real-loader PASS. Both original chunks and
-packed sidecars remain; do not delete them casually.
-
-Identity sidecars:
-`<campaign-root>/uniform-p8-all42-v1/sidecars`
-Identity manifest: same parent `manifest.json`.
-Identity design:
-`/home/brandonmusic/KLC_SANDBOXES/bmxfp4-glm53/experiments/p8-kld-shapley-native6-v2.json`
-
-Stock common carrier: `/home/brandonmusic/models/GLM-5.3-Flash-NVFP4`.
-All44 indexed shards plus3 extras are hash-pinned. Stock authentication is
-required for the shared unchanged layers; it is NOT a stock-only serving run.
-BF16 source:
-`/media/brandonmusic/klcstore/bmxfp4-glm53/downloads/GLM-5.3-Flash-BF16`.
-Scale source: `/home/brandonmusic/models/GLM-5.3-Flash-EXL3-4bpw`.
-Design: `results/P8_COUPLED_SCALE_FLASH_EVIDENCE_PREPARATION_V3.json`.
-Transform: `experiments/p8-coupled-transform-draw0-silu10-v1.json`.
-Layer20/22 calibration:
-`<campaign-root>/fit-capture-l20-l22-v1` (old klcstore references are incomplete;
-use the verified relocation recorded in encoder receipts).
-
-## Hard operational limits
-
-- **Production stays OFF. Never restore/start it automatically**, including on
-  failure or at completion. User service `klc-backend.service` and SYSTEM timer
-  `klc-model-stack.timer` were inactive; port8000 unbound.
-- Root executor owns `/run/lock/klc/model-stack.lock`. Agents must not launch
-  competing GPU jobs. Do not restart the running container to inspect it.
-- User permits at most **30,000,000,000 bytes aggregate new NVMe use** without
-  asking. Latest v3 projection approximately29.748GB, including reserves.
-  Physical disk free space does NOT increase that authorization. No large new
-  writes to klcstore. Preserve fixed ledger cutoff **1788632160** and prior
-  attempts; do not reset the budget per run.
-- Capture one window at a time: raw is1,268,157,440B. Runner saves and hashes
-  durable scores/NPZ before unlinking only that exact transient raw. No dense32
-  capture, no81GB capture batch. Never delete source chunks for convenience.
-- No protected28 confirmation logits, no final-role opening. Fit/CF/selection
-  remain distinct. No new downloads or re-encoding before this pilot result.
-- Thermal abort is90C; user explicitly accepts89C. Do not impose a new lower
-  sustained-run limit. Do not disable existing safety gates to force a result.
-
-## History needed to avoid repeating mistakes
-
-v1 failed before any window: launch command emitted `exec exec ...`.
-Fixed by normalizing the real source's leading exec; actual-scoped tests added.
-v2 was canceled by user direction during prelaunch authentication, exit143,
-before any container/window, to remove stock-first scheduling.
-v3 implements the reviewed candidate-first order. All failures/cancellations
-are preserved. No matched coupled improvement or regression result exists yet.
-
-Synthetic M1/M2/M64/M65 numerical checks, five eager repetitions, CUDA-graph
-checks and all3 real four-rank sidecar loader checks passed. These are narrow
-correctness checks, not full-model serving/KLD qualification. v1 graph receipt
-failure was preserved; v2 distinguishes physical route permutation metadata
-from bit-exact logical tensors.
-
-Older full-model identity P8 true-decode CF32 mean was approximately0.03730956;
-EXL3 repeats were approximately0.03161/0.03124/0.03105. Conditions differ:
-P8 TP4/noEP/DCP1/E4M3/4.25bpw vs EXL3 TP4/EP4/DCP4/BF16/4bpw, both
-B12X_MLA_SPARSE, nvfp4_ds_mla KV, TailV2, graphs, MTP off. Historical only;
-do not subtract these from the current three-layer intervention as a matched
-codec effect, and do not claim a new result using those old numbers.
-
-## After the pilot
-
-If coupled mean beats matched identity, plan one all42-layer coupled build,
-then full-model KLD. First obtain storage permission if the aggregate30GB limit
-cannot be respected. Do not extrapolate a three-layer percentage linearly.
-Then evaluate properly matched serving speed/prologue cost; no native P4 claim
-for P8. Later K5 and allocation work are not the immediate priority.
-
-If it fails, preserve result and discuss/use the authorized encoder-only
-three-layer calibrated inter-block BlockLDLQ fallback preserving P8 ABI;
-do not infer it is ruled out by the August29 intra-tile-only LDLQ ablation.
-Do not restart an archive audit or broad rotation search before reporting.
-The old automatic goal text about H16/learned/Shapley6bpw is stale scheduling
-context: the user's later codec/coupled-P8 directions control current work.
-
-## Private reproducibility repository
-
-Git remote `github` (not local `origin`):
-`https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld.git`
-Keep it **private**. Push code, decisions, sanitized receipts, analysis and
-attribution (ExLlamaV3, KQuant, QSRT/w4a8_trellis ports) as work completes.
-Do not fabricate or silently replace license text; retain existing licensing.
-
-Read `results/P8_COUPLED_CF32_ROOT_LAUNCH_DECISIONS.md` and the critical audit
-for chronology. Source change27805aa (integrated86ceac2) passed33 focused tests
-and independent review. Audit agent's latest report commit643957c exists in
-the shared Git object store; it may not yet be integrated at snapshot time.
-
-**First action: read the final paired result and verify terminal cleanup.
-Both32-window measurements are complete. Do not duplicate them.**
+**Start by preparing the full coupled, same-size Shapley-allocated P8 build
+from existing artifacts. Do not return to exploratory small-block testing.**
