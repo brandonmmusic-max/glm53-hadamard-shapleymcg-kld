@@ -419,12 +419,77 @@ Recorded because they affect provenance, not because they changed a result.
    The device closure caught it: input carriers exact, post-FC1 payload wrong in 4,030 of 4,096
    bytes.
 
-## 9. Still running
+## 9. Phase 1 measured results
 
-The K3 candidate encodes, then the final allocation from measured damage only, assembly by hard
-link, the allocated model's CF32 KLD on the v11 mixed-rate image, and two diagnostic arms
-isolating the downgrade cost from the upgrade benefit. Kernel note: the mixed-rate lineage
-differs from the pinned K4 kernel only in accepting rates 3, 4 and 5 and rescaling the shared
-memory staging accordingly; at rate 4 the new expressions evaluate to exactly the inherited
-constants, so K4 behaviour is unchanged. K3 and K5 must still pass an M1 device closure against a
-CPU reference before anything is installed.
+All arms below were measured on the same sealed 32 windows, the same teacher, the same
+nvfp4_ds_mla KV cache and attention backend, and, for the mixed-rate arms, the rebuilt image
+whose compile spec is keyed on the stored rate (`sha256:c121590d…`). Both device closures pass on
+that image. Intervals on differences are percentile bootstraps of the paired per-window
+difference, 20,000 resamples, seed 20260906.
+
+| Arm | Layers K3 / K4 / K5 | Stored bpw | File bytes | True-decode KLD | Paired vs uniform K4 | Better in |
+|---|---|---:|---:|---:|---|---:|
+| Uniform coupled K4 | 0 / 42 / 0 | 4.2540 | 161,867,572,608 | 0.036967 | — | — |
+| Same-size allocation | 18 / 7 / 17 | 4.2302 | 160,961,603,488 | 0.050484 | +0.013517 (+36.6%), [+0.008596, +0.018973] | 1 of 32 |
+| Upgrades only | 0 / 25 / 17 | 4.6587 | 177,269,057,440 | **0.034181** | **−0.002786 (−7.5%), [−0.004723, −0.000961]** | 25 of 32 |
+
+**Reading.** Upgrading the 17 highest-damage layers to K5 lowers end-to-end KLD, and the
+interval excludes zero; rate monotonicity holds, which is the evidence that the mixed-rate
+serving path is correct after the defects in section 8. The same-size allocation, which pays
+for those upgrades by downgrading 18 low-damage layers to K3, is a large loss. By subtraction
+the 18 downgrades cost about +0.0163 of KLD, against the routed-output proxy's estimate that
+those layers hold 2.8% of the damage. The proxy is a usable screen for which layers deserve
+bits and a poor price for what removing bits costs. The K3-only arm that would have priced the
+downgrades directly was not run, by the owner's decision.
+
+Per-domain KLD of the upgrades-only arm: general 0.033236, legal 0.049390, code and agentic
+0.030089, reasoning termination 0.024009. Against EXL3 at 4.0 bpw (0.031300 on these windows)
+the upgrades-only arm closes about half the gap the uniform model showed, at 0.66 bpw more.
+
+### Against the stock NVFP4 carrier, with a caveat
+
+No stock-carrier measurement exists on this exact serving path (the pilot's stock arm failed
+before scoring). The only stock run on the same windows and teacher is the rotation
+experiment's arm, served with FP8 KV, DCP4, eager execution and scored from a single 2,048-token
+prefill pass rather than 2,047 forced-decode rows. Same windows, different path, so this is
+context only.
+
+| Arm | Mean over the 32 windows | vs stock | Windows worse than stock |
+|---|---:|---:|---:|
+| Stock NVFP4 (FP8 KV, prefill-scored) | 0.039789 | — | — |
+| Uniform coupled K4 P8 | 0.036967 | −0.002821 | 12 |
+| Upgrades-only P8 | 0.034181 | −0.005607 | 6 |
+
+The six windows where the upgrades-only arm sits above stock are 0032 (+0.0064), 0055 (+0.0007),
+0056 (+0.0185), 0063 (+0.0031), 0081 (+0.0020) and 0094 (+0.0009). A matched stock arm on the
+nvfp4-KV forced-decode path is a 35-minute measurement once the harness gains a no-sidecar arm.
+
+### Byte cost of the upgrade
+
+Each layer moved from K4 to K5 adds 905,969,664 B; the 17 upgrades add 15,401,484,832 B, 9.5%
+over the uniform checkpoint and 15,553,350,112 B over the identity budget. The stored rate goes
+from 4.2540 to 4.6587 bpw. The tensor-core path is unchanged: every rate decodes in registers to
+E4M3 and issues the same mxf8f6f4 MMA, and the closure gate requires the native small-M
+materialized N128 owner path with no fallback. Grouped M64 prefill kernels remain K4-only, so
+K5 layers serve batches larger than one row by row.
+
+## 10. Status and what remains
+
+The campaign's measurements are complete as of 2026-09-06 16:20 EDT: the uniform coupled K4
+model, the same-size allocation, and the upgrades-only arm are all measured on the sealed
+protocol. Kernel note: the mixed-rate lineage differs from the pinned K4 kernel in accepting
+rates 3, 4 and 5, rescaling the shared-memory staging, reading a third ring word at K5, sizing
+the descriptor carriers from the rate, and keying the compile spec on the rate; at rate 4 every
+one of those evaluates to the inherited K4 behaviour. K3 and K5 both pass the M1 device closure
+against the CPU reference on the image that produced the numbers above.
+
+Not done, and worth doing next:
+
+* a matched stock-carrier arm on the nvfp4-KV forced-decode path, so the comparison in section 9
+  stops carrying a caveat (harness needs a no-sidecar arm; one 35-minute run);
+* a two-rate-in-one-process device closure, which is the test that would have caught the
+  compile-cache defect before a full measurement did;
+* the disjoint-token-sample test of expert identity from section 5;
+* online K6 encoding of the carrier's remaining BF16 linears at load (19.09 GB is 128-aligned
+  and eligible, about 11.8 GB model-wide or 2.96 GB per GPU recoverable), validated in stages
+  because attention projections at K6 have no quality measurement on this model yet.
