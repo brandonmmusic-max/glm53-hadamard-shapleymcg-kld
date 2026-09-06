@@ -149,16 +149,22 @@ def authenticate_runtime_manifest(path: Path, *, docker_inspect=None) -> tuple[d
             arm_designs = [designs[digest] for digest in sorted(designs)]
             transform = Path(coupled_input["transform"]["path"])
             design_by_layer = coupled["design_by_layer"]
+            bits_by_layer = coupled["bits_by_layer"]
         else:
             sidecars = Path(identity_input["sidecar_dir"])
             arm_designs = [Path(identity_input["design"]["path"])]
             transform = None
             design_by_layer = identity["design_by_layer"]
+            bits_by_layer = {layer: 4 for layer in runtime.LAYERS}
         environment = runtime.arm_environment(arm, expected_ids, design_count=len(arm_designs))
         if entry["environment"] != environment:
             raise ValueError(f"{arm}: environment differs")
         if entry["design_by_layer"] != {str(layer): digest for layer, digest in design_by_layer.items()}:
             raise ValueError(f"{arm}: per-layer design map differs")
+        if entry.get("bits_by_layer") != {str(layer): int(bits) for layer, bits in bits_by_layer.items()}:
+            raise ValueError(f"{arm}: per-layer rate map differs")
+        if any(bits != 4 for bits in bits_by_layer.values()) and image.get("lineage") != "v11":
+            raise ValueError(f"{arm}: mixed-rate sidecars require the v11 runtime image")
         arm_root = Path(entry["capture_root"])
         if arm_root != arm_root.resolve() or arm_root.name != arm:
             raise ValueError(f"{arm}: capture root must be canonical and arm-named")
@@ -273,7 +279,7 @@ def _capture_budget(seal: dict, manifest: dict, output: Path, *, reserve_next_ra
 
 
 def audit_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str], image_id: str, bpw: float,
-                      completed: list[str] | None = None) -> dict:
+                      completed: list[str] | None = None, bits_by_layer: dict[int, int] | None = None) -> dict:
     for marker in ("Using V2 Model Runner", "tensor_parallel_size=4", "decode_context_parallel_size=1",
                    "speculative_config=None", "kv_cache_dtype=nvfp4_ds_mla", "quantization=modelopt_mixed"):
         if marker not in text:
@@ -287,11 +293,13 @@ def audit_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str], i
         raise ValueError("capture ready-rank inventory differs")
     if set(closed) != {(str(rank), "1", "2") for rank in range(4)} or len(closed) != 4:
         raise ValueError("capture warmup closure differs")
-    native = runtime.verify_runtime_log(text, arm, design_by_layer=design_by_layer)
+    native = runtime.verify_runtime_log(text, arm, design_by_layer=design_by_layer, bits_by_layer=bits_by_layer)
+    rates = sorted(set(bits_by_layer.values())) if bits_by_layer else [4]
     conditions = {"attention": "B12X_MLA_SPARSE", "kv_dtype": "nvfp4_ds_mla",
                   "moe_backend": "native-p8-mxf8f6f4-n128-" + native["boundary"],
                   "activation_precision": "E4M3 UE8M0_K32 at native P8 MMA boundaries",
-                  "bpw": bpw, "layers": "3-44", "image_id": image_id}
+                  "bpw": bpw, "layers": "3-44", "image_id": image_id,
+                  "stored_rates": "/".join(f"K{b}" for b in rates)}
     if completed is not None:
         observed = re.findall(r"GLM53_P8_DECODE_CAPTURE_V2_COMPLETE window=(conditional-fit-\d{4}) rows=(\d+) tp_rank=(\d+)", text)
         if observed != [(window, "2047", "0") for window in completed]:
@@ -385,6 +393,7 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
     name = runtime.SERVED_NAME.format(arm=arm)
     image = manifest["image"]["image_id"]
     design_by_layer = {int(layer): digest for layer, digest in entry["design_by_layer"].items()}
+    bits_by_layer = {int(layer): int(bits) for layer, bits in entry["bits_by_layer"].items()}
     argv = _owned_argv(entry["launch_argv"], out, owner)
     _private_save(out / "launch.private.json", {"argv": argv})
     record = {"schema": ARM_EXECUTION_SCHEMA, "arm": arm, "exit_code": 1, "windows": [],
@@ -434,7 +443,7 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
                 proof_log = logs.stdout + logs.stderr
                 _private_save(out / "runtime-proof.private.log", proof_log)
                 _save(runtime_path, audit_runtime_log(proof_log, arm, design_by_layer=design_by_layer,
-                                                      image_id=image, bpw=entry["bpw"]))
+                                                      image_id=image, bpw=entry["bpw"], bits_by_layer=bits_by_layer))
             score = score_retire_window(arm=arm, window=window, teacher_root=Path(manifest["roles"]["teacher_root"]),
                                         capture_root=out / "captures", receipt_root=out / "scores",
                                         runtime_audit_sha256=runtime.sha(runtime_path))
@@ -463,7 +472,8 @@ def run_arm(seal: dict, manifest: dict, windows: list[dict], arm: str, owner: st
                 final = final_path.read_text(errors="replace")
                 _save(out / "runtime-final-audit.json",
                       audit_runtime_log(final, arm, design_by_layer=design_by_layer, image_id=image,
-                                        bpw=entry["bpw"], completed=[w["id"] for w in windows]))
+                                        bpw=entry["bpw"], completed=[w["id"] for w in windows],
+                                        bits_by_layer=bits_by_layer))
             except BaseException as error:
                 record["final_audit_error_type"] = type(error).__name__
                 record["exit_code"] = 1

@@ -96,7 +96,7 @@ def test_full_coupled_manifest_validation_binds_paths_designs_and_transform(tmp_
         for rank in runtime.RANKS:
             path = sidecars / f"p8-layer-{layer:03d}-tp4-rank-{rank}.safetensors"
             size, digest = _sidecar(path, {"source_design_sha256": design, "boundary": runtime.BOUNDARIES["coupled_full"],
-                                           "full_coupled": "true", "encoder_transform_sha256": runtime.TRANSFORM_SHA256})
+                                           "full_coupled": "true", "bits": "4", "encoder_transform_sha256": runtime.TRANSFORM_SHA256})
             ranks.append({"rank": rank, "path": str(path.resolve()), "bytes": size, "sha256": digest,
                           "source_design_sha256": design})
         layers.append({"layer": layer, "status": "pass", "ranks": ranks, "source_design_sha256": design})
@@ -111,7 +111,7 @@ def test_full_coupled_manifest_validation_binds_paths_designs_and_transform(tmp_
     # Tamper with one sidecar's metadata design -> fail closed.
     victim = sidecars / "p8-layer-010-tp4-rank-3.safetensors"
     _sidecar(victim, {"source_design_sha256": DESIGN_B, "boundary": runtime.BOUNDARIES["coupled_full"],
-                      "full_coupled": "true", "encoder_transform_sha256": runtime.TRANSFORM_SHA256})
+                      "full_coupled": "true", "bits": "4", "encoder_transform_sha256": runtime.TRANSFORM_SHA256})
     with pytest.raises(ValueError, match="differ"):
         runtime.validate_full_coupled_manifest(manifest, sidecar_dir=sidecars, transform=transform)
 

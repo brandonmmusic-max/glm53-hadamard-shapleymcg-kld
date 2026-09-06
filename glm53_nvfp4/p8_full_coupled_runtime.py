@@ -37,6 +37,11 @@ ROLE_SHA256 = "b5d7e4524eb98ddfbd230a5d9a44de0dc5dbeb796c03e859898b5838e4463d14"
 V10_PYTHONPATH = "/opt/p8-coupled-runtime:/opt/exllamav3:/opt/infernal-invocation/vllm:/opt/infernal-invocation/b12x"
 IMAGE_BUILD_SCHEMA = "glm53.p8-full-coupled-image-build.v10"
 IMAGE_EXPERIMENT_LABEL = "glm53-p8-full-coupled-h512-h128-suh-svh-v10"
+IMAGE_LINEAGES = {
+    "v10": ("glm53.p8-full-coupled-image-build.v10", "glm53-p8-full-coupled-h512-h128-suh-svh-v10"),
+    "v11": ("glm53.p8-mixed-rate-image-build.v11", "glm53-p8-mixed-rate-coupled-k3k4k5-v11"),
+}
+MIXED_RATE_MANIFEST_SCHEMA = "glm53-p8-mixed-rate-coupled-all42-tp4-checkpoint.v1"
 IMAGE_PARENT = "sha256:0336113e0fff876cccf9e6ac5347528ae59f4ad894a0ce7cb4c4e90b4651a745"
 BOUNDARIES = {"coupled_full": "coupled-h512-h128-suh-svh-v1", "identity_full": "identity"}
 FULL_COUPLED_FLAG = {"coupled_full": "true", "identity_full": "false"}
@@ -75,14 +80,24 @@ def arm_environment(arm: str, window_ids: list[str], *, design_count: int) -> di
     }
 
 
-def verify_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str]) -> dict:
-    """Require every layer/rank pair to report the intended boundary and design."""
+def verify_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str],
+                       bits_by_layer: dict[int, int] | None = None) -> dict:
+    """Require every layer/rank pair to report the intended boundary, design and rate."""
     if arm not in ARMS:
         raise ValueError("undeclared arm")
     if set(design_by_layer) != set(LAYERS):
         raise ValueError("design_by_layer must cover exactly layers 3..44")
+    if bits_by_layer is not None and set(bits_by_layer) != set(LAYERS):
+        raise ValueError("bits_by_layer must cover exactly layers 3..44")
     expected_boundary = BOUNDARIES[arm]
     expected_full = FULL_COUPLED_FLAG[arm]
+    if bits_by_layer is not None:
+        streams = re.findall(r"GLM53_P8_NATIVE_WEIGHTS_READY layer=(\d+) rank=(\d+) [^\n]*?stream=K(\d)", text)
+        if len(streams) != PAIRS:
+            raise ValueError(f"weights-ready stream inventory has {len(streams)} lines, expected {PAIRS}")
+        for layer_text, rank_text, stream_bits in streams:
+            if int(stream_bits) != bits_by_layer[int(layer_text)]:
+                raise ValueError(f"layer {layer_text} rank {rank_text} loaded K{stream_bits}, allocation says K{bits_by_layer[int(layer_text)]}")
     ready = re.findall(
         r"GLM53_P8_NATIVE_WEIGHTS_READY layer=(\d+) rank=(\d+) sidecar=\S+ "
         r"design_sha256=([0-9a-f]{64})[^\n]*?boundary=(\S+) full_coupled=(true|false)",
@@ -117,45 +132,61 @@ def verify_runtime_log(text: str, arm: str, *, design_by_layer: dict[int, str]) 
         "boundary": expected_boundary,
         "full_coupled": expected_full == "true",
         "designs": sorted(set(design_by_layer.values())),
+        "bits_by_layer_checked": bits_by_layer is not None,
     }
 
 
 def validate_full_coupled_manifest(path: Path, *, sidecar_dir: Path, transform: Path) -> dict:
-    """Authenticate the full coupled checkpoint manifest and return its design map."""
+    """Authenticate a coupled checkpoint manifest (uniform K4 or mixed K3/K4/K5).
+
+    Returns the per-layer design map, the per-layer stored rate map, the payload
+    accounting and the file inventory.
+    """
     path, sidecar_dir, transform = Path(path), Path(sidecar_dir), Path(transform)
     manifest = json.loads(path.read_text())
-    if manifest.get("schema") != FULL_COUPLED_MANIFEST_SCHEMA or manifest.get("layer_range") != [3, 44]:
-        raise ValueError("full coupled manifest schema/layer range differs")
+    schema = manifest.get("schema")
+    if schema not in (FULL_COUPLED_MANIFEST_SCHEMA, MIXED_RATE_MANIFEST_SCHEMA) or manifest.get("layer_range") != [3, 44]:
+        raise ValueError("coupled manifest schema/layer range differs")
+    mixed = schema == MIXED_RATE_MANIFEST_SCHEMA
     if sha(transform) != TRANSFORM_SHA256 or manifest.get("transform", {}).get("sha256") != TRANSFORM_SHA256:
         raise ValueError("coupled transform identity differs")
     payload = manifest.get("payload", {})
-    if payload.get("weight_payload_bpw") != 4.25:
+    if not mixed and payload.get("weight_payload_bpw") != 4.25:
         raise ValueError("full coupled manifest is not exactly 4.25 weight-payload bpw")
     layers = manifest.get("layers", [])
     if [row.get("layer") for row in layers] != list(LAYERS):
-        raise ValueError("full coupled manifest does not list layers 3..44 in order")
+        raise ValueError("coupled manifest does not list layers 3..44 in order")
+    allocation = manifest.get("allocation", {}).get("assignment") if mixed else None
     design_by_layer: dict[int, str] = {}
+    bits_by_layer: dict[int, int] = {}
     files = []
     for row in layers:
         if row.get("status") != "pass" or [r.get("rank") for r in row.get("ranks", [])] != list(RANKS):
             raise ValueError(f"layer {row.get('layer')} lacks a passing four-rank receipt")
-        design_by_layer[int(row["layer"])] = row["source_design_sha256"]
+        layer = int(row["layer"])
+        bits = int(row.get("bits", 4))
+        if bits not in (3, 4, 5) or (allocation is not None and int(allocation[str(layer)]) != bits):
+            raise ValueError(f"layer {layer} rate {bits} disagrees with the installed allocation")
+        design_by_layer[layer] = row["source_design_sha256"]
+        bits_by_layer[layer] = bits
         for rank in row["ranks"]:
-            expected = sidecar_dir / f"p8-layer-{row['layer']:03d}-tp4-rank-{rank['rank']}.safetensors"
+            expected = sidecar_dir / f"p8-layer-{layer:03d}-tp4-rank-{rank['rank']}.safetensors"
             if Path(rank["path"]) != expected.resolve() or not expected.is_file():
-                raise ValueError(f"sidecar path differs for layer {row['layer']} rank {rank['rank']}")
+                raise ValueError(f"sidecar path differs for layer {layer} rank {rank['rank']}")
             if expected.stat().st_size != rank["bytes"]:
-                raise ValueError(f"sidecar bytes differ for layer {row['layer']} rank {rank['rank']}")
+                raise ValueError(f"sidecar bytes differ for layer {layer} rank {rank['rank']}")
             metadata, _, _ = safetensors_header(expected)
             if (metadata.get("source_design_sha256") != rank["source_design_sha256"]
                     or metadata.get("boundary") != BOUNDARIES["coupled_full"]
                     or metadata.get("full_coupled") != "true"
+                    or metadata.get("bits") != str(bits)
                     or metadata.get("encoder_transform_sha256") != TRANSFORM_SHA256):
-                raise ValueError(f"sidecar metadata differs for layer {row['layer']} rank {rank['rank']}")
-            files.append({"layer": row["layer"], "rank": rank["rank"], "path": str(expected),
-                          "bytes": rank["bytes"], "sha256": rank["sha256"]})
-    return {"manifest_sha256": sha(path), "design_by_layer": design_by_layer,
-            "designs": manifest.get("designs"), "payload": payload, "files": files}
+                raise ValueError(f"sidecar metadata differs for layer {layer} rank {rank['rank']}")
+            files.append({"layer": layer, "rank": rank["rank"], "path": str(expected),
+                          "bytes": rank["bytes"], "sha256": rank["sha256"], "bits": bits})
+    return {"manifest_sha256": sha(path), "schema": schema, "mixed_rate": mixed, "design_by_layer": design_by_layer,
+            "bits_by_layer": bits_by_layer, "designs": manifest.get("designs"), "payload": payload, "files": files,
+            "allocation": manifest.get("allocation") if mixed else None}
 
 
 def validate_identity_manifest(path: Path, *, sidecar_dir: Path, design: Path) -> dict:
@@ -196,20 +227,21 @@ def validate_image_receipt(path: Path, *, docker_inspect=None) -> dict:
     path = Path(path)
     value = json.loads(path.read_text())
     image_id = value.get("image_id", "")
-    if (value.get("schema") != IMAGE_BUILD_SCHEMA or value.get("status") != "complete"
+    lineage = next((name for name, (schema, label) in IMAGE_LINEAGES.items()
+                    if value.get("schema") == schema and value.get("labels", {}).get("org.klc.experiment") == label), None)
+    if (lineage is None or value.get("status") != "complete"
             or value.get("parent_image_id") != IMAGE_PARENT
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id)
             or value.get("verification", {}).get("status") != "pass"
-            or value.get("labels", {}).get("org.klc.experiment") != IMAGE_EXPERIMENT_LABEL
             or value.get("labels", {}).get("org.klc.parent.digest") != IMAGE_PARENT
             or value.get("gpu_used") is not False):
-        raise ValueError("v10 image build receipt differs")
+        raise ValueError("image build receipt differs from the v10/v11 lineages")
     inspect = docker_inspect or (lambda name: subprocess.run(
         ["docker", "image", "inspect", name, "--format", "{{.Id}}"],
         text=True, capture_output=True, check=True).stdout.strip())
     if inspect(image_id) != image_id:
         raise ValueError("v10 image is not present under its recorded id")
-    return {"receipt": {"path": str(path.resolve()), "sha256": sha(path)}, "image_id": image_id,
+    return {"receipt": {"path": str(path.resolve()), "sha256": sha(path)}, "image_id": image_id, "lineage": lineage,
             "source_commit": value.get("source_commit"), "source_tree": value.get("source_tree"),
             "labels": value.get("labels")}
 

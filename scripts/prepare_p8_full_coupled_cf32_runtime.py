@@ -72,11 +72,13 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
         if arm == "coupled_full":
             sidecars, designs, transform = args.coupled_sidecars, coupled_designs, args.transform
             design_by_layer = coupled["design_by_layer"]
+            bits_by_layer = coupled["bits_by_layer"]
             bpw = coupled["payload"]["stored_bpw_including_metadata"]
             file_bytes = coupled["payload"]["file_bytes"]
         else:
             sidecars, designs, transform = args.identity_sidecars, [args.identity_design], None
             design_by_layer = identity["design_by_layer"]
+            bits_by_layer = {layer: 4 for layer in runtime.LAYERS}
             bpw = 4.25
             file_bytes = sum(row["bytes"] for row in identity["files"])
         env = runtime.arm_environment(arm, ids, design_count=len(designs))
@@ -86,6 +88,7 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
             "sidecar_dir": str(sidecars),
             "designs": [{"path": str(path), "sha256": runtime.sha(path)} for path in designs],
             "design_by_layer": {str(layer): digest for layer, digest in sorted(design_by_layer.items())},
+            "bits_by_layer": {str(layer): int(bits) for layer, bits in sorted(bits_by_layer.items())},
             "boundary": runtime.BOUNDARIES[arm],
             "bpw": bpw,
             "sidecar_file_bytes": file_bytes,
