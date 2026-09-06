@@ -157,17 +157,33 @@ def test_launch_argv_selects_the_kv_cache_dtype_and_records_nothing_else_differe
                   output=tmp_path / "out", model_root=tmp_path / "model", sidecar_dir=tmp_path / "sc",
                   designs=[tmp_path / "d.json"], transform=tmp_path / "t.json")
     ref = runtime.launch_argv(**common)
-    fp8 = runtime.launch_argv(**common, kv_dtype="fp8_ds_mla")
-    assert "--kv-cache-dtype nvfp4_ds_mla" in ref[-1] and "--kv-cache-dtype fp8_ds_mla" in fp8[-1]
-    assert ref[:-1] == fp8[:-1], "only the serving command's KV flag may differ between the two"
-    assert ref[-1].replace("nvfp4_ds_mla", "fp8_ds_mla") == fp8[-1]
+    # Same backend, both caches it supports: only the KV flag may differ.
+    flash_nvfp4 = runtime.launch_argv(**common, attention_backend="FLASHINFER_MLA_SPARSE_SM120")
+    flash_fp8 = runtime.launch_argv(**common, kv_dtype="fp8_ds_mla",
+                                    attention_backend="FLASHINFER_MLA_SPARSE_SM120")
+    assert "--kv-cache-dtype nvfp4_ds_mla" in ref[-1]
+    assert "--kv-cache-dtype fp8_ds_mla" in flash_fp8[-1]
+    assert flash_nvfp4[:-1] == flash_fp8[:-1], "only the serving command's KV flag may differ"
+    assert flash_nvfp4[-1].replace("nvfp4_ds_mla", "fp8_ds_mla") == flash_fp8[-1]
     with pytest.raises(ValueError, match="undeclared KV-cache dtype"):
         runtime.launch_argv(**common, kv_dtype="fp8")
+    # GLM-5.3-Flash has qk_rope_head_dim=0, so the B12X sparse backend refuses the FP8 cache at
+    # model load. The harness must refuse the same pair before it wastes a container start.
+    with pytest.raises(ValueError, match="does not support kv_cache_dtype"):
+        runtime.launch_argv(**common, kv_dtype="fp8_ds_mla", attention_backend="B12X_MLA_SPARSE")
+    flash = runtime.launch_argv(**common, kv_dtype="fp8_ds_mla",
+                                attention_backend="FLASHINFER_MLA_SPARSE_SM120")
+    assert "--attention-backend FLASHINFER_MLA_SPARSE_SM120" in flash[-1]
+    assert "--kv-cache-dtype fp8_ds_mla" in flash[-1]
+    assert flash[:-1] == ref[:-1], "only the serving command may differ between backends"
+    with pytest.raises(ValueError, match="undeclared attention backend"):
+        runtime.launch_argv(**common, attention_backend="FLASH_ATTN")
     # The source recipe must still carry the reference cache; the arm selects, it does not rewrite history.
     wrong = _minimal_recipe()
     wrong["Config"]["Cmd"][1] = wrong["Config"]["Cmd"][1].replace("nvfp4_ds_mla", "fp8_ds_mla")
     with pytest.raises(ValueError, match="topology differs"):
-        runtime.launch_argv(**{**common, "recipe": wrong}, kv_dtype="fp8_ds_mla")
+        runtime.launch_argv(**{**common, "recipe": wrong}, kv_dtype="fp8_ds_mla",
+                            attention_backend="FLASHINFER_MLA_SPARSE_SM120")
 
 
 def test_preparer_canonical_path_check_skips_non_path_repeatable_options(tmp_path: Path, monkeypatch):

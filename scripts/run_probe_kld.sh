@@ -33,6 +33,8 @@ NAME=${GLM53_PROBE_NAME:?set GLM53_PROBE_NAME}
 MANIFEST=${GLM53_PROBE_MANIFEST:?set GLM53_PROBE_MANIFEST}
 SIDECARS=${GLM53_PROBE_SIDECARS:?set GLM53_PROBE_SIDECARS}
 KV_DTYPE=${GLM53_PROBE_KV_DTYPE:-nvfp4_ds_mla}   # nvfp4_ds_mla (reference) or fp8_ds_mla
+# B12X_MLA_SPARSE accepts only nvfp4_ds_mla at this head geometry; fp8_ds_mla needs FlashInfer.
+ATTENTION=${GLM53_PROBE_ATTENTION:-B12X_MLA_SPARSE}
 
 cd "$REPO"
 export PYTHONPATH="$REPO"
@@ -60,7 +62,8 @@ if [ ! -f "$runtime_manifest" ]; then
     "${design_args[@]}" --transform "$TRANSFORM" --roles "$ROLES" --teacher-root "$TEACHER" \
     --campaign-path "$K4_ROOT" --campaign-path "$RATE_ROOT" --campaign-path "$MIXED_ROOT" \
     --campaign-path "$PROBES" --campaign-path "$SCORE_CAPTURE" --campaign-path "$OUT" \
-    --max-new-bytes "$MAX_NEW_BYTES" --arm coupled_full --kv-cache-dtype "$KV_DTYPE"
+    --max-new-bytes "$MAX_NEW_BYTES" --arm coupled_full --kv-cache-dtype "$KV_DTYPE" \
+    --attention-backend "$ATTENTION"
 fi
 if [ ! -f "$seal" ]; then
   log "$NAME: sealing execution"

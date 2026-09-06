@@ -247,11 +247,22 @@ def validate_image_receipt(path: Path, *, docker_inspect=None) -> dict:
 
 
 KV_DTYPES = ("nvfp4_ds_mla", "fp8_ds_mla")
+ATTENTION_BACKENDS = ("B12X_MLA_SPARSE", "FLASHINFER_MLA_SPARSE_SM120")
+# GLM-5.3-Flash has head_size=512 with qk_rope_head_dim=0. The B12X sparse MLA backend accepts
+# only the NVFP4 DS-MLA cache at that geometry and refuses fp8_ds_mla at model load, so an FP8
+# cache measurement has to move to the FlashInfer SM120 sparse backend. Pairs must therefore be
+# read within one backend, never across the two.
+SUPPORTED_ATTENTION_KV = {
+    ("B12X_MLA_SPARSE", "nvfp4_ds_mla"),
+    ("FLASHINFER_MLA_SPARSE_SM120", "nvfp4_ds_mla"),
+    ("FLASHINFER_MLA_SPARSE_SM120", "fp8_ds_mla"),
+}
 
 
 def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output: Path,
                 model_root: Path, sidecar_dir: Path, designs: list[Path],
-                transform: Path | None, *, port: int = PORT, kv_dtype: str = "nvfp4_ds_mla") -> list[str]:
+                transform: Path | None, *, port: int = PORT, kv_dtype: str = "nvfp4_ds_mla",
+                attention_backend: str = "B12X_MLA_SPARSE") -> list[str]:
     """Derive one arm's ``docker create`` argv from the authenticated serving recipe.
 
     The recipe is the ``docker inspect`` record of the reference P8 server.  Only
@@ -265,6 +276,11 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
         raise ValueError("undeclared arm")
     if kv_dtype not in KV_DTYPES:
         raise ValueError(f"undeclared KV-cache dtype: {kv_dtype!r}")
+    if attention_backend not in ATTENTION_BACKENDS:
+        raise ValueError(f"undeclared attention backend: {attention_backend!r}")
+    if (attention_backend, kv_dtype) not in SUPPORTED_ATTENTION_KV:
+        raise ValueError(f"{attention_backend} does not support kv_cache_dtype={kv_dtype} at this "
+                         "head geometry; the engine refuses it at model load")
     config, host = recipe["Config"], recipe["HostConfig"]
     raw_command = config.get("Cmd", [])
     if len(raw_command) != 2 or raw_command[0] != "-lc":
@@ -291,6 +307,7 @@ def launch_argv(recipe: dict, image: str, arm: str, env: dict[str, str], output:
     replace("--port", str(port))
     replace("--served-model-name", SERVED_NAME.format(arm=arm))
     replace("--kv-cache-dtype", kv_dtype)
+    replace("--attention-backend", attention_backend)
     tokens[tokens.index("serve") + 1] = "/model"
     name = SERVED_NAME.format(arm=arm)
     argv = ["docker", "create", "--name", name, "--network", "host", "--ipc", "host",

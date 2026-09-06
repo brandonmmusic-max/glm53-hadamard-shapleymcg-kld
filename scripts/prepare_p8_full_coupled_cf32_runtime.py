@@ -93,7 +93,8 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
             "bpw": bpw,
             "sidecar_file_bytes": file_bytes,
             "launch_argv": runtime.launch_argv(recipe, image["image_id"], arm, env, arm_out, args.model_root,
-                                               sidecars, designs, transform, kv_dtype=args.kv_cache_dtype),
+                                               sidecars, designs, transform, kv_dtype=args.kv_cache_dtype,
+                                               attention_backend=args.attention_backend),
             "runtime_log_gate": "verify_runtime_log; exactly layers 3..44 x ranks 0..3 with the recorded design per layer; no fallback",
         }
     return {
@@ -133,7 +134,8 @@ def build_manifest(args: argparse.Namespace, *, docker_inspect=None) -> dict:
                     "one_window_raw_bytes": 2047 * protocol.VOCAB_LIMIT * 4},
         "arms_in_order": list(requested),
         "arms": arms,
-        "runtime": {**RUNTIME_LABELS, "kv_dtype": args.kv_cache_dtype},
+        "runtime": {**RUNTIME_LABELS, "kv_dtype": args.kv_cache_dtype,
+                    "attention_backend": args.attention_backend},
         "lifecycle": "never starts/restores production; raw capture streamed one window at a time by the executor",
     }
 
@@ -148,6 +150,8 @@ def main() -> None:
         parser.add_argument("--" + name, type=Path, help="required only when --arm identity_full is requested")
     parser.add_argument("--kv-cache-dtype", choices=list(runtime.KV_DTYPES), default="nvfp4_ds_mla",
                         help="KV-cache dtype the arm serves with; recorded in the manifest, seal and conditions")
+    parser.add_argument("--attention-backend", choices=list(runtime.ATTENTION_BACKENDS), default="B12X_MLA_SPARSE",
+                        help="attention backend; B12X sparse MLA accepts only the NVFP4 cache at this head geometry")
     parser.add_argument("--arm", action="append", choices=list(runtime.ARMS),
                         help="arms to prepare in preregistered order; default coupled_full only")
     parser.add_argument("--coupled-design", type=Path, action="append", required=True,
