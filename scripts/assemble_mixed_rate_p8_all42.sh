@@ -33,6 +33,9 @@ THERMAL_PAUSE_C=${GLM53_P8_THERMAL_PAUSE_C:-90}
 THERMAL_RESUME_C=${GLM53_P8_THERMAL_RESUME_C:-85}
 SAMPLES=${GLM53_COUPLED_SAMPLES:-256}
 CANDIDATE_ROOT=${GLM53_RATE_CANDIDATE_SIDECARS:-$CAMPAIGN/rate-candidates-v1/candidate-sidecars}
+# Diagnostic group probes install one arm of the allocation (K5 layers only), which is larger
+# than the identity budget on purpose; the same-size gate is waived only for those runs.
+ALLOW_LARGER=${GLM53_ALLOW_LARGER:-0}
 LOCK=/run/lock/klc/model-stack.lock
 
 SIDECARS=$ROOT/sidecars
@@ -199,7 +202,9 @@ for layer in $(seq 3 44); do
   log "layer=$layer K$bits complete"
 done
 
+manifest_args=()
+[ "$ALLOW_LARGER" = 1 ] && manifest_args+=(--allow-larger)
 mixed manifest --allocation "$ALLOCATION" --sidecars "$SIDECARS" --receipts "$RECEIPTS" --output "$ROOT/manifest.json" \
-  --transform "$TRANSFORM" "${ALLOW[@]}" | tee -a "$LOG"
+  --transform "$TRANSFORM" "${ALLOW[@]}" "${manifest_args[@]}" | tee -a "$LOG"
 ledger "manifest written"
 log "mixed-rate assembly complete manifest=$ROOT/manifest.json"
