@@ -1,4 +1,4 @@
-# Autonomous run: a better NVFP4 for GLM-5.3-Flash (Codex/Sol or Claude as the harness)
+# Autonomous run: a better NVFP4 for GLM-5.3-Flash (Codex/Sol or another agent harness)
 
 You are running this end to end on Brandon Music's rig without him. He will not answer questions during the run.
 Every decision you might otherwise ask about is settled below; where something is not settled, apply the
@@ -64,7 +64,7 @@ implementation you port; make a sibling repo `bmxfp4-glm53/` for the GLM code an
 4. Time budget: 36 h wall from start. If the deliverable arm (G-U) is scored and exported by then, ship it and skip the research arms; if not, write the report on whatever is sealed.
 5. Never delete anything outside `/media/brandonmusic/klcstore/bmxfp4-glm53/` and your venv; inside it, delete only your own per-layer Hessian scratch after each layer is quantized (keep stats), exactly as `run_causal.py` does.
 6. Do not upload anything to Hugging Face and do not open PRs; the checkpoint stays on klcstore for Brandon.
-7. Never change GPU power limits; kill only by PID; do not touch `codex-remote-control.service` or the Claude/Codex tmux sessions; do not edit pinned serving configs (make a new compose file for the NVFP4 candidate).
+7. Never change GPU power limits; kill only by PID; do not touch `codex-remote-control.service` or the agent tmux sessions; do not edit pinned serving configs (make a new compose file for the NVFP4 candidate).
 8. Long jobs: launch detached (`setsid nohup … &`), record PIDs, wait with `tail --pid=PID -f /dev/null` inside timeouts; the harness kills background tasks when a turn ends.
 
 ## 7. Execute
