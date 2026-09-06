@@ -151,7 +151,9 @@ score_layer() {
   for start in 0 72 144 216; do
     k3+=(--k3-chunk "$(chunk_path "$layer" 3 "$start" $((start + 72)))")
     k5+=(--k5-chunk "$(chunk_path "$layer" 5 "$start" $((start + 72)))")
-    k4r+=(--k4-chunk-receipt "$K4_ROOT/receipts/chunks/layer-$l3-experts-$(printf '%03d' "$start")-$(printf '%03d' $((start + 72))).json")
+    # Layers reused from the pilot (3, 20, 22) carry no K4 chunk receipts in the full build root.
+    receipt=$K4_ROOT/receipts/chunks/layer-$l3-experts-$(printf '%03d' "$start")-$(printf '%03d' $((start + 72))).json
+    [ ! -f "$receipt" ] || k4r+=(--k4-chunk-receipt "$receipt")
   done
   CUDA_VISIBLE_DEVICES=$SCORE_GPU OMP_NUM_THREADS=8 "$PYTHON" -u -m glm53_nvfp4.p8_layer_rate_damage --layer "$layer" \
     --source "$SOURCE" --source-index "$INDEX" --exl3-scales "$EXL3" --capture-root "$CAPTURE" --roles "$ROLES" \
