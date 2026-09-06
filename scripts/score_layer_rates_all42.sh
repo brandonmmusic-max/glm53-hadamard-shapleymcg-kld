@@ -30,11 +30,17 @@ THERMAL_RESUME_C=${GLM53_P8_THERMAL_RESUME_C:-85}
 SAMPLES=${GLM53_COUPLED_SAMPLES:-256}
 TOKENS_PER_WINDOW=${GLM53_SCORE_TOKENS_PER_WINDOW:-48}
 LAYERS=${GLM53_RATE_LAYERS:-$(seq 3 44 | tr '\n' ' ')}
-KEEP_CANDIDATE_LAYERS=${GLM53_KEEP_CANDIDATE_LAYERS:-"3"}
+# Rates encoded and scored besides K4 (from the packed full coupled sidecars).  An explicitly
+# empty value scores K4 only: no encode, no pack, receipts under $RECEIPTS/$GLM53_RATE_RECEIPT_SUBDIR.
+CANDIDATE_RATES=${GLM53_RATE_CANDIDATES-"3 5"}
+RECEIPT_SUBDIR=${GLM53_RATE_RECEIPT_SUBDIR:-}
+KEEP_CANDIDATE_LAYERS=${GLM53_KEEP_CANDIDATE_LAYERS:-all}
+SKIP_LOCK=${GLM53_SKIP_LOCK:-0}   # 1 only for workers whose parent already holds the model-stack lock
 LOCK=/run/lock/klc/model-stack.lock
 
 WORK=$ROOT/work
 RECEIPTS=$ROOT/receipts
+DAMAGE_DIR=$RECEIPTS${RECEIPT_SUBDIR:+/$RECEIPT_SUBDIR}
 LOGS=$ROOT/logs
 LOG=$ROOT/score.log
 LEDGER=$ROOT/storage-ledger.jsonl
@@ -42,10 +48,17 @@ THERMAL=$ROOT/thermal-events.jsonl
 K3_CHUNK_BYTES=2947983360
 K5_CHUNK_BYTES=4759922688
 CAPTURE_BYTES=1080033280
-NEED_BYTES=$((K3_CHUNK_BYTES + K5_CHUNK_BYTES + CAPTURE_BYTES))
+NEED_BYTES=$CAPTURE_BYTES
+for r in $CANDIDATE_RATES; do
+  case "$r" in
+    3) NEED_BYTES=$((NEED_BYTES + K3_CHUNK_BYTES)) ;;
+    5) NEED_BYTES=$((NEED_BYTES + K5_CHUNK_BYTES)) ;;
+    *) echo "unsupported candidate rate $r" >&2; exit 2 ;;
+  esac
+done
 
 [ "$THERMAL_RESUME_C" -lt "$THERMAL_PAUSE_C" ] && [ "$THERMAL_PAUSE_C" -le 90 ] || { echo "invalid thermal thresholds" >&2; exit 2; }
-mkdir -p "$WORK" "$RECEIPTS/chunks" "$LOGS" "$CAPTURE/layers"
+mkdir -p "$WORK" "$RECEIPTS/chunks" "$DAMAGE_DIR" "$LOGS" "$CAPTURE/layers"
 cd "$REPO"
 export PYTHONPATH="$REPO"
 
@@ -146,26 +159,27 @@ encode_rate() {
 }
 
 score_layer() {
-  local layer=$1 l3; printf -v l3 '%03d' "$layer"
-  local -a k3=() k5=() k4r=()
+  local layer=$1 l3 bits receipt; printf -v l3 '%03d' "$layer"
+  local -a chunks=() k4r=()
   for start in 0 72 144 216; do
-    k3+=(--k3-chunk "$(chunk_path "$layer" 3 "$start" $((start + 72)))")
-    k5+=(--k5-chunk "$(chunk_path "$layer" 5 "$start" $((start + 72)))")
+    for bits in $CANDIDATE_RATES; do
+      chunks+=("--k$bits-chunk" "$(chunk_path "$layer" "$bits" "$start" $((start + 72)))")
+    done
     # Layers reused from the pilot (3, 20, 22) carry no K4 chunk receipts in the full build root.
     receipt=$K4_ROOT/receipts/chunks/layer-$l3-experts-$(printf '%03d' "$start")-$(printf '%03d' $((start + 72))).json
     [ ! -f "$receipt" ] || k4r+=(--k4-chunk-receipt "$receipt")
   done
   CUDA_VISIBLE_DEVICES=$SCORE_GPU OMP_NUM_THREADS=8 "$PYTHON" -u -m glm53_nvfp4.p8_layer_rate_damage --layer "$layer" \
     --source "$SOURCE" --source-index "$INDEX" --exl3-scales "$EXL3" --capture-root "$CAPTURE" --roles "$ROLES" \
-    --k4-rank-dir "$K4_ROOT/sidecars" "${k3[@]}" "${k5[@]}" "${k4r[@]}" --tokens-per-window "$TOKENS_PER_WINDOW" \
-    --device cuda:0 --output "$RECEIPTS/damage-layer-$l3.json" >"$LOGS/layer-$l3-score.log" 2>&1
+    --k4-rank-dir "$K4_ROOT/sidecars" "${chunks[@]}" "${k4r[@]}" --tokens-per-window "$TOKENS_PER_WINDOW" \
+    --device cuda:0 --output "$DAMAGE_DIR/damage-layer-$l3.json" >"$LOGS/layer-$l3${RECEIPT_SUBDIR:+-$RECEIPT_SUBDIR}-score.log" 2>&1
 }
 
 pack_candidates() {
   # Keep packed TP4 sidecars for selected layers so K3/K5 kernels can be device-closed
   # against real payloads before any allocation is installed.
   local layer=$1 l3 bits; printf -v l3 '%03d' "$layer"
-  for bits in 3 5; do
+  for bits in $CANDIDATE_RATES; do
     local out=$ROOT/candidate-sidecars/layer-$l3/k$bits
     [ ! -f "$out/receipt.json" ] || continue
     mkdir -p "$out"
@@ -191,15 +205,17 @@ release_chunks() {
   done
 }
 
-exec 9>"$LOCK"
-flock -w 900 9
-log "layer rate scoring started root=$ROOT k4_root=$K4_ROOT ceiling=$MAX_NEW_BYTES gpus=$(gpu_list) score_gpu=$SCORE_GPU thermal=$THERMAL_PAUSE_C/$THERMAL_RESUME_C"
+if [ "$SKIP_LOCK" != 1 ]; then
+  exec 9>"$LOCK"
+  flock -w 900 9
+fi
+log "layer rate scoring started root=$ROOT k4_root=$K4_ROOT ceiling=$MAX_NEW_BYTES gpus=$(gpu_list) score_gpu=$SCORE_GPU candidate_rates='$CANDIDATE_RATES' receipts=$DAMAGE_DIR thermal=$THERMAL_PAUSE_C/$THERMAL_RESUME_C"
 guard "$NEED_BYTES"
 ledger "start"
 
 for layer in $LAYERS; do
   printf -v l3 '%03d' "$layer"
-  if [ -f "$RECEIPTS/damage-layer-$l3.json" ]; then
+  if [ -f "$DAMAGE_DIR/damage-layer-$l3.json" ]; then
     log "layer=$layer already scored"; release_chunks "$layer"; remove_capture "$layer"; continue
   fi
   for rank in 0 1 2 3; do
@@ -208,14 +224,15 @@ for layer in $LAYERS; do
   guard "$NEED_BYTES"
   log "layer=$layer prefetching fit capture"
   prefetch_layer "$layer"
-  log "layer=$layer encoding K3 candidate"
-  encode_rate "$layer" 3 "$DESIGN_K3"
-  log "layer=$layer encoding K5 candidate"
-  encode_rate "$layer" 5 "$DESIGN_K5"
-  log "layer=$layer scoring K3/K4/K5"
+  for bits in $CANDIDATE_RATES; do
+    case "$bits" in 3) design=$DESIGN_K3 ;; 5) design=$DESIGN_K5 ;; esac
+    log "layer=$layer encoding K$bits candidate"
+    encode_rate "$layer" "$bits" "$design"
+  done
+  log "layer=$layer scoring K4${CANDIDATE_RATES:+ and candidates $CANDIDATE_RATES}"
   score_layer "$layer"
-  if [[ " $KEEP_CANDIDATE_LAYERS " == *" $layer "* ]]; then
-    log "layer=$layer packing K3/K5 candidate sidecars for device closure"
+  if [ -n "$CANDIDATE_RATES" ] && { [ "$KEEP_CANDIDATE_LAYERS" = all ] || [[ " $KEEP_CANDIDATE_LAYERS " == *" $layer "* ]]; }; then
+    log "layer=$layer packing candidate sidecars (K$CANDIDATE_RATES) for reuse and device closure"
     pack_candidates "$layer"
   fi
   release_chunks "$layer"
@@ -223,4 +240,4 @@ for layer in $LAYERS; do
   ledger "scored layer $layer"
   log "layer=$layer scored"
 done
-log "layer rate scoring complete receipts=$RECEIPTS"
+log "layer rate scoring complete receipts=$DAMAGE_DIR"

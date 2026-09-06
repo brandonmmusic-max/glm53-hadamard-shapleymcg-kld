@@ -40,9 +40,13 @@ def build_report(args: argparse.Namespace) -> str:
     closures = {bits: _load(Path(args.closure_dir) / f"closure-k{bits}" / "result.json") if args.closure_dir else None
                 for bits in (3, 5)}
     damage = {}
-    if args.damage_dir:
+    for directory in (args.damage_dir, args.k4_only_dir):
+        if not directory:
+            continue
         for layer in LAYERS:
-            row = _load(Path(args.damage_dir) / f"damage-layer-{layer:03d}.json")
+            if layer in damage:
+                continue
+            row = _load(Path(directory) / f"damage-layer-{layer:03d}.json")
             if row:
                 damage[layer] = row
     lines = [f"# GLM-5.3-Flash coupled TrellisMX P8 with same-size K3/K4/K5 allocation", "",
@@ -178,7 +182,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--k4-manifest", type=Path)
     parser.add_argument("--uniform-analysis", type=Path)
-    parser.add_argument("--damage-dir", type=Path)
+    parser.add_argument("--damage-dir", type=Path, help="candidate receipts: K4 plus the encoded candidate rate")
+    parser.add_argument("--k4-only-dir", type=Path, help="fallback K4-only receipts for layers never encoded at another rate")
     parser.add_argument("--allocation", type=Path)
     parser.add_argument("--mixed-manifest", type=Path)
     parser.add_argument("--mixed-analysis", type=Path)
