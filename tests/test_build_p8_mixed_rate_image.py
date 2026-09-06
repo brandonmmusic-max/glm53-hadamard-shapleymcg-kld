@@ -312,3 +312,25 @@ def test_grouped_prefill_owners_are_rate_parameterized_and_no_row_by_row_fallbac
         if bits == 4:
             assert b_stage == 128 * 128 // 2
             assert shared == b_storage_offset + 2 * (128 * 128 // 2) + 2 * (16 * 8 * 4)
+
+def test_base_phase_kernels_are_inert_at_k5_only_when_a_p8_owner_replaces_them() -> None:
+    """Upstream W4A8 phase kernels accept rates 2-4; K5 lives only in the P8 subclasses.
+
+    The dispatcher builds both base kernels before replacing them with P8 owners, so at K5 the
+    discarded instances must be built without a trellis rather than with a rate the parent
+    rejects. If no P8 owner would take over, the rate must pass through so the parent's own
+    validation still fires.
+    """
+    dynamic = (ROOT / "runtime_patch/b12x_mixed_rate/b12x/moe/_shared/kernels/dynamic.py").read_text()
+    assert "_base_bits_unsupported = trellis_bits is not None and int(trellis_bits) not in (2, 3, 4)" in dynamic
+    assert "_base_phase1_bits = None if (_base_bits_unsupported and _p8_owns_phase1) else trellis_bits" in dynamic
+    assert "_base_phase2_bits = None if (_base_bits_unsupported and _p8_owns_phase2) else trellis_bits" in dynamic
+    # The base constructors must consume the guarded values, not the raw rate.
+    body = dynamic[dynamic.index("self.materialized_phase1_kernel = W4A8MaterializedPhase1Kernel("):
+                   dynamic.index("if self.p8_small_m:")]
+    assert "_base_phase1_bits" in body and "_base_phase2_bits" in body
+    for guarded in ("_base_phase1_bits", "_base_phase2_bits"):
+        assert body.count(guarded) == 1, guarded
+    # Ownership must cover every P8 replacement branch that appears later in the same block.
+    assert "(self.p8_full_coupled and self.w4a8_m64_materialized)" in dynamic
+    assert "or self.p8_scale_sandwich" in dynamic and "or self.p8_fc1_tile_n != 128" in dynamic

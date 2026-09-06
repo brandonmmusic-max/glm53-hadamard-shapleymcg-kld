@@ -1213,13 +1213,30 @@ class MoEDynamicKernelBackend:
         materialized_source_tile_m = (
             mma_tiler_mn[0] if self.w4a8_split_materialized else 128
         )
+        # The upstream W4A8 phase kernels accept rates 2-4 only; K5 lives exclusively in the
+        # P8 subclasses below. Both base kernels constructed here are replaced by a P8 owner
+        # whenever one of the P8 paths is active, and the discarded instances are never
+        # launched, so at K5 they are built inert (no trellis) rather than with a rate the
+        # parent cannot express. If no P8 owner would replace them, the rate is passed through
+        # unchanged and the parent's own validation rejects K5, which is the correct outcome.
+        _p8_owns_phase1 = (
+            (self.p8_full_coupled and self.w4a8_m64_materialized)
+            or self.p8_scale_sandwich
+            or self.p8_fc1_tile_n != 128
+        )
+        _p8_owns_phase2 = (
+            (self.p8_full_coupled and self.w4a8_m64_materialized) or self.p8_small_m
+        )
+        _base_bits_unsupported = trellis_bits is not None and int(trellis_bits) not in (2, 3, 4)
+        _base_phase1_bits = None if (_base_bits_unsupported and _p8_owns_phase1) else trellis_bits
+        _base_phase2_bits = None if (_base_bits_unsupported and _p8_owns_phase2) else trellis_bits
         self.materialized_phase1_kernel = W4A8MaterializedPhase1Kernel(
             fast_math=self.fast_math,
             source_tile_m=materialized_source_tile_m,
             deterministic_output=bool(deterministic_output),
             num_topk=self.num_topk,
             trellis_bits=(
-                trellis_bits
+                _base_phase1_bits
                 if self.w4a8_trellis and self.w4a8_split_materialized
                 else None
             ),
@@ -1246,7 +1263,7 @@ class MoEDynamicKernelBackend:
             source_tile_m=materialized_source_tile_m,
             deterministic_output=bool(deterministic_output),
             trellis_bits=(
-                trellis_bits
+                _base_phase2_bits
                 if self.w4a8_trellis and self.w4a8_split_materialized
                 else None
             ),
