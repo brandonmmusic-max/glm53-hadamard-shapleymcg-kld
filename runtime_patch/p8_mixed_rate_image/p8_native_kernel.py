@@ -418,9 +418,16 @@ class P8NativeTPMoE:
             current_cuda_stream(),
             fake_ptr_u8(),
             ptr(cutlass.Float16, 16),
+            # The explicit spec IS the JIT cache key, in memory and on disk. Every
+            # field the kernel is specialised on must appear here: the stored
+            # trellis rate was missing, so in a mixed-rate model the first rate
+            # compiled per rank was served for every layer (K3, K4 and K5 alike),
+            # while single-rate closures could never see it. Version 2 retires
+            # any rate-less cache entries.
             compile_spec=KernelCompileSpec.from_fields(
                 "glm53.p8.native.tp4",
-                1,
+                2,
+                ("trellis_bits", self.trellis_bits),
                 ("materialized", int(materialized)),
                 ("small_m_scheduler", int(small_m)),
                 ("fc1_tile_n", self.fc1_tile_n if small_m else 128),

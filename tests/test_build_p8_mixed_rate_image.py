@@ -238,6 +238,21 @@ def test_mixed_rate_lineage_parameterizes_every_small_m_rate_gate() -> None:
     assert "stream=K{runtime.trellis_bits}" in site and "stream=K4 " not in site
 
 
+def test_compile_spec_keys_on_the_stored_rate() -> None:
+    """The explicit compile spec is the JIT cache key (memory and disk). Without the rate in
+    it, a mixed-rate model served the first-compiled rate's kernel for every layer: measured
+    KLD 1.8146 against 0.0370 for uniform K4, with every single-rate closure passing."""
+    wrapper = (ROOT / "runtime_patch/p8_mixed_rate_image/p8_native_kernel.py").read_text()
+    start = wrapper.index('KernelCompileSpec.from_fields(\n                "glm53.p8.native.tp4"')
+    spec = wrapper[start:wrapper.index("dsl_compile_options", start)]
+    assert '("trellis_bits", self.trellis_bits)' in spec
+    assert '"glm53.p8.native.tp4",\n                2,' in spec, "spec version must retire rate-less cache entries"
+    # Every runtime attribute the kernels specialise on must be in the key.
+    for field in ("materialized", "small_m_scheduler", "fc1_tile_n", "rank", "full_coupled",
+                  "scale_sandwich", "codebook", "deterministic_output", "trellis_bits"):
+        assert f'("{field}"' in spec, field
+
+
 def test_descriptor_carriers_are_sized_from_the_stored_rate() -> None:
     """The dummy carriers alias the packed trellis storage, whose row length is bits/8 bytes
     per weight. A hard-coded hidden // 2 is the K4 case only, and made the K3 loader fail with
