@@ -140,3 +140,41 @@ def test_identity_manifest_validation_requires_pinned_design(tmp_path: Path, mon
     manifest.write_text(json.dumps(body))
     with pytest.raises(ValueError, match="identity design identity differs"):
         runtime.validate_identity_manifest(manifest, sidecar_dir=sidecars, design=design)
+
+
+def test_preparer_canonical_path_check_skips_non_path_repeatable_options(tmp_path: Path, monkeypatch):
+    """--arm appends arm names, not paths; the canonical-path rule must not call .resolve() on them."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "prepare_p8_full_coupled_cf32_runtime",
+        Path(__file__).resolve().parents[1] / "scripts" / "prepare_p8_full_coupled_cf32_runtime.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    argv = ["prepare"]
+    for name in ("output", "image-build-receipt", "source-recipe", "model-root", "stock-carrier-receipt",
+                 "stock-carrier-extras-receipt", "coupled-manifest", "coupled-sidecars", "transform",
+                 "roles", "teacher-root"):
+        target = tmp_path / name.replace("-", "_")
+        if name != "output":
+            target.write_text("{}")
+        argv += ["--" + name, str(target)]
+    (tmp_path / "design.json").write_text("{}")
+    argv += ["--coupled-design", str(tmp_path / "design.json"), "--campaign-path", str(tmp_path / "campaign"),
+             "--max-new-bytes", "400000000000", "--arm", "coupled_full"]
+
+    seen = {}
+
+    def fake_build(args):
+        seen["arm"] = args.arm
+        seen["campaign_path"] = args.campaign_path
+        return {"ok": True}
+
+    monkeypatch.setattr(module, "build_manifest", fake_build)
+    monkeypatch.setattr(sys, "argv", argv)
+    module.main()
+    assert seen["arm"] == ["coupled_full"]
+    assert all(isinstance(path, Path) for path in seen["campaign_path"])
+    assert json.loads((tmp_path / "output").read_text()) == {"ok": True}

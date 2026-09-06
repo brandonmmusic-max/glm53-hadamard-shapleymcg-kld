@@ -155,7 +155,10 @@ def main() -> None:
     parser.add_argument("--max-new-bytes", type=int, required=True)
     args = parser.parse_args()
     paths = [value for value in vars(args).values() if isinstance(value, Path)]
-    paths += [path for value in vars(args).values() if isinstance(value, list) for path in value]
+    # Repeatable options are not all paths: --arm appends plain arm names, so only Path
+    # members of a list argument are subject to the canonical-path rule.
+    paths += [item for value in vars(args).values() if isinstance(value, list)
+              for item in value if isinstance(item, Path)]
     if any(value != value.resolve() for value in paths):
         raise ValueError("all preparation paths must be absolute and canonical")
     if args.output.exists() or args.output.with_suffix(".sha256").exists():
