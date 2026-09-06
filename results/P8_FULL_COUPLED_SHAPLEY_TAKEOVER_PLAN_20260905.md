@@ -239,3 +239,32 @@ Done without GPUs, all tests passing:
 
 Still gated on the owner: the storage ceiling (needed to generate the 42-layer
 design and start encoding) and the Phase 1 rate menu.
+
+## 10. Autonomous campaign (owner directive 2026-09-05 ~21:20 EDT)
+
+The owner delegated storage (protected: GLM-5.3-Flash NVFP4 stock, EXL3 4bpw,
+EXL3 3bpw, BF16 until encodes finish), dropped the identity comparison, and asked
+for the full coupled model with Shapley allocation and its end-to-end KLD, done
+autonomously. Consequences recorded here as decisions before results:
+
+- Stage-1 reclaim (`results/P8_STORAGE_RECLAIM_STAGE1_20260905.json`): identity
+  K4 sidecars, rotation dense copies, scored decode-path raw logits and the
+  pilot's chunk intermediates; 222.56 GB; campaign ceiling raised to 400 GB.
+- Phase 0 runs `scripts/build_full_coupled_p8_all42.sh` (started 21:32 EDT).
+- Phase 1 menu is **layer-granular K3/K4/K5 with coupling kept**. The sidecar ABI
+  and the compiled small-M kernel carry one rate per layer; per-expert rates
+  would need pool dispatch and are deferred. The parent b12x phase kernels in the
+  image allow only bits 2-4, so K5 is served by the bit-parameterized P8
+  subclasses in the v11 lineage (`runtime_patch/p8_mixed_rate_image`,
+  `runtime_patch/b12x_mixed_rate`) with a K5-capable MCG decoder. Grouped M64
+  prefill stays K4-only; non-K4 layers serve M>1 row by row through the M1 kernel.
+- Payoff: fit-role routed-output damage with exact per-token Shapley shares
+  (`glm53_nvfp4/p8_layer_rate_damage.py`); validated on layer 4 where the TP4
+  rank inverse reproduced all 864 encoder NMSE receipts exactly. Smoke encodes:
+  K3 weight NMSE 3.76x K4, K5 0.285x K4.
+- Allocation: exact DP over #K5 - #K3 at the identity file budget
+  (`glm53_nvfp4/p8_layer_rate_allocation.py`); at least one more K3 layer than K5.
+- Orchestrator `scripts/run_phase1_campaign.sh`: uniform coupled KLD (v10) ->
+  layer-3 candidates -> K3/K5 device closures (v11) -> all-layer candidates ->
+  allocation -> assembly -> allocated-model KLD (v11). Logs under
+  `<campaign>/phase1-campaign-v1/`.
