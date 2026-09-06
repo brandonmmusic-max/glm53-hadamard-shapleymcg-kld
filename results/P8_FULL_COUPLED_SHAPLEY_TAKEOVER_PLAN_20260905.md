@@ -216,3 +216,26 @@ and is unestimated until the small-M kernel is read in full.
   than any coupled runtime; the matched control is re-measured.
 - P8 is E4M3 mxf8f6f4 at twice NVFP4's MMA issue count; no speed claim.
 - No CF32 window is excluded or rerolled; no protected role is opened.
+
+## 9. Implementation status (2026-09-05 22:05 EDT, branch fable-p8-full-coupled-v1)
+
+Done without GPUs, all tests passing:
+
+- Coupled encoder tooling generalized to layers 3..44 (`SUPPORTED_LAYERS`,
+  design generator with an explicit `--max-new-bytes` ceiling and
+  `--already-encoded-layer` reuse, packer, verifier).
+- `scripts/build_full_coupled_p8_all42.sh` plus
+  `glm53_nvfp4/full_coupled_build_support.py`: fail-closed storage/production/GPU
+  guard, hard-link reuse of layers 3/20/22 with provenance receipts, per-layer
+  hash closure against packer and postwrite receipts, exact byte manifest.
+- v10 runtime image lineage `runtime_patch/p8_full_coupled_image/`:
+  identical to v9 except `GLM53_P8_NATIVE_DESIGN` accepts a colon-separated
+  design allowlist and each sidecar's own design hash is verified and logged.
+- `glm53_nvfp4/p8_full_coupled_runtime.py`, `scripts/prepare_p8_full_coupled_cf32_runtime.py`,
+  `glm53_nvfp4/p8_full_coupled_cf32_executor.py`, `glm53_nvfp4/analyze_p8_full_coupled_cf32.py`
+  and `experiments/p8-full-coupled-k4-cf32-v1.json`: sealed two-arm full-model
+  CF32 protocol (coupled_full first, identity_full second) with a 168-pair
+  runtime log gate that checks the per-layer design hash.
+
+Still gated on the owner: the storage ceiling (needed to generate the 42-layer
+design and start encoding) and the Phase 1 rate menu.
