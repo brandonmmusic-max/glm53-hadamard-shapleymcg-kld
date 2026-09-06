@@ -401,6 +401,24 @@ Recorded because they affect provenance, not because they changed a result.
    happened before any output was written, so no partial capture root existed and the retry was
    clean.
 
+3. **Mixed-rate serving defect, caught by the measurement itself.** The first allocated-model
+   run (18 K3 / 7 K4 / 17 K5) measured a true-decode KLD of 1.8146 on every window while the
+   runtime gate confirmed all 168 layer-rank pairs loaded at their expected rates with no
+   fallback. Encode error is monotone in rate, so a served result that violates rate
+   monotonicity by 49x is a runtime defect, not a quality finding, and it is not reported as
+   one. Cause: the explicit compile spec that keys the kernel JIT cache did not include the
+   stored trellis rate, so within each tensor-parallel rank the first rate compiled was served
+   for every layer. Single-rate device closures cannot observe this. The spec now carries the
+   rate and its version was bumped to retire rate-less cache entries; the defective outputs are
+   preserved under a DEFECT prefix and the closures and measurement are re-run on the rebuilt
+   image.
+4. **K5 decode read past its window.** A lane's eight overlapping windows span 16 + 7 x rate
+   bits; at K5 that crosses into a third ring word for half the lanes, which the two-word merge
+   never read. Proved with a pure-Python model of the lane geometry against the CPU reference
+   (now a permanent test) and fixed for K5 only, so K3 and K4 code generation is unchanged.
+   The device closure caught it: input carriers exact, post-FC1 payload wrong in 4,030 of 4,096
+   bytes.
+
 ## 9. Still running
 
 The K3 candidate encodes, then the final allocation from measured damage only, assembly by hard
