@@ -261,7 +261,9 @@ autonomously. Consequences recorded here as decisions before results:
 - Payoff: fit-role routed-output damage with exact per-token Shapley shares
   (`glm53_nvfp4/p8_layer_rate_damage.py`); validated on layer 4 where the TP4
   rank inverse reproduced all 864 encoder NMSE receipts exactly. Smoke encodes:
-  K3 weight NMSE 3.76x K4, K5 0.285x K4.
+  K3 weight NMSE 3.76x K4, K5 0.285x K4. The scorer's chunk-stream decode for K3
+  and K5 reproduces the smoke-encode receipts on CPU (layer 4, experts 0 and 5,
+  all three projections, worst relative difference 5.5e-8).
 - Allocation: exact DP over #K5 - #K3 at the identity file budget
   (`glm53_nvfp4/p8_layer_rate_allocation.py`); at least one more K3 layer than K5.
 - Orchestrator `scripts/run_phase1_campaign.sh`: uniform coupled KLD (v10) ->
