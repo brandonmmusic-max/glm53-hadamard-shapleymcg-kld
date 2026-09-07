@@ -132,7 +132,13 @@ WORKFLOW_STAGES: tuple[dict[str, Any], ...] = (
     {
         "name": "encode-p8-tensor",
         "status": "typed-wrapper-plus-research-source",
-        "source": ["trellismx/protocol.py", "glm53_nvfp4/trellis_mxf.py"],
+        "source": [
+            "trellismx/encoder.py",
+            "trellismx/protocol.py",
+            "glm53_nvfp4/quantize_p8_coupled_rate_layer.py",
+            "glm53_nvfp4/p8_coupled_scale.py",
+            "glm53_nvfp4/trellis_mxf.py",
+        ],
         "requires_device": True,
     },
     {

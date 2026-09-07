@@ -23,3 +23,19 @@ def test_workflow_cli_does_not_execute_research_stages(capsys) -> None:
     value = json.loads(capsys.readouterr().out)
     assert value["plan"]["stored_rates"] == [4]
     assert all(stage["status"] != "executed" for stage in value["stages"])
+
+
+def test_workflow_cli_can_declare_future_qad_evaluation(capsys) -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert main(
+        [
+            "workflow",
+            "--config",
+            str(root / "configs/glm53-flash-coupled-p8-uniform-k4-v1.json"),
+            "--evaluation-reference",
+            str(root / "configs/glm53-flash-qad-future-evaluation-v1.json"),
+        ]
+    ) == 0
+    value = json.loads(capsys.readouterr().out)
+    future = value["future_evaluation_reference"]
+    assert future["used_for_existing_trellismx_measurements"] is False

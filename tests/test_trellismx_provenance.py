@@ -55,7 +55,11 @@ def test_overlay_matches_workflow_without_reading_artifacts() -> None:
     report = workflow_report_with_provenance(config, overlay)
     assert report["provenance"]["credentials_stored"] is False
     assert report["provenance"]["artifact_bytes_read"] == 0
-    assert set(report["provenance"]["artifacts"]) == set(config.inputs)
+    assert set(report["provenance"]["artifacts"]) == {
+        name
+        for name, declared in config.inputs.items()
+        if declared["required"]
+    }
 
 
 def test_overlay_rejects_wrong_workflow_or_input() -> None:
@@ -68,8 +72,17 @@ def test_overlay_rejects_wrong_workflow_or_input() -> None:
 def test_disabled_encoder_backend_is_not_executable() -> None:
     backend = EncoderBackendConfig.from_file(
         Path(__file__).resolve().parents[1]
-        / "configs/kquant-qsrt-encoder-backend.disabled.json"
+        / "configs/trellismx-coupled-encoder.cuda-disabled.json"
     )
     assert backend.enabled is False
     assert backend.executable is False
-    assert backend.summary()["license_status"] == "unresolved-unverified"
+    assert backend.backend == "trellismx-native-coupled"
+    assert backend.summary()["license_status"] == "trellismx-source-available"
+
+
+def test_optional_future_evaluation_reference_is_not_required() -> None:
+    config = workflow_config()
+    overlay = ProvenanceOverlay.from_mapping(overlay_value())
+    overlay.validate_for_workflow(config)
+    assert "evaluation_reference" in config.inputs
+    assert config.inputs["evaluation_reference"]["required"] is False

@@ -15,7 +15,8 @@ or a model server.
 | Area | Current state | Boundary |
 |---|---|---|
 | Product identity | **TrellisMX** | ShapleyMCG is attribution/allocation lineage, not the codec name |
-| Current measured endpoint | TrellisMX P8 K3/K4/K5 routed-MoE sidecars | Research implementation, not arbitrary-model conversion |
+| Current measured endpoint | TrellisMX P8 K3/K4/K5 routed-MoE sidecars | GLM is the bundled qualified reference implementation |
+| Generic model support | Typed architecture-adapter contract | Downstream implementers own mapping and device qualification |
 | Latest KLD | Upgrades-only K4/K5, `0.0341811459` true-decode mean | Already-opened CF32 development evidence |
 | Within-endpoint result | 7.5% below uniform coupled K4; interval excludes zero | Not protected final qualification |
 | Stock NVFP4 context | `0.005607` below a same-window contextual arm | Different KV/execution/scoring path; no matched claim |
@@ -106,7 +107,8 @@ protected numerical quality or production superiority. See the
 
 - No matched stock-NVFP4 KLD arm on the latest forced-decode/`nvfp4_ds_mla` path.
 - No protected-final or independent reproduction claim.
-- No arbitrary-model conversion support.
+- No automatic arbitrary-model conversion; generic support is through explicit
+  adapter contracts, not silent fallback.
 - No native P4/NVFP4-speed-class quality or speed claim.
 - No codec-only causality from the EXL3 system-speed comparison.
 - No claim that Shapley routed-output damage is full-model KLD.
@@ -128,8 +130,12 @@ The portable CPU surface includes:
   K3/K4/K5 P8 tensors;
 - a production full-coupled TP4 sidecar validator and tiny structural fixture;
 - GLM-5.3-Flash config/index inspection with zero safetensors payload reads;
-- provenance overlays and a disabled-by-default external encoder-backend
-  descriptor;
+- provenance overlays and a disabled-by-default TrellisMX coupled-encoder
+  execution descriptor;
+- typed calibration/evaluation role schemas and a future QAD evaluation
+  reference that is explicitly **not** claimed as prior measurement provenance;
+- a generic architecture-adapter contract with GLM-5.3-Flash as the bundled
+  qualified reference;
 - a separate source-only SM120 mixed-rate runtime overlay package;
 - a versioned P4 matrix interchange:
 
@@ -174,6 +180,12 @@ CUDA_VISIBLE_DEVICES= trellismx inspect-checkpoint \
 CUDA_VISIBLE_DEVICES= trellismx validate-sidecar \
   /path/to/p8-layer-003-tp4-rank-0.safetensors \
   --expected-layer 3 --expected-rank 0 --expected-bits 4
+CUDA_VISIBLE_DEVICES= trellismx validate-adapter-contract \
+  configs/architecture-adapter-contract.template.json
+CUDA_VISIBLE_DEVICES= trellismx checkpoint-plan \
+  --config configs/glm53-flash-coupled-p8-uniform-k4-v1.json
+CUDA_VISIBLE_DEVICES= trellismx encoding-plan \
+  --config configs/glm53-flash-coupled-p8-uniform-k4-v1.json
 CUDA_VISIBLE_DEVICES= trellismx runtime-info
 ```
 
@@ -212,18 +224,26 @@ campaign chronology and older measurements; this page is the concise entry point
 
 ## Support boundary
 
-The supported architecture is GLM-5.3-Flash with the exact shapes and runtime
-contracts in the sealed P8 campaign. Other architectures are rejected. This is
-not yet a ModelOpt-style arbitrary-model converter.
+The bundled qualified architecture is GLM-5.3-Flash with the exact shapes and
+runtime contracts in the sealed P8 campaign. Other architectures are not silently
+guessed; they implement `trellismx.architecture-adapter.v1`, validate their
+mapping/capture/runtime contract, and own their device qualification. This is
+the intended ModelOpt-style extension path.
 
-The path to that broader goal is explicit:
+The generic support path is explicit:
 
-1. separate a model-independent P8 K3/K4/K5 tensor codec from GLM campaign I/O;
-2. define typed architecture adapters and weight-mapping contracts;
-3. implement GLM-5.3-Flash first and reject every unsupported architecture;
-4. add deterministic calibration and evaluation schemas;
-5. expose resumable, atomic encoding with provenance;
-6. qualify one additional architecture only after the GLM adapter is portable.
+1. use the model-independent P8 K3/K4/K5 tensor codec;
+2. implement the typed architecture adapter contract;
+3. supply exact checkpoint, weight-family, calibration, Hessian, and runtime mappings;
+4. use role-separated calibration plus a frozen evaluation reference;
+5. emit portable P8 tensors and hash-complete architecture manifests;
+6. drive resumable encoding through the atomic task state contract;
+7. execute downstream-owned device closure and full-model KLD gates.
+
+Future evaluation may target the Local Inference Lab QAD-aligned GLM token suite,
+but QAD was **not** used for the existing TrellisMX KLD measurements recorded
+above. Existing measurement provenance remains the CF32 conditional-fit
+forced-decode campaign.
 
 Real-model encoding and serving require separately authorized artifacts,
 calibration roles, and GPU qualification. No GPU gate is silently executed.

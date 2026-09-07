@@ -25,7 +25,9 @@ swizzling, invalid/truncated inputs, K3/K4/K5 P8 stream round trips, P8 CPU
 reference decoding, portable tensor-container reload/hashes, full-coupled
 sidecar validation, checkpoint config/index inspection, provenance overlays,
 disabled encoder backends, deterministic fixtures, architecture planning, and
-CLI installation. They do not execute CUDA or the external Viterbi backend.
+CLI installation. They do not execute CUDA or the TrellisMX coupled encoder.
+They also verify that QAD remains a future evaluation reference, not provenance
+for existing CF32 TrellisMX measurements.
 
 ## GPU gates — NOT RUN by this package
 
@@ -56,3 +58,10 @@ with four differing post-FC1 payload bytes. The localizer reports each as one
 E4M3 code point apart with no UE8M0 scale-byte movement, which is consistent
 with accumulate-order rounding rather than a trellis decode defect. This is a
 diagnostic classification, not a passed closure gate.
+
+## Downstream adapter ownership
+
+Additional architectures use `trellismx.architecture-adapter.v1`. The downstream
+implementer owns checkpoint mapping, calibration adaptation, runtime
+integration, device closure, and full-model KLD. A valid contract does not mean
+those gates passed.

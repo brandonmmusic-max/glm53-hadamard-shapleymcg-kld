@@ -33,18 +33,28 @@ CAPABILITIES: dict[str, Any] = {
             "reason": "the sealed GLM-5.3-Flash P8 encoder is research-campaign code with pinned private artifacts; it is not a general converter",
         },
         "architecture_adapters": {
-            "status": "glm53-flash-research-only",
-            "supported": ["GLM-5.3-Flash routed MoE"],
+            "status": "generic-contract-plus-one-bundled-qualified-adapter",
+            "contract_schema": "trellismx.architecture-adapter.v1",
+            "bundled_qualified": ["GLM-5.3-Flash routed MoE"],
+            "additional_architecture_ownership": "downstream implementer",
             "unsupported_policy": "reject before reading or encoding model weights",
         },
         "checkpoint_index_inspection": {
             "status": "glm53-flash-supported",
             "safetensors_payload_bytes_read": 0,
         },
-        "p8_viterbi_encoder_backend": {
-            "status": "external-plugin-required",
+        "p8_encoder_backend": {
+            "status": "trellismx-native-coupled-research-source",
+            "primary_encoder": "TrellisMX coupled P8 encoder",
+            "device": "cuda",
             "default_enabled": False,
-            "reason": "the real CUDA Viterbi/Hessian encoder depends on a separately pinned KQuant/QSRT snapshot with unverified redistribution terms",
+            "ordinary_cli_execution": False,
+            "optional_search_implementation": "operator-pinned plugin; not a product requirement",
+        },
+        "calibration_and_evaluation_roles": {
+            "status": "supported",
+            "existing_trellismx_kld_provenance": "CF32 conditional-fit forced-decode campaign",
+            "future_qad_use": "reference-only; not claimed as prior measurement provenance",
         },
         "provenance_overlays": {
             "status": "supported",

@@ -83,9 +83,10 @@ state from the cyclic branch symbols in its native 16×16 tile. The K5 device
 decoder adds a third ring-word read for half the lanes; any independent device
 implementation must preserve that corrected rule and pass bit-exact closure.
 
-These APIs do not execute the Hessian-aware Viterbi encoder. The real encoder
-requires CUDA and an externally pinned KQuant/QSRT backend with unresolved
-redistribution terms. It must fail closed when that backend is absent.
+These APIs do not execute the Hessian-aware TrellisMX coupled encoder. That
+encoder is CUDA-only and needs explicit operator authorization. Alternate
+trellis-search implementations are optional plugin details, not a requirement
+of the format.
 
 ### Portable model-independent P8 tensor container
 

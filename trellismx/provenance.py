@@ -10,7 +10,10 @@ from typing import Any, Mapping
 
 PROVENANCE_SCHEMA = "trellismx.provenance-overlay.v1"
 ENCODER_BACKEND_SCHEMA = "trellismx.encoder-backend.v1"
-SUPPORTED_BACKENDS = ("kquant-qsrt-viterbi",)
+SUPPORTED_BACKENDS = (
+    "trellismx-native-coupled",
+    "kquant-qsrt-viterbi",
+)
 
 
 def _sha256(value: Any, field: str, *, required: bool = True) -> str | None:
@@ -99,11 +102,22 @@ class ProvenanceOverlay:
     def validate_for_workflow(self, config: Any) -> None:
         if self.workflow != config.name:
             raise ValueError("provenance overlay belongs to a different workflow")
-        if set(self.artifacts) != set(config.inputs):
+        required_inputs = {
+            name
+            for name, declared in config.inputs.items()
+            if declared.get("required")
+        }
+        optional_inputs = set(config.inputs) - required_inputs
+        if not required_inputs <= set(self.artifacts):
             raise ValueError(
-                "provenance artifacts do not exactly match workflow input inventory"
+                "provenance overlay is missing one or more required workflow inputs"
             )
-        for name, declared in config.inputs.items():
+        if not set(self.artifacts) <= required_inputs | optional_inputs:
+            raise ValueError(
+                "provenance overlay contains an unknown optional workflow input"
+            )
+        for name in self.artifacts:
+            declared = config.inputs[name]
             artifact = self.artifacts[name]
             required_kind = declared.get("kind")
             if required_kind is not None and artifact.kind != required_kind:
@@ -124,7 +138,7 @@ class ProvenanceOverlay:
 
 @dataclass(frozen=True)
 class EncoderBackendConfig:
-    backend: str = "kquant-qsrt-viterbi"
+    backend: str = "trellismx-native-coupled"
     enabled: bool = False
     root_uri: str | None = None
     source_sha256: str | None = None
@@ -145,7 +159,7 @@ class EncoderBackendConfig:
             raise ValueError("backend enabled/authorization flags must be boolean")
         device = value.get("device", "cuda")
         if device != "cuda":
-            raise ValueError("the pinned TrellisMX Viterbi backend requires CUDA")
+            raise ValueError("the TrellisMX coupled encoder requires CUDA")
         result = cls(
             backend=str(backend),
             enabled=enabled,
@@ -166,7 +180,7 @@ class EncoderBackendConfig:
         if self.backend not in SUPPORTED_BACKENDS:
             raise ValueError("unsupported TrellisMX encoder backend")
         if self.device != "cuda":
-            raise ValueError("the pinned TrellisMX Viterbi backend requires CUDA")
+            raise ValueError("the TrellisMX coupled encoder requires CUDA")
         if not self.enabled:
             if self.execution_authorized:
                 raise ValueError("a disabled backend cannot authorize execution")
@@ -176,6 +190,13 @@ class EncoderBackendConfig:
         _sha256(self.source_sha256, "enabled backend source_sha256")
         if self.license_status == "unresolved-unverified":
             raise ValueError("enabled backend requires an operator-resolved license status")
+        if (
+            self.backend == "kquant-qsrt-viterbi"
+            and self.license_status == "trellismx-source-available"
+        ):
+            raise ValueError(
+                "optional KQuant/QSRT implementation requires its own license status"
+            )
 
     @property
     def executable(self) -> bool:

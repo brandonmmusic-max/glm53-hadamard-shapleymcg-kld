@@ -5,14 +5,16 @@ validate, plan, calibrate, encode, export, verify, integrate, and qualify. It
 does not copy or claim compatibility with ModelOpt. Every model family still
 requires a qualified architecture adapter and an authorized execution backend.
 
-## Real encoder backend boundary
+## TrellisMX encoder boundary
 
-The proven P8 Viterbi/Hessian encoder is CUDA-only and delegates its trellis
-search to an external KQuant/QSRT encoder snapshot. That snapshot is not
-licensed for redistribution here. Ordinary package installation therefore does
-not enable real-model encoding. The API fails closed unless the operator
-supplies a separately pinned backend and explicitly authorizes device
-execution.
+The primary encoder is the TrellisMX coupled P8 encoder used by the sealed GLM
+campaign: coupled H512/H128/sign/scale transform, route-weighted Hessians,
+GPTQ-style full-Hessian feedback, and K3/K4/K5 procedural MCG trellis encoding.
+It is CUDA-only research source. Ordinary package installation does not enable
+real-model encoding; execution remains disabled until an operator pins the exact
+workstation source/provenance and explicitly authorizes device execution. Any
+alternate trellis-search implementation is an optional plugin detail, not the
+product encoder identity.
 
 CPU package operations remain honest and useful:
 
@@ -26,7 +28,8 @@ CPU package operations remain honest and useful:
 - provenance overlays;
 - portable P4 byte codec;
 - sidecar verifier source mapping;
-- workflow/provenance manifests.
+- workflow/provenance manifests;
+- future QAD evaluation-reference validation with explicit non-use provenance.
 
 ## Portable GLM workflow configs
 
@@ -62,12 +65,33 @@ fields, but does not read artifact bytes or store credentials:
 CUDA_VISIBLE_DEVICES= trellismx workflow \
   --config configs/glm53-flash-coupled-p8-upgrades-k4k5-v1.json \
   --provenance /path/to/provenance.json \
-  --encoder-backend configs/kquant-qsrt-encoder-backend.disabled.json
+  --encoder-backend configs/trellismx-coupled-encoder.cuda-disabled.json \
+  --evaluation-reference configs/glm53-flash-qad-future-evaluation-v1.json
 ```
 
-The checked-in encoder-backend descriptor is intentionally disabled. Enabling
-it requires an operator-pinned backend URI, source hash, and resolved license
-status; even then, execution needs a separate explicit authorization.
+The checked-in TrellisMX encoder descriptor is intentionally disabled. Enabling
+it requires an operator-pinned source URI/hash and separate execution
+authorization.
+
+## Calibration and future evaluation roles
+
+Current TrellisMX measurements use the sealed CF32 conditional-fit
+forced-decode role campaign. The package also validates the five-role
+`fit`, `conditional-fit`, `selection`, `confirmation`, and `final` contract and
+loads the repository's legacy sealed role manifest.
+
+The preferred future evaluation reference is the Local Inference Lab QAD-aligned
+GLM token suite:
+
+- suite `glm-5.3-flash-kimi-k3-source-fidelity-1024x-max2048-v1`;
+- analysis: 768 contexts / 1,571,435 positions;
+- qualification: 256 contexts / 524,020 positions;
+- source clusters cannot cross partitions;
+- full-vocabulary forward KL under natural and exact-BF16-route modes;
+- analysis decisions frozen before qualification.
+
+This QAD reference is future-only. It was not used for the existing TrellisMX
+KLD results and must not be presented as their provenance.
 
 ## Stage-to-source map
 
@@ -103,7 +127,23 @@ CUDA/B12X/CUTLASS/vLLM dependency and is not executable by installation.
 3. make the coupled transform optional rather than a hidden GLM assumption;
 4. persist model-independent P8 tensor payloads in a portable format;
 5. generate runtime contracts from capability descriptors;
-6. qualify one new architecture end-to-end before advertising generic support.
+6. execute the downstream-owned device closure and full-model KLD gates.
 
 Unsupported architectures must fail before checkpoint I/O rather than falling
 back to an untested GLM-style mapping.
+
+## Generic adapter contract
+
+`configs/architecture-adapter-contract.template.json` defines the downstream
+implementation surface:
+
+```bash
+CUDA_VISIBLE_DEVICES= trellismx validate-adapter-contract \
+  configs/architecture-adapter-contract.template.json
+```
+
+The contract requires exact checkpoint inspection, named weight-family mapping,
+role-separated calibration, the TrellisMX coupled encoder, portable P8 output,
+E4M3 `mxf8f6f4` runtime capabilities, rate-keyed dispatch, fail-closed shape
+handling, and downstream-owned device gates. TrellisMX does not claim those
+gates for an adapter that has not run them.

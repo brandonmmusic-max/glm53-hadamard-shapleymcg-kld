@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .capabilities import capabilities
+from .checkpoint import CheckpointPlan, write_manifest
 from .codec import P4Payload, read_p4, serialize_p4, storage_accounting
 from .protocol import P8_RATES
 
@@ -101,6 +102,7 @@ def _rates_from_args(args: argparse.Namespace) -> dict[int, int]:
 def _command_workflow(args: argparse.Namespace) -> int:
     from .workflow import WorkflowConfig, workflow_report
     from .provenance import EncoderBackendConfig, ProvenanceOverlay
+    from .roles import evaluation_reference
 
     config = WorkflowConfig.from_file(args.config)
     provenance = (
@@ -121,6 +123,10 @@ def _command_workflow(args: argparse.Namespace) -> int:
         report = workflow_report_with_provenance(config, provenance, backend)
     if provenance is None and backend is not None:
         report["encoder_backend"] = backend.summary()
+    if args.evaluation_reference is not None:
+        report["future_evaluation_reference"] = evaluation_reference(
+            json.loads(args.evaluation_reference.read_text())
+        )
     _emit(report)
     return 0
 
@@ -223,6 +229,37 @@ def _command_validate_p8_tensors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_checkpoint_plan(args: argparse.Namespace) -> int:
+    from .workflow import WorkflowConfig
+
+    config = WorkflowConfig.from_file(args.config)
+    value = CheckpointPlan(config).manifest()
+    if args.output is not None:
+        write_manifest(args.output, value)
+    _emit(value)
+    return 0
+
+
+def _command_encoding_plan(args: argparse.Namespace) -> int:
+    from .orchestration import EncodingPlan, EncodingStateFile
+    from .workflow import WorkflowConfig
+
+    config = WorkflowConfig.from_file(args.config)
+    plan = EncodingPlan(config)
+    if args.state is not None:
+        EncodingStateFile(args.state, plan).initialize()
+    _emit(plan.summary())
+    return 0
+
+
+def _command_validate_adapter_contract(args: argparse.Namespace) -> int:
+    from .adapter_contract import ArchitectureAdapterContract
+
+    contract = ArchitectureAdapterContract.from_file(args.path)
+    _emit(contract.summary())
+    return 0
+
+
 def _command_plan(args: argparse.Namespace) -> int:
     from .adapters import adapter_for
 
@@ -281,6 +318,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     workflow_parser.add_argument(
         "--encoder-backend", type=Path, help="disabled or operator-pinned backend descriptor"
+    )
+    workflow_parser.add_argument(
+        "--evaluation-reference",
+        type=Path,
+        help="future evaluation contract; existing TrellisMX CF32 provenance is unchanged",
     )
     workflow_parser.set_defaults(handler=_command_workflow)
 
@@ -348,6 +390,29 @@ def build_parser() -> argparse.ArgumentParser:
     validate_p8_parser.add_argument("path", type=Path)
     validate_p8_parser.add_argument("--expected-sha256")
     validate_p8_parser.set_defaults(handler=_command_validate_p8_tensors)
+
+    checkpoint_plan_parser = subparsers.add_parser(
+        "checkpoint-plan",
+        help="plan a complete architecture checkpoint manifest without reading or writing weights",
+    )
+    checkpoint_plan_parser.add_argument("--config", type=Path, required=True)
+    checkpoint_plan_parser.add_argument("--output", type=Path)
+    checkpoint_plan_parser.set_defaults(handler=_command_checkpoint_plan)
+
+    encoding_plan_parser = subparsers.add_parser(
+        "encoding-plan",
+        help="emit a resumable task DAG and optionally initialize an atomic state file",
+    )
+    encoding_plan_parser.add_argument("--config", type=Path, required=True)
+    encoding_plan_parser.add_argument("--state", type=Path)
+    encoding_plan_parser.set_defaults(handler=_command_encoding_plan)
+
+    adapter_contract_parser = subparsers.add_parser(
+        "validate-adapter-contract",
+        help="validate a downstream architecture adapter contract without reading a model",
+    )
+    adapter_contract_parser.add_argument("path", type=Path)
+    adapter_contract_parser.set_defaults(handler=_command_validate_adapter_contract)
     return parser
 
 

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from trellismx.cli import main
 
@@ -33,3 +34,19 @@ def test_fixture_containers_validate_through_cli(tmp_path, capsys) -> None:
     assert main(["validate-p8-tensors", str(path), "--expected-sha256", expected]) == 0
     value = json.loads(capsys.readouterr().out)
     assert [item["bits"] for item in value["tensors"]] == [3, 4, 5]
+
+
+def test_checkpoint_and_encoding_plan_cli(tmp_path, capsys) -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = root / "configs/glm53-flash-coupled-p8-uniform-k4-v1.json"
+    manifest = tmp_path / "checkpoint-manifest.json"
+    state = tmp_path / "encoding-state.json"
+    assert main(["checkpoint-plan", "--config", str(workflow), "--output", str(manifest)]) == 0
+    checkpoint = json.loads(capsys.readouterr().out)
+    assert checkpoint["status"] == "planned"
+    assert manifest.is_file()
+
+    assert main(["encoding-plan", "--config", str(workflow), "--state", str(state)]) == 0
+    encoding = json.loads(capsys.readouterr().out)
+    assert encoding["schema"] == "trellismx.encoding-orchestration.v1"
+    assert state.is_file()

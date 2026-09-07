@@ -10,10 +10,14 @@ def test_public_name_and_capabilities_are_explicit() -> None:
     assert observed["cpu"]["p8_reference_codec"]["status"] == "supported"
     assert observed["cpu"]["p8_reference_codec"]["rates"] == [3, 4, 5]
     assert observed["cpu"]["p8_checkpoint_conversion"]["status"] == "not-exposed-by-this-cli"
-    assert observed["cpu"]["architecture_adapters"]["status"] == "glm53-flash-research-only"
+    assert (
+        observed["cpu"]["architecture_adapters"]["status"]
+        == "generic-contract-plus-one-bundled-qualified-adapter"
+    )
     assert observed["cpu"]["architecture_adapters"]["unsupported_policy"] == "reject before reading or encoding model weights"
-    assert observed["cpu"]["p8_viterbi_encoder_backend"]["status"] == "external-plugin-required"
-    assert observed["cpu"]["p8_viterbi_encoder_backend"]["default_enabled"] is False
+    assert observed["cpu"]["p8_encoder_backend"]["status"] == "trellismx-native-coupled-research-source"
+    assert observed["cpu"]["p8_encoder_backend"]["default_enabled"] is False
+    assert observed["cpu"]["calibration_and_evaluation_roles"]["future_qad_use"].startswith("reference-only")
     assert observed["device"]["status"] == "not-run-by-this-package"
 
 

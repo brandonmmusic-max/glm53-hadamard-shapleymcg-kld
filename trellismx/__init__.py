@@ -55,6 +55,36 @@ from .provenance import (
     ProvenanceOverlay,
 )
 from .runtime import runtime_overlay_report
+from .roles import (
+    QAD_FUTURE_REFERENCE,
+    ROLE_SCHEMA,
+    RoleManifest,
+    RoleWindow,
+    evaluation_reference,
+)
+from .encoder import (
+    NATIVE_COUPLED_ENCODER,
+    NATIVE_ENCODER_SCHEMA,
+    native_coupled_encoder,
+)
+from .checkpoint import (
+    CHECKPOINT_MANIFEST_SCHEMA,
+    CHECKPOINT_PLAN_SCHEMA,
+    CheckpointPlan,
+    SidecarReference,
+    sidecar_name,
+    write_manifest,
+)
+from .orchestration import (
+    ORCHESTRATION_SCHEMA,
+    EncodingPlan,
+    EncodingStateFile,
+    EncodingTask,
+)
+from .adapter_contract import (
+    ADAPTER_CONTRACT_SCHEMA,
+    ArchitectureAdapterContract,
+)
 
 __version__ = "0.1.0"
 
@@ -98,4 +128,24 @@ __all__ = [
     "EncoderBackendConfig",
     "ProvenanceOverlay",
     "runtime_overlay_report",
+    "QAD_FUTURE_REFERENCE",
+    "ROLE_SCHEMA",
+    "RoleManifest",
+    "RoleWindow",
+    "evaluation_reference",
+    "NATIVE_COUPLED_ENCODER",
+    "NATIVE_ENCODER_SCHEMA",
+    "native_coupled_encoder",
+    "CHECKPOINT_MANIFEST_SCHEMA",
+    "CHECKPOINT_PLAN_SCHEMA",
+    "CheckpointPlan",
+    "SidecarReference",
+    "sidecar_name",
+    "write_manifest",
+    "ORCHESTRATION_SCHEMA",
+    "EncodingPlan",
+    "EncodingStateFile",
+    "EncodingTask",
+    "ADAPTER_CONTRACT_SCHEMA",
+    "ArchitectureAdapterContract",
 ]
