@@ -100,9 +100,28 @@ def _rates_from_args(args: argparse.Namespace) -> dict[int, int]:
 
 def _command_workflow(args: argparse.Namespace) -> int:
     from .workflow import WorkflowConfig, workflow_report
+    from .provenance import EncoderBackendConfig, ProvenanceOverlay
 
     config = WorkflowConfig.from_file(args.config)
-    _emit(workflow_report(config))
+    provenance = (
+        ProvenanceOverlay.from_file(args.provenance)
+        if args.provenance is not None
+        else None
+    )
+    backend = (
+        EncoderBackendConfig.from_file(args.encoder_backend)
+        if args.encoder_backend is not None
+        else None
+    )
+    if provenance is None:
+        report = workflow_report(config)
+    else:
+        from .workflow import workflow_report_with_provenance
+
+        report = workflow_report_with_provenance(config, provenance, backend)
+    if provenance is None and backend is not None:
+        report["encoder_backend"] = backend.summary()
+    _emit(report)
     return 0
 
 
@@ -113,6 +132,94 @@ def _command_p8_fixture(args: argparse.Namespace) -> int:
     if args.write:
         write_fixture(path)
     _emit(verify_fixture(path))
+    return 0
+
+
+def _command_sidecar_fixture(args: argparse.Namespace) -> int:
+    from .sidecar import validate_sidecar, write_synthetic_sidecar
+
+    path = args.directory / "p8-tp4-sidecar.safetensors"
+    if args.write:
+        write_synthetic_sidecar(
+            path,
+            layer=args.layer,
+            rank=args.rank,
+            bits=args.bits,
+        )
+    report = validate_sidecar(
+        path,
+        expected_layer=args.layer,
+        expected_rank=args.rank,
+        expected_bits=args.bits,
+        production_geometry=False,
+        experts=1,
+        hidden=32,
+        local_intermediate=32,
+    )
+    _emit(report.as_dict())
+    return 0
+
+
+def _command_p8_tensor_fixture(args: argparse.Namespace) -> int:
+    from .p8_format import read_p8_tensor_file, synthetic_p8_payload, write_p8_tensor_file
+
+    path = args.directory / "p8-tensors.safetensors"
+    if args.write:
+        payloads = {
+            f"k{bits}": synthetic_p8_payload(f"k{bits}", bits=bits)
+            for bits in (3, 4, 5)
+        }
+        write_p8_tensor_file(path, payloads)
+    report = read_p8_tensor_file(path)
+    _emit(report.storage_report())
+    return 0
+
+
+def _command_inspect_checkpoint(args: argparse.Namespace) -> int:
+    from .adapters import adapter_for
+
+    selected = adapter_for(args.architecture)
+    if not hasattr(selected, "inspect_checkpoint"):
+        raise ValueError("architecture adapter does not implement checkpoint inspection")
+    _emit(
+        selected.inspect_checkpoint(
+            args.checkpoint,
+            index_path=args.index,
+            verify_files=not args.no_file_check,
+        )
+    )
+    return 0
+
+
+def _command_runtime_info(_args: argparse.Namespace) -> int:
+    from .runtime import runtime_overlay_report
+
+    _emit(runtime_overlay_report())
+    return 0
+
+
+def _command_validate_sidecar(args: argparse.Namespace) -> int:
+    from .sidecar import validate_sidecar
+
+    report = validate_sidecar(
+        args.path,
+        expected_layer=args.expected_layer,
+        expected_rank=args.expected_rank,
+        expected_bits=args.expected_bits,
+        expected_design_sha256=args.expected_design_sha256,
+        expected_transform_sha256=args.expected_transform_sha256,
+        expected_scale_source_sha256=args.expected_scale_source_sha256,
+        expected_file_sha256=args.expected_file_sha256,
+    )
+    _emit(report.as_dict())
+    return 0
+
+
+def _command_validate_p8_tensors(args: argparse.Namespace) -> int:
+    from .p8_format import read_p8_tensor_file
+
+    report = read_p8_tensor_file(args.path, expected_sha256=args.expected_sha256)
+    _emit(report.storage_report())
     return 0
 
 
@@ -169,6 +276,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="summarize a portable workflow config and its research-source stages; does not execute them",
     )
     workflow_parser.add_argument("--config", type=Path, required=True)
+    workflow_parser.add_argument(
+        "--provenance", type=Path, help="portable provenance overlay; artifacts are not read"
+    )
+    workflow_parser.add_argument(
+        "--encoder-backend", type=Path, help="disabled or operator-pinned backend descriptor"
+    )
     workflow_parser.set_defaults(handler=_command_workflow)
 
     p8_fixture_parser = subparsers.add_parser(
@@ -177,6 +290,64 @@ def build_parser() -> argparse.ArgumentParser:
     p8_fixture_parser.add_argument("directory", type=Path)
     p8_fixture_parser.add_argument("--write", action="store_true", help="write once; refuse overwrite")
     p8_fixture_parser.set_defaults(handler=_command_p8_fixture)
+
+    sidecar_fixture_parser = subparsers.add_parser(
+        "sidecar-fixture", help="write or verify a tiny synthetic full-coupled TP4 sidecar"
+    )
+    sidecar_fixture_parser.add_argument("directory", type=Path)
+    sidecar_fixture_parser.add_argument("--write", action="store_true", help="write once; refuse overwrite")
+    sidecar_fixture_parser.add_argument("--layer", type=int, default=3, choices=range(3, 45))
+    sidecar_fixture_parser.add_argument("--rank", type=int, default=0, choices=range(4))
+    sidecar_fixture_parser.add_argument("--bits", type=int, default=4, choices=(3, 4, 5))
+    sidecar_fixture_parser.set_defaults(handler=_command_sidecar_fixture)
+
+    p8_tensor_fixture_parser = subparsers.add_parser(
+        "p8-tensor-fixture",
+        help="write or verify a portable multi-rate P8 tensor container",
+    )
+    p8_tensor_fixture_parser.add_argument("directory", type=Path)
+    p8_tensor_fixture_parser.add_argument(
+        "--write", action="store_true", help="write once; refuse overwrite"
+    )
+    p8_tensor_fixture_parser.set_defaults(handler=_command_p8_tensor_fixture)
+
+    inspect_parser = subparsers.add_parser(
+        "inspect-checkpoint",
+        help="validate architecture config and tensor index without reading tensor payloads",
+    )
+    inspect_parser.add_argument("--architecture", required=True)
+    inspect_parser.add_argument("--checkpoint", type=Path, required=True)
+    inspect_parser.add_argument("--index", type=Path)
+    inspect_parser.add_argument(
+        "--no-file-check", action="store_true", help="validate JSON mapping only"
+    )
+    inspect_parser.set_defaults(handler=_command_inspect_checkpoint)
+
+    runtime_parser = subparsers.add_parser(
+        "runtime-info",
+        help="hash-check the optional source-only SM120 overlay; never imports runtime dependencies",
+    )
+    runtime_parser.set_defaults(handler=_command_runtime_info)
+
+    validate_sidecar_parser = subparsers.add_parser(
+        "validate-sidecar", help="validate one production full-coupled P8 TP4 sidecar"
+    )
+    validate_sidecar_parser.add_argument("path", type=Path)
+    validate_sidecar_parser.add_argument("--expected-layer", type=int)
+    validate_sidecar_parser.add_argument("--expected-rank", type=int)
+    validate_sidecar_parser.add_argument("--expected-bits", type=int, choices=(3, 4, 5))
+    validate_sidecar_parser.add_argument("--expected-design-sha256")
+    validate_sidecar_parser.add_argument("--expected-transform-sha256")
+    validate_sidecar_parser.add_argument("--expected-scale-source-sha256")
+    validate_sidecar_parser.add_argument("--expected-file-sha256")
+    validate_sidecar_parser.set_defaults(handler=_command_validate_sidecar)
+
+    validate_p8_parser = subparsers.add_parser(
+        "validate-p8-tensors", help="validate a portable model-independent P8 tensor container"
+    )
+    validate_p8_parser.add_argument("path", type=Path)
+    validate_p8_parser.add_argument("--expected-sha256")
+    validate_p8_parser.set_defaults(handler=_command_validate_p8_tensors)
     return parser
 
 

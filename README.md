@@ -124,6 +124,13 @@ The portable CPU surface includes:
 - typed P8 K3/K4/K5 protocol validation;
 - P8 trellis stream packing/unpacking, state reconstruction, E4M3 state table,
   UE8M0 scales, and dense reference decode;
+- a portable model-independent safetensors container for multiple named
+  K3/K4/K5 P8 tensors;
+- a production full-coupled TP4 sidecar validator and tiny structural fixture;
+- GLM-5.3-Flash config/index inspection with zero safetensors payload reads;
+- provenance overlays and a disabled-by-default external encoder-backend
+  descriptor;
+- a separate source-only SM120 mixed-rate runtime overlay package;
 - a versioned P4 matrix interchange:
 
 - procedural MCG K4 trellis stream;
@@ -151,6 +158,9 @@ CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx fixture /tmp/trellismx-f
 CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx validate /tmp/trellismx-fixture/fixture.p4.safetensors --expected-shape 32x128
 CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx p8-fixture /tmp/trellismx-p8-fixture --write
 CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx p8-fixture /tmp/trellismx-p8-fixture
+CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx p8-tensor-fixture /tmp/trellismx-p8-tensors --write
+CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx validate-p8-tensors /tmp/trellismx-p8-tensors/p8-tensors.safetensors
+CUDA_VISIBLE_DEVICES= /tmp/trellismx-venv/bin/trellismx sidecar-fixture /tmp/trellismx-sidecar --write
 ```
 
 Architecture planning and portable workflow summaries are also CPU-only:
@@ -159,6 +169,12 @@ Architecture planning and portable workflow summaries are also CPU-only:
 CUDA_VISIBLE_DEVICES= trellismx plan --architecture glm53-flash --uniform-rate 4
 CUDA_VISIBLE_DEVICES= trellismx workflow \
   --config configs/glm53-flash-coupled-p8-upgrades-k4k5-v1.json
+CUDA_VISIBLE_DEVICES= trellismx inspect-checkpoint \
+  --architecture glm53-flash --checkpoint /path/to/GLM-5.3-Flash-BF16
+CUDA_VISIBLE_DEVICES= trellismx validate-sidecar \
+  /path/to/p8-layer-003-tp4-rank-0.safetensors \
+  --expected-layer 3 --expected-rank 0 --expected-bits 4
+CUDA_VISIBLE_DEVICES= trellismx runtime-info
 ```
 
 `CUDA_VISIBLE_DEVICES=` is a defensive CPU boundary for environments with a
@@ -211,3 +227,16 @@ The path to that broader goal is explicit:
 
 Real-model encoding and serving require separately authorized artifacts,
 calibration roles, and GPU qualification. No GPU gate is silently executed.
+
+The SM120 runtime is separately packaged as source-only metadata and pinned
+source files:
+
+```bash
+python3 -m pip wheel --no-deps ./runtime_overlay
+python3 -m pip install trellismx_runtime_sm120-0.1.0-py3-none-any.whl
+CUDA_VISIBLE_DEVICES= trellismx runtime-info
+```
+
+Installing that wheel does not import CUDA, B12X, CUTLASS, or vLLM, and does
+not make the runtime executable. Device execution still requires the separate
+immutable image and explicit authorization.

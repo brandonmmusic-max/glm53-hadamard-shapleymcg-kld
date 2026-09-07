@@ -178,3 +178,17 @@ def workflow_report(config: WorkflowConfig) -> dict[str, Any]:
         "plan": plan.summary(),
         "stages": [dict(stage) for stage in WORKFLOW_STAGES],
     }
+
+
+def workflow_report_with_provenance(
+    config: WorkflowConfig,
+    provenance: Any,
+    encoder_backend: Any | None = None,
+) -> dict[str, Any]:
+    provenance.validate_for_workflow(config)
+    report = workflow_report(config)
+    report["provenance"] = provenance.summary()
+    report["encoder_backend"] = (
+        encoder_backend.summary() if encoder_backend is not None else None
+    )
+    return report

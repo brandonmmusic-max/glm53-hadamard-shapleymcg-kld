@@ -5,15 +5,27 @@
 Run with CUDA disabled:
 
 ```bash
-CUDA_VISIBLE_DEVICES= pytest -q tests/test_p4_codec.py tests/test_trellismx_package.py tests/test_trellismx_cli.py tests/test_trellismx_protocol.py tests/test_trellismx_workflow.py tests/test_trellismx_p8_fixture.py
+CUDA_VISIBLE_DEVICES= pytest -q \
+  tests/test_p4_codec.py \
+  tests/test_trellismx_package.py \
+  tests/test_trellismx_cli.py \
+  tests/test_trellismx_protocol.py \
+  tests/test_trellismx_workflow.py \
+  tests/test_trellismx_p8_fixture.py \
+  tests/test_trellismx_p8_format.py \
+  tests/test_trellismx_sidecar.py \
+  tests/test_trellismx_provenance.py \
+  tests/test_trellismx_checkpoint_inspection.py \
+  tests/test_trellismx_runtime.py
 ```
 
 These gates cover golden P4 packing, every sliding state window, scalar
 independent decoding, signed-zero and nearest-even behavior, scale fitting and
 swizzling, invalid/truncated inputs, K3/K4/K5 P8 stream round trips, P8 CPU
-reference decoding, deterministic fixture creation/loading, architecture
-planning, and CLI installation. They do not execute CUDA or the external
-Viterbi backend.
+reference decoding, portable tensor-container reload/hashes, full-coupled
+sidecar validation, checkpoint config/index inspection, provenance overlays,
+disabled encoder backends, deterministic fixtures, architecture planning, and
+CLI installation. They do not execute CUDA or the external Viterbi backend.
 
 ## GPU gates — NOT RUN by this package
 

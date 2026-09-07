@@ -17,4 +17,8 @@ jobs:
       - name: Install CPU package
         run: python -m pip install --upgrade pip && python -m pip install -e .
       - name: Run focused codec tests
-        run: pytest -q tests/test_p4_codec.py tests/test_trellismx_package.py tests/test_trellismx_cli.py tests/test_trellismx_protocol.py tests/test_trellismx_workflow.py tests/test_trellismx_p8_fixture.py
+        run: pytest -q tests/test_p4_codec.py tests/test_trellismx_package.py tests/test_trellismx_cli.py tests/test_trellismx_protocol.py tests/test_trellismx_workflow.py tests/test_trellismx_p8_fixture.py tests/test_trellismx_p8_format.py tests/test_trellismx_sidecar.py tests/test_trellismx_provenance.py tests/test_trellismx_checkpoint_inspection.py tests/test_trellismx_runtime.py
+      - name: Build and verify source-only SM120 overlay
+        run: |
+          python -m pip install ./runtime_overlay
+          trellismx runtime-info

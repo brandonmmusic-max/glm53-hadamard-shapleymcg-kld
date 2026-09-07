@@ -87,6 +87,42 @@ These APIs do not execute the Hessian-aware Viterbi encoder. The real encoder
 requires CUDA and an externally pinned KQuant/QSRT backend with unresolved
 redistribution terms. It must fail closed when that backend is absent.
 
+### Portable model-independent P8 tensor container
+
+Schema: `trellismx.p8-tensors.v1`
+
+This safetensors container stores one trellis and one UE8M0 scale tensor for
+each named logical matrix:
+
+```text
+tensor.<name>.trellis        int16 [width/16, rows/16, 16*K]
+tensor.<name>.scale_ue8m0    uint8 [rows, width/32]
+```
+
+The deterministic procedural codebook is reconstructed from the frozen
+protocol; it is not duplicated in each file. Metadata records the full law,
+alphabet, MMA family, scale geometry, compander, per-record dimensions/rate,
+and tensor hashes. The loader enforces an exact tensor inventory and never
+uses pickle. `file_bpw` includes header overhead and is reported separately
+from payload bpw.
+
+### Production full-coupled TP4 sidecar validation
+
+`trellismx.validate_sidecar` validates the current GLM sidecar contract:
+
+- schema `glm53-p8-coupled-h512-h128-tp4-rank.v1`;
+- layers 3–44, ranks 0–3, world size four;
+- K3/K4/K5;
+- E4M3, UE8M0/K32, procedural MCG alpha2;
+- complete coupled H512/H128/suh/svh/sign identity;
+- exact eight-tensor inventory and shapes;
+- dtype and metadata checks;
+- per-tensor hashes and runtime-regenerated coupled-sign hash;
+- production `K + 0.25` payload-rate accounting.
+
+The validator reports `runtime_loader_closure: not tested`; it does not import
+or launch the CUDA runtime.
+
 The full coupled checkpoint stores four rank sidecars per layer. Weight tensors
 are `w13_trellis`, `w2_trellis`, `w13_scale_ue8m0`, and `w2_scale_ue8m0`.
 Coupled metadata tensors are `gate_up_suh_fp16`, `down_svh_fp16`,

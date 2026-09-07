@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
 from typing import Any, Mapping
 
 from .protocol import P8EncoderConfig
@@ -124,6 +127,101 @@ class GLM53FlashAdapter(ArchitectureAdapter):
             encoder=encoder or P8EncoderConfig(),
             execution={"reads_checkpoint": False, "encodes_tensors": False, "uses_device": False},
         )
+
+    def inspect_checkpoint(
+        self, root: Path, *, index_path: Path | None = None, verify_files: bool = True
+    ) -> dict[str, Any]:
+        """Validate config/index mapping without reading safetensors payloads."""
+
+        root = root.resolve()
+        config_path = root / "config.json"
+        index_file = index_path or (root / "model.safetensors.index.json")
+        config_value = json.loads(config_path.read_text())
+        text_config = config_value.get("text_config", config_value)
+        observed = {
+            "hidden_size": text_config.get("hidden_size"),
+            "n_routed_experts": text_config.get("n_routed_experts"),
+            "moe_intermediate_size": text_config.get("moe_intermediate_size"),
+        }
+        expected = {
+            "hidden_size": self.hidden_size,
+            "n_routed_experts": self.experts,
+            "moe_intermediate_size": self.intermediate_size,
+        }
+        mismatches = {
+            key: {"expected": value, "observed": observed[key]}
+            for key, value in expected.items()
+            if observed[key] != value
+        }
+        if mismatches:
+            raise ValueError(f"GLM-5.3-Flash config mismatch: {mismatches}")
+
+        index_value = json.loads(index_file.read_text())
+        weight_map = index_value.get("weight_map")
+        if not isinstance(weight_map, dict):
+            raise ValueError("checkpoint index has no valid weight_map object")
+        expected_names = {
+            f"model.language_model.layers.{layer}.mlp.experts.{expert}.{projection}.weight"
+            for layer in self.layers
+            for expert in range(self.experts)
+            for projection in self.projections
+        }
+        missing = sorted(expected_names - set(weight_map))
+        if missing:
+            raise ValueError(
+                f"checkpoint index is missing {len(missing)} routed expert weights; "
+                f"first={missing[0]}"
+            )
+
+        shard_names = sorted(set(weight_map.values()))
+        invalid_shards: list[str] = []
+        missing_files: list[str] = []
+        shard_bytes = 0
+        if verify_files:
+            root_resolved = root.resolve()
+            for shard in shard_names:
+                if not isinstance(shard, str) or not shard:
+                    invalid_shards.append(str(shard))
+                    continue
+                candidate = (root / shard).resolve()
+                try:
+                    candidate.relative_to(root_resolved)
+                except ValueError:
+                    invalid_shards.append(shard)
+                    continue
+                if not candidate.is_file():
+                    missing_files.append(shard)
+                else:
+                    shard_bytes += candidate.stat().st_size
+            if invalid_shards or missing_files:
+                raise ValueError(
+                    "checkpoint shard paths are invalid or missing: "
+                    f"invalid={invalid_shards[:3]}, missing={missing_files[:3]}"
+                )
+
+        def file_hash(path: Path) -> str:
+            digest = hashlib.sha256()
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(8 * 1024 * 1024), b""):
+                    digest.update(block)
+            return digest.hexdigest()
+
+        return {
+            "schema": "trellismx.glm53-flash.checkpoint-inspection.v1",
+            "status": "passed",
+            "architecture": self.architecture,
+            "config": observed,
+            "expected_routed_weight_tensors": len(expected_names),
+            "observed_routed_weight_tensors": len(expected_names),
+            "layers": len(self.layers),
+            "experts_per_layer": self.experts,
+            "shards": len(shard_names),
+            "verified_shard_bytes": shard_bytes,
+            "config_sha256": file_hash(config_path),
+            "index_sha256": file_hash(index_file),
+            "safetensors_payload_bytes_read": 0,
+            "checkpoint_tensor_reads": 0,
+        }
 
 
 _ADAPTERS: dict[str, ArchitectureAdapter] = {

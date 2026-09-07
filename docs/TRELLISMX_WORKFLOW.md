@@ -20,6 +20,10 @@ CPU package operations remain honest and useful:
 - architecture planning;
 - stream packing/reference-decode components;
 - deterministic K3/K4/K5 CPU reference fixture;
+- portable model-independent P8 tensor containers;
+- full-coupled TP4 sidecar validation;
+- checkpoint config/index inspection;
+- provenance overlays;
 - portable P4 byte codec;
 - sidecar verifier source mapping;
 - workflow/provenance manifests.
@@ -50,6 +54,21 @@ at K4 and 17 layers at K5. Artifact URIs remain null in portable configs; a
 workstation-specific provenance overlay must pin source checkpoint, scale
 source, capture, and role manifest before authorized execution.
 
+A provenance overlay is a separate JSON object whose artifact inventory exactly
+matches the workflow. The package validates names, kinds, URIs, and SHA-256
+fields, but does not read artifact bytes or store credentials:
+
+```bash
+CUDA_VISIBLE_DEVICES= trellismx workflow \
+  --config configs/glm53-flash-coupled-p8-upgrades-k4k5-v1.json \
+  --provenance /path/to/provenance.json \
+  --encoder-backend configs/kquant-qsrt-encoder-backend.disabled.json
+```
+
+The checked-in encoder-backend descriptor is intentionally disabled. Enabling
+it requires an operator-pinned backend URI, source hash, and resolved license
+status; even then, execution needs a separate explicit authorization.
+
 ## Stage-to-source map
 
 | Stage | Research source | Package status | Device |
@@ -64,6 +83,18 @@ source, capture, and role manifest before authorized execution.
 | Build manifest/storage ledger | `glm53_nvfp4/full_coupled_build_support.py` | source available | CPU |
 | Runtime integration | `runtime_patch/p8_mixed_rate_image/p8_native_kernel.py`, `glm53_nvfp4/p8_full_coupled_runtime.py` | GLM research runtime | authorized device |
 | Device closure and full-model KLD | `scripts/`, `glm53_nvfp4/p8_full_coupled_cf32_executor.py` | not run by package | authorized device |
+
+## SM120 source-only overlay
+
+`runtime_overlay/` builds a separate `trellismx-runtime-sm120` wheel. It
+contains the v11 manifest and the 15 hash-pinned source files, but imports no
+CUDA/B12X/CUTLASS/vLLM dependency and is not executable by installation.
+`trellismx runtime-info` hash-checks the source-only overlay and reports:
+
+- `executable: false`;
+- `dependencies_imported: false`;
+- `cuda_used: false`;
+- `requires_separate_pinned_image: true`.
 
 ## Required extraction for additional models
 
