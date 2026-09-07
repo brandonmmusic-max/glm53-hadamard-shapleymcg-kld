@@ -38,6 +38,11 @@ new KLD measurement of the RC5 optimized runtime is implied.
 
 [Latest results, conditions, and raw receipts](results/RC5_RELEASE_RESULTS_20260907.md)
 
+**Runtime published:** [Docker Hub `verdictai/trellismx`](https://hub.docker.com/r/verdictai/trellismx)
+— [digest-pinned Compose and serving script](deploy/trellismx/README.md).
+Default maximum model length is 1,000,000; that new launch limit is not a
+claim of tested 1M retrieval quality. [Release support](https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues/5).
+
 ## Reusable toolkit: install, inspect, plan, and extend
 
 The `trellismx` package and CLI now expose the versioned P4/P8 formats,

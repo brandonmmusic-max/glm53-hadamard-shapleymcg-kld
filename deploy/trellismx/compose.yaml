@@ -1,0 +1,39 @@
+services:
+  trellismx:
+    image: ${TRELLISMX_IMAGE:-verdictai/trellismx:glm53-flash-p8-rc5-20260907@sha256:609a5fc1cd7d994ba32d9c03626c414d315947eb9f13fab474a15bc8dfbe0129}
+    restart: "no"
+    network_mode: host
+    ipc: host
+    gpus: all
+    working_dir: /
+    entrypoint: ["/bin/bash", "/release/serve.sh"]
+    environment:
+      MAX_MODEL_LEN: ${MAX_MODEL_LEN:-1000000}
+      GPU_MEMORY_UTILIZATION: ${GPU_MEMORY_UTILIZATION:-0.975}
+      MODEL_NAME: ${MODEL_NAME:-glm53-flash-trellismx-p8-k45}
+      PORT: ${PORT:-8033}
+    volumes:
+      - type: bind
+        source: ${MODEL_ROOT:?Set the stock carrier model root}
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${P8_CHECKPOINT_ROOT:?Set the upgrades-only checkpoint root}/sidecars
+        target: /p8-sidecars
+        read_only: true
+        bind: {create_host_path: false}
+      - ./serve.sh:/release/serve.sh:ro
+      - ../../results/P8_COUPLED_SCALE_FLASH_EVIDENCE_PREPARATION_V4.json:/p8-design/design-0.json:ro
+      - ../../results/P8_COUPLED_SCALE_FLASH_EVIDENCE_PREPARATION_V3.json:/p8-design/design-1.json:ro
+      - ../../results/P8_COUPLED_RATE_DESIGN_K5_V1.json:/p8-design/design-2.json:ro
+      - ../../experiments/p8-coupled-transform-draw0-silu10-v1.json:/p8-design/transform.json:ro
+      - trellismx-rc5-jit:/cache/jit
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT}/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15m
+      retries: 5
+volumes:
+  trellismx-rc5-jit: {}

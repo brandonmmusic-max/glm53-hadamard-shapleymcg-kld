@@ -1,0 +1,9 @@
+import hashlib, json, pathlib
+expected = json.loads('{"/etc/python3.12/sitecustomize.py": "efed562351c003dbbc521f7482edbd940488ce1ecff16f5f58e4267ecb175e31", "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/dynamic.py": "1283909e371eace07784fd6f628ac83997377dba649a28b09e058a26dcac8b75", "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_h128_fc1.py": "a38691a411e98202eabb0d2ee0085aaa98ffc71b4b9eb63a628def064cbd291f", "/opt/infernal-invocation/b12x/b12x/moe/_shared/kernels/p8_small_m.py": "8530dc32fb17ee1eaaf770810ce5999ecda0489b0bd2b04a5b7b8e8d749812cb", "/opt/p8-coupled-runtime/p8_coupled_scales.py": "5e9220740c30bfbcb47ab0ea0857f820562b95e6a0797ff0fb0868eb6f84a0f2", "/opt/p8-coupled-runtime/p8_multirow_scratch.py": "c957986d0d0434a380a14c598695ee01a3274a20ec191ea1c885e48f496af4f7", "/opt/p8-coupled-runtime/p8_native_kernel.py": "dbc4cb653b4b139829709eb763652d38942945946ae1a19041f53dbe07a45bdc", "/opt/p8-coupled-runtime/p8_native_multirow_candidate.py": "dbc4cb653b4b139829709eb763652d38942945946ae1a19041f53dbe07a45bdc", "/opt/p8-coupled-runtime/p8_smallm_schedule.py": "b5d56e800c7760269608b34fa06533181d9b431aeab535e644a4d5e4620b66e2", "/opt/p8-mtp-bootstrap/sitecustomize.py": "797f66b76b9bce8e6f940a4b52da831dbb7576a22c32186aa9cf3831c746190c"}')
+failures = []
+for destination, digest in expected.items():
+    path = pathlib.Path(destination)
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        failures.append(destination)
+assert not failures, failures
+print(json.dumps({"status": "pass", "files": len(expected)}))
