@@ -1,5 +1,32 @@
 # GLM-5.3-Flash in-block H16 and ShapleyMCG KLD experiment
 
+## Latest measured coupled checkpoint: KLD **0.034181**
+
+The **all-42-routed-layer coupled TrellisMX P8 checkpoint with 17 K5 and
+25 K4 layers** measured **0.0341811459 mean true-decode KLD** on the 32
+conditional-fit windows. The window BCa 95% interval is **[0.0291484, 0.0409784]**.
+
+| Measured checkpoint | Routed stored bpw, including metadata | Mean true-decode KLD |
+| --- | ---: | ---: |
+| Uniform coupled K4 | 4.25398 | 0.03696745 |
+| **Coupled 17-K5 / 25-K4, upgrades only** | **4.65874** | **0.03418115** |
+
+The upgrades-only result is **7.54% lower KLD** than uniform coupled K4,
+at a larger bitrate—not an equal-size improvement. Both use
+**B12X_MLA_SPARSE attention, NVFP4 MLA KV (`nvfp4_ds_mla`), and native P8
+E4M3/UE8M0-K32 MoE**. Their runtime image revisions differ.
+This is **already-opened CF32 development evidence**, not untouched final
+qualification, a matched stock-NVFP4 win, or a new KLD measurement of the
+later speed-optimized runtime. P8 uses E4M3 MMA, not NVFP4-rate arithmetic.
+
+**[Latest result and exact receipts](results/P8_LATEST_KLD.md)** ·
+[Full campaign report, section 9](results/P8_FULL_COUPLED_CAMPAIGN_RESULTS_20260906.md#9-phase-1-measured-results) ·
+[Raw per-window analysis](evidence/p8-full-coupled-campaign-20260906/phase1/k5-only-cf32-analysis.json)
+
+The sections below retain the earlier experimental history; they do not
+supersede this September 6 coupled-checkpoint measurement.
+
+
 This repository is the reproducible code-and-evidence record for a local
 GLM-5.3-Flash BF16-to-NVFP4 experiment on four RTX PRO 6000 Blackwell GPUs.
 It tests block-local 16-by-16 Hadamard transforms inside every routed-expert
