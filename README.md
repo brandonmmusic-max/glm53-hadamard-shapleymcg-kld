@@ -23,6 +23,21 @@ later speed-optimized runtime. P8 uses E4M3 MMA, not NVFP4-rate arithmetic.
 [Full campaign report, section 9](results/P8_FULL_COUPLED_CAMPAIGN_RESULTS_20260906.md#9-phase-1-measured-results) ·
 [Raw per-window analysis](evidence/p8-full-coupled-campaign-20260906/phase1/k5-only-cf32-analysis.json)
 
+## Latest serving results (September 7, RC5)
+
+**Estonia 30/30 PASS · LAVD 28/30 credited · Hotel Lights 28/30 exact.**
+LAVD: 22 exact + 6 near, with two 100,000-token-limit truncations and no
+scored FAIL answers (28/28 finished answers credited). Hotel: two scored
+failures, neither token-limited. Official scores are preserved.
+
+MTP3 sustained decode: **178.34 tok/s C1**, 235.61 C2, 300.87 C4 aggregate;
+client prefill approximately **8.06k tok/s at 8k** and **8.00k at 32k**.
+These are one-run development measurements, not 200 tok/s or 1M-context
+qualification. Historical checkpoint KLD **0.034181** remains above; no
+new KLD measurement of the RC5 optimized runtime is implied.
+
+[Latest results, conditions, and raw receipts](results/RC5_RELEASE_RESULTS_20260907.md)
+
 ## Reusable toolkit: install, inspect, plan, and extend
 
 The `trellismx` package and CLI now expose the versioned P4/P8 formats,
