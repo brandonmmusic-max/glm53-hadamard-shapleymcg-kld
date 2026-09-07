@@ -3,13 +3,23 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "glm53-nvfp4"
+name = "trellismx"
 version = "0.1.0"
+description = "Evidence-bounded TrellisMX quantization research toolkit"
 requires-python = ">=3.11"
 dependencies = ["numpy", "safetensors", "torch"]
 
+[project.scripts]
+trellismx = "trellismx.cli:main"
+
+[tool.setuptools.package-data]
+trellismx = ["py.typed"]
+
+[tool.setuptools.data-files]
+"share/trellismx/configs" = ["configs/*.json"]
+
 [tool.setuptools.packages.find]
-include = ["glm53_nvfp4*", "bmxfp4*"]
+include = ["trellismx*", "glm53_nvfp4*", "bmxfp4*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
