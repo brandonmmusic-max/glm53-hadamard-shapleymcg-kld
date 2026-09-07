@@ -1,0 +1,40 @@
+{
+  "schema": "trellismx.workflow.v1",
+  "name": "glm53-flash-coupled-p8-upgrades-k4k5-v1",
+  "architecture": "glm53-flash",
+  "boundary": "coupled-h512-h128-suh-svh-v1",
+  "tensor_parallel_size": 4,
+  "rates": {
+    "3": 5, "4": 4, "5": 4, "6": 4, "7": 4, "8": 4, "9": 4,
+    "10": 4, "11": 4, "12": 4, "13": 4, "14": 4, "15": 4, "16": 4,
+    "17": 4, "18": 4, "19": 5, "20": 4, "21": 5, "22": 5, "23": 4,
+    "24": 5, "25": 5, "26": 4, "27": 4, "28": 4, "29": 5, "30": 5,
+    "31": 4, "32": 4, "33": 5, "34": 5, "35": 4, "36": 5, "37": 4,
+    "38": 5, "39": 4, "40": 5, "41": 5, "42": 5, "43": 5, "44": 5
+  },
+  "encoder": {
+    "alphabet": "e4m3",
+    "law": "mcg",
+    "mma": "mxf8f6f4",
+    "block_size": 32,
+    "compander_scale": 2.0,
+    "scale_refinement_iterations": 2,
+    "ldlq": false
+  },
+  "inputs": {
+    "source_checkpoint": {"kind": "indexed-bf16-safetensors", "uri": null, "required": true},
+    "coupled_scale_source": {"kind": "pinned-exl3-suh-svh-checkpoint", "uri": null, "required": true},
+    "calibration_capture": {"kind": "sealed-layer-capture", "uri": null, "required": true},
+    "role_manifest": {"kind": "trellismx-role-manifest", "uri": null, "required": true},
+    "evaluation_reference": {
+      "kind": "trellismx-future-evaluation-reference",
+      "uri": null,
+      "required": false
+    }
+  },
+  "execution": {
+    "device": "cuda",
+    "authorized": false,
+    "ordinary_ci": false
+  }
+}

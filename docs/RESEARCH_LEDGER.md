@@ -1,57 +1,11 @@
-# TrellisMX — quantization research toolkit and GLM campaign results
+# Historical research ledger
 
-## Latest measured coupled checkpoint: KLD **0.034181**
+> This former README preserves the detailed campaign timeline and older
+> evidence. Current installation instructions and the latest headline results
+> live in [`../README.md`](../README.md). Values here are regime-specific and
+> must not be mixed into later comparisons.
 
-The **all-42-routed-layer coupled TrellisMX P8 checkpoint with 17 K5 and
-25 K4 layers** measured **0.0341811459 mean true-decode KLD** on the 32
-conditional-fit windows. The window BCa 95% interval is **[0.0291484, 0.0409784]**.
-
-| Measured checkpoint | Routed stored bpw, including metadata | Mean true-decode KLD |
-| --- | ---: | ---: |
-| Uniform coupled K4 | 4.25398 | 0.03696745 |
-| **Coupled 17-K5 / 25-K4, upgrades only** | **4.65874** | **0.03418115** |
-
-The upgrades-only result is **7.54% lower KLD** than uniform coupled K4,
-at a larger bitrate—not an equal-size improvement. Both use
-**B12X_MLA_SPARSE attention, NVFP4 MLA KV (`nvfp4_ds_mla`), and native P8
-E4M3/UE8M0-K32 MoE**. Their runtime image revisions differ.
-This is **already-opened CF32 development evidence**, not untouched final
-qualification, a matched stock-NVFP4 win, or a new KLD measurement of the
-later speed-optimized runtime. P8 uses E4M3 MMA, not NVFP4-rate arithmetic.
-
-**[Latest result and exact receipts](results/P8_LATEST_KLD.md)** ·
-[Full campaign report, section 9](results/P8_FULL_COUPLED_CAMPAIGN_RESULTS_20260906.md#9-phase-1-measured-results) ·
-[Raw per-window analysis](evidence/p8-full-coupled-campaign-20260906/phase1/k5-only-cf32-analysis.json)
-
-## Reusable toolkit: install, inspect, plan, and extend
-
-The `trellismx` package and CLI now expose the versioned P4/P8 formats,
-K3/K4/K5 CPU reference decoding, checkpoint inspection and planning,
-resumable orchestration, role/provenance validation, and a generic
-architecture-adapter contract. Existing `glm53_nvfp4` and `bmxfp4` modules
-and historical results are retained; this does not delete earlier versions.
-
-```bash
-python -m pip install -e '.[test]'
-trellismx --help
-trellismx capabilities
-```
-
-**Support boundary:** this is not yet a ModelOpt-equivalent, arbitrary-model
-BF16-to-P8 converter. GLM-5.3-Flash is the bundled architecture adapter;
-other architectures require an adapter and model/runtime validation.
-The CUDA coupled encoder remains research source and ordinary CLI execution
-does not automatically encode a complete model. The separate SM120 overlay
-is versioned source, not a newly GPU-qualified universal runtime.
-
-[Toolkit workflow](docs/TRELLISMX_WORKFLOW.md) ·
-[Architecture adapter template](configs/architecture-adapter-contract.template.json) ·
-[Implementation and support boundaries](docs/IMPLEMENTATION_REPORT.md) ·
-[Integration record and preserved versions](docs/TOOLKIT_INTEGRATION_20260907.md)
-
-The sections below retain the earlier experimental history; they do not
-supersede this September 6 coupled-checkpoint measurement.
-
+## GLM-5.3-Flash in-block H16 and ShapleyMCG KLD experiment
 
 This repository is the reproducible code-and-evidence record for a local
 GLM-5.3-Flash BF16-to-NVFP4 experiment on four RTX PRO 6000 Blackwell GPUs.
@@ -535,30 +489,6 @@ the ShapleyMCG License 1.0 in `LICENSE`. Required attribution:
 
 Third-party models, runtimes, and libraries remain under their own licenses.
 See `THIRD_PARTY_NOTICES.md`.
-
-### Inspirations and method lineage
-
-This codec did not appear from nowhere. Its lineage is QTIP (Tseng, Sun, Hou,
-De Sa, NeurIPS 2024: trellis-coded quantization with incoherence processing)
-→ ExLlamaV3/EXL3 by turboderp (procedural MCG codebook, cyclic bitstream, LDLQ)
-→ Luke Alonso's KQuant/QSRT codec and b12x W4A8 trellis path (trellis decoded
-to E4M3 inside an FP8 MoE kernel, with Martin Vit on the GLM-5.2 stack) → the
-P8/TrellisMX endpoint here, which replaces the lookup table with the
-procedural law, consumes a physical UE8M0/32 MX scale plane in `mxf8f6f4`,
-and adds MoE small-M scheduling. The error-feedback encoder follows GPTQ
-(Frantar et al., ICLR 2023) and the LDLQ/incoherence analysis of QuIP and
-QuIP# (Chee et al., NeurIPS 2023; Tseng et al., ICML 2024). The runtime
-rotation experiments follow QuaRot (Ashkboos et al., NeurIPS 2024) and
-SpinQuant (Liu et al., 2024). The MX scale plane follows the OCP Microscaling
-specification (Rouhani et al., 2023) and NVIDIA's NVFP4 and block-scaled PTX
-MMA. Shapley allocation follows Shapley (1953) and the Castro, Gómez, Tejada
-(2009) sampling estimator; CoopQ (Zhao et al., 2025) is the closest published
-precedent for Shapley-based layerwise mixed precision and is cited as such.
-The KLD metric is Kullback and Leibler (1951); the intervals are Efron's BCa
-(1987); the sealed-role practice follows the preregistration literature
-(Nosek et al., PNAS 2018). Calibration data descends from the REAP corpus
-family (Lasby et al., Cerebras, 2025). Full references with identifiers are
-in `CITATIONS.md`.
 
 ## Related pinned context
 

@@ -1,0 +1,54 @@
+{
+  "schema": "trellismx.architecture-adapter.v1",
+  "architecture": {
+    "name": "example-architecture",
+    "model_type": "replace-with-model-type",
+    "configuration_fields": ["replace-with-config-field"]
+  },
+  "checkpoint": {
+    "index_reader": "replace-with-cpu-index-reader",
+    "config_validation": "replace-with-required-dimensions",
+    "safetensors_payload_reads_during_planning": 0
+  },
+  "tensor_mapping": {
+    "named_weight_families": [
+      "replace-with-output-input-weight-family"
+    ],
+    "parallelism": "replace-with-tensor-or-expert-parallel-contract",
+    "unsupported_architecture_policy": "fail-closed"
+  },
+  "calibration": {
+    "role_manifest_schema": "trellismx.roles.v1",
+    "capture_interface": "replace-with-adapter-capture-reader",
+    "hessian_interface": "replace-with-adapter-hessian-constructor"
+  },
+  "encoding": {
+    "encoder": "trellismx-native-coupled",
+    "per_tensor_request_schema": "P8EncoderConfig",
+    "device": "cuda",
+    "execution_authorized_by_default": false
+  },
+  "output": {
+    "portable_tensor_schema": "trellismx.p8-tensors.v1",
+    "sidecar_or_checkpoint_manifest": "adapter-defined-but-hash-complete"
+  },
+  "runtime": {
+    "compute_operand": "e4m3",
+    "mma": "mxf8f6f4",
+    "scale": "ue8m0-k32",
+    "rates": [3, 4, 5],
+    "rate_keyed_dispatch": true,
+    "unsupported_shape_policy": "fail-closed"
+  },
+  "qualification": {
+    "owner": "downstream-adapter-implementer",
+    "required_device_gates": [
+      "decoder-bit-exact-closure",
+      "mixed-rate-process-closure",
+      "prefill-and-decode-closure",
+      "cuda-graph-parity",
+      "full-model-kld"
+    ],
+    "device_gates_executed_by_this_package": false
+  }
+}
