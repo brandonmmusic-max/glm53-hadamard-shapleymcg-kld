@@ -1,5 +1,7 @@
 # TrellisMX — GLM-5.3-Flash quantization toolkit and campaign record
 
+**September 9 selected serving reference:** [image, launch configuration and complete speed/KLD evidence](releases/reference-20260909/README.md). Matched32window development KLD: FP8 KV **0.0319451732**, NVFP4 MLA KV **0.0354562238**, TP4/DCP4/MTPoff. [HF model card](https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8).
+
 Reproducible code and evidence for a local GLM-5.3-Flash quantization campaign on
 four RTX PRO 6000 Blackwell GPUs. It covers block-local 16×16 Hadamard rotation
 (H16) inside routed-expert projections, calibrated GPTQ, the native P8/TrellisMX

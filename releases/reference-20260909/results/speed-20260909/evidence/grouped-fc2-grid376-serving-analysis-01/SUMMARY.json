@@ -1,0 +1,78 @@
+{
+  "classification": "exploratory single-server screen; no adoption or quality qualification",
+  "rows": [
+    {
+      "metric": "32768 prefill",
+      "prior": 8179.0,
+      "candidate": 8325.0,
+      "percent": 1.785059298202718
+    },
+    {
+      "metric": "65536 prefill",
+      "prior": 8115.0,
+      "candidate": 8240.0,
+      "percent": 1.5403573629081846
+    },
+    {
+      "metric": "8192 C1 decode aggregate",
+      "prior": 193.02735475766252,
+      "candidate": 199.71840430037014,
+      "percent": 3.4663737433007658
+    },
+    {
+      "metric": "8192 C4 decode aggregate",
+      "prior": 321.902740446541,
+      "candidate": 334.30356251685123,
+      "percent": 3.852350574309482
+    }
+  ],
+  "runtime": {
+    "arguments": {
+      "--tensor-parallel-size": "4",
+      "--decode-context-parallel-size": "4",
+      "--max-num-seqs": "24",
+      "--max-num-batched-tokens": "4096",
+      "--kv-cache-dtype": "nvfp4_ds_mla",
+      "--load-format": "safetensors",
+      "--host": "127.0.0.1",
+      "--port": "8001"
+    },
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 3,
+      "draft_sample_method": "probabilistic",
+      "rejection_sample_method": "standard",
+      "moe_backend": "marlin",
+      "attention_backend": "B12X"
+    },
+    "graph_ranks": [
+      "0",
+      "1",
+      "2",
+      "3"
+    ],
+    "kv_tokens": 23418300
+  },
+  "matched_image_sources": [
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/trellismx/p8_native_kernel.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/fc2_k5_funnel.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/grouped_fc2_grid376.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/row_alias376_prefill_fc1.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/mcg_k5_funnel.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/grouped_fc2_grid376_dynamic.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/row_alias376_fc1.py",
+    "/opt/glm53-flash/b12x/b12x/moe/_shared/kernels/k5_funnel_fc1.py"
+  ],
+  "decode_acceptance": [
+    {
+      "concurrency": 1,
+      "server_spec_accept_rate": 0.6216216216216216
+    },
+    {
+      "concurrency": 4,
+      "server_spec_accept_rate": 0.5677083333333334
+    }
+  ],
+  "archive_checksum_verified": true,
+  "next": "Keep grid376 as provisional prefill candidate; investigate direct FC1 useful CTA count. No established decode gain."
+}

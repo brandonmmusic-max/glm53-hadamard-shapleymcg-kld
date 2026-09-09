@@ -1,0 +1,125 @@
+{
+  "schema_version": 4,
+  "record_id": "trellismx-reference-20260909",
+  "title": "TrellisMX GLM-5.3 Flash selected TP4 reference",
+  "summary": "Selected September9 FP8-math reference image with measured speed, exact source overlays and audited matched FP8/NVFP4 MLA KLD.",
+  "model_family": "GLM-5.3-Flash",
+  "release_class": "experimental",
+  "distribution_role": "custom",
+  "qualification_status": "implemented",
+  "maintenance_status": "ephemeral",
+  "image": {
+    "repository": "verdictai/trellismx",
+    "tag": "glm53-flash-p8-r27-reference-20260909",
+    "digest": "sha256:ca6b80188dce154b91f49108b7d87792d2ba6328935afc71b44d1c0e6f6a1adf",
+    "reference": "verdictai/trellismx:glm53-flash-p8-r27-reference-20260909@sha256:ca6b80188dce154b91f49108b7d87792d2ba6328935afc71b44d1c0e6f6a1adf"
+  },
+  "base_image": {
+    "repository": "voipmonitor/vllm",
+    "tag": "jovian-judgement-community-20260906-r27",
+    "digest": "sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "reference": "voipmonitor/vllm:jovian-judgement-community-20260906-r27@sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "credit": "Local Inference Lab Jovian Judgement GLM r27; vLLM, B12X and component license obligations remain applicable."
+  },
+  "recommended_image": {
+    "reference": "voipmonitor/vllm:jovian-judgement-community-20260906-r27@sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "relationship": "Pinned community runtime inherited by this custom overlay; not a matched numerical baseline."
+  },
+  "community_wiki": {
+    "repository": "https://github.com/local-inference-lab/rtx6kpro",
+    "commit": "94b71ac2a5f9c75f6b60dd1b6e6dffda492a4942",
+    "runbook_path": "models/glm-5.3-flash.md",
+    "runbook_url": "https://github.com/local-inference-lab/rtx6kpro/blob/94b71ac2a5f9c75f6b60dd1b6e6dffda492a4942/models/glm-5.3-flash.md",
+    "relationship": "Community source contract; does not qualify this custom P8 runtime."
+  },
+  "build": {
+    "recipe_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/tree/main/runtime-reference-20260909",
+    "recipe_commit": "See containing HF commit",
+    "build_command": "docker build --pull=false -t trellismx-reference-rebuild runtime-reference-20260909",
+    "source_manifest": "runtime-reference-20260909/source-manifest.json",
+    "source_manifest_sha256": "2629fdb6094b54ce1cc1cc59b7dc0fe2617e0fe2ed39ff49a4e92ed72a28b252",
+    "base": "verdictai/trellismx@sha256:1c8a10d2b21bd6ed5a7ca4a29bcc3900d29acc3ce42e1d722b9ebaa74357de3f",
+    "qualification": "Published image is the retained measured image, retagged without a rebuild. Recipe reproduces Python overlay; fresh rebuild not GPU tested.",
+    "environment_defaults": [
+      "TP4 DCP4 MTP3 maxseq24 batch4096 maxlen1000000 GMU0.97 KVnvfp4_ds_mla",
+      "NCCL_MIN_NCHANNELS=8 NCCL_MAX_NCHANNELS=8",
+      "VLLM_PCIE_ONESHOT_ALLREDUCE_MAX_SIZE=131072 VLLM_PCIE_ONESHOT_FUSED_ADD_RMS_NORM_MAX_SIZE=86016 VLLM_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD=4096"
+    ],
+    "entrypoint_changes": [
+      "compose explicitly launches /bin/bash /release/serve-r27-production.sh; baked launcher defaults16, public compose/wrapper override24"
+    ]
+  },
+  "changes": {
+    "inherited": [
+      "r27 split-cache rebalancing, B12X attention, FlashKDA, probabilistic MTP and fairness scheduler; binaries and dependencies unchanged."
+    ],
+    "introduced": [
+      "Route-hoisted FP8 native expert dispatch, tile policy and grouped FC2 paths; exact changed Python files in source manifest.",
+      "Selected collective settings and24slot serving wrapper."
+    ],
+    "compatibility_impact": [
+      "TP4 checkpoint with 168 sidecars, pinned carrier and four SM120 GPUs; no arbitrary model conversion claim."
+    ]
+  },
+  "tested_configurations": [
+    {
+      "name": "Retained September9 selected reference image",
+      "hardware": "4x RTX PRO 6000 Blackwell 96GB, 2 Max-Q and 2 standard",
+      "topology": "TP4/DCP4, PCIe gen5 x16; no expert parallelism",
+      "power_and_clocks": "300 W cap per GPU; clocks and telemetry retained in benchmark JSON; no clock change by release",
+      "driver": "610.57.04",
+      "cuda_runtime": "13.3",
+      "pytorch": "2.13.0",
+      "nccl": "2.31.2",
+      "engine_source": "Exact selected image Python source and manifest in runtime-reference-20260909",
+      "model_revision": "168 sidecar identities in trellismx-manifest.json; carrier 520de24eabf507659eaef7c70f14fd584527facc",
+      "quantization": "TrellisMX coupled K4/K5, 4.6587417643 routed bpw; native E4M3 UE8M0/32 MMA",
+      "parallelism": "TP4/DCP4, EP off",
+      "kv_cache": "nvfp4_ds_mla; expanded benchmark engine capacity23562091 effective aggregate tokens",
+      "speculative_mode": "MTP3 probabilistic draft plus standard rejection",
+      "graph_mode": "FULL_AND_PIECEWISE",
+      "scheduler_limits": "24 sequences;4096 batched tokens;1000000 model length",
+      "cache_policy": "chunked prefill and prefix caching; vram; GPU memory utilization0.97",
+      "launch_command": "MODEL_ROOT=/absolute/path/to/carrier docker compose -f compose.yaml up -d"
+    }
+  ],
+  "validation": {
+    "speed_evidence": "results/speed-20260909/README.md",
+    "all_speed_index": "results/speed-20260909/benchmark-index.json",
+    "kld_evidence": "results/kld-reference-20260909/comparison.json",
+    "kld_audit": "results/kld-reference-20260909/audit.json",
+    "kld_level": "Already-opened conditional-fit development comparison; single server per arm; MTPoff; not independent replication or final qualification."
+  },
+  "limitations": {
+    "known": [
+      "Recipe Python-source reconstruction is separate from the measured immutable Docker image.",
+      "Historical comparisons differ in image/topology; new matched KLD holds reference checkpoint/TP4/DCP4 fixed and changes KV specialization.",
+      "TR3/EXL3 matched KLD requested, not measured yet.",
+      "KV aggregate capacity is not1M-context accuracy or full-capacity stress."
+    ],
+    "untested": [
+      "Fresh downloaded deployment GPU test",
+      "Independent repeated speed qualification"
+    ],
+    "unsupported": [
+      "Other GPU architectures, TP sizes, arbitrary model encoders; inference-only release."
+    ]
+  },
+  "support": {
+    "owner": "Brandon Music",
+    "contact": "https://github.com/brandonmmusic-max",
+    "issue_tracker": "https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues",
+    "support_thread": "https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues/5",
+    "thread_status": "active",
+    "support_commitment": "ephemeral",
+    "triage_policy": "Keep reports in this thread. Escalate upstream only after reproduction on the recommended image or a minimal reproducer identifies the responsible source change.",
+    "superseded_by": "N/A"
+  },
+  "publication": {
+    "record_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/image-record.json",
+    "main_channel_link": "N/A",
+    "main_channel_link_count": 0,
+    "bot_listing": "not-applicable",
+    "maintainer_approval_url": "N/A"
+  }
+}

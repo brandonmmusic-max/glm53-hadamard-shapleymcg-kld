@@ -1,0 +1,55 @@
+{"diagnostic_wrapper": "fixed-prefix-greedy", "benchmark_sha256": "7239958032ec10781d7db3efca23a7602bd9aeb94455a723e2634ab7d6fe546a", "run_id": "tmxrepeatabc", "temperature": 0.0, "scope": "Separate diagnostic, not model-default throughput"}
+
+New version available: v0.6.2 (current: v0.4.29)
+Upgrade and restart? [Y/n]: Skipping update.
+
+╭──────────────────────────── NVIDIA P2P Override ─────────────────────────────╮
+│ Effective: yes                                                               │
+│ Configured file: yes (/etc/modprobe.d/nvidia-p2p-override.conf)              │
+│ Runtime: ForceP2P=0x11; RMForceP2PType=1; RMPcieP2PType=2;                   │
+│ GrdmaPciTopoCheckOverride=1; EnableResizableBar=1; DmaRemapPeerMmio=1        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────── Configuration ────────────────────────────────╮
+│ LLM Inference Benchmark                                                      │
+│ Model: glm53-flash-trellismx-p8-k45 @ 127.0.0.1:8001                         │
+│ Decode concurrency: [1, 4]                                                   │
+│ Decode contexts: ['8k']                                                      │
+│ Decode: skipped (--prefill-only) | Max tokens: 8192                          │
+│ Pre-decode warmup: C=1 max-runnable context for 3s                           │
+│ Prefill-only: standalone cold profile (client) | Sustained decode: 0 cells   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Engine: vLLM 0.26.1rc0+glm53.flash.nvfp4.luke.clean.r1.vllme75bcfd.b12x58a046f  
+Models: ['glm53-flash-trellismx-p8-k45']
+KV cache budget (vLLM metrics): 29,343,744 tokens (3582 blocks × 2048; local 
+7,335,936 × CP 4; CP source: local process)
+Model context length: 1,000,000 tokens
+Prefill tests: standalone cold profile ['32k', '64k']
+Calibrating padding text (run=tmxrepeatabc, up to 64k)...
+  8k: 50,558 chars (8,192 prompt tokens via /tokenize)
+  32k: 205,152 chars (32,768 prompt tokens via /tokenize)
+  64k: 411,264 chars (65,536 prompt tokens via /tokenize)
+  Token targeting: /tokenize exact
+Done.
+
+
+
+llm-decode-bench v0.4.29
+Prefill Speed (C=1, client ISL / TTFT)                                          
+                                                                                
+                                                                PCIe rx/tx      
+  Context   Tokens   TTFT (s)   Client tok/s   Server tok/s            avg   N  
+ ────────────────────────────────────────────────────────────────────────────── 
+  32k       32,770       3.95          8,294              —    52145/49668   5  
+  64k       65,538       7.97          8,228              —    52417/53894   3  
+                                                                                
+Client tok/s = prompt_tokens / TTFT. Integrated scout rows come from the 
+prefix-cache scout request that decode needs anyway. Server tok/s is optional 
+Prometheus validation when the engine exports prefill counters and the exact 
+counter delta is uncontaminated; for vLLM this uses newly computed KV tokens, 
+not request prompt tokens.
+
+
+Results saved to 
+<campaign>/fc1-wait-before-pr
+efetch-speed-01/results-01/fc1-wait-before-prefetch/rep-1/prefill.json
+{"fixed_run_id_calls": 1, "benchmark_unchanged": true}

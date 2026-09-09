@@ -1,0 +1,126 @@
+
+New version available: v0.6.2 (current: v0.4.29)
+Upgrade and restart? [Y/n]: Skipping update.
+
+╭──────────────────────────── NVIDIA P2P Override ─────────────────────────────╮
+│ Effective: yes                                                               │
+│ Configured file: yes (/etc/modprobe.d/nvidia-p2p-override.conf)              │
+│ Runtime: ForceP2P=0x11; RMForceP2PType=1; RMPcieP2PType=2;                   │
+│ GrdmaPciTopoCheckOverride=1; EnableResizableBar=1; DmaRemapPeerMmio=1        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────── Configuration ────────────────────────────────╮
+│ LLM Inference Benchmark                                                      │
+│ Model: glm53-flash-trellismx-p8-k45 @ 127.0.0.1:8001                         │
+│ Decode concurrency: [1, 2, 4]                                                │
+│ Decode contexts: ['0', '8k', '32k']                                          │
+│ Duration: 20.0s per decode test | Max tokens: 512                            │
+│ Pre-decode warmup: C=1 max-runnable context for 3s                           │
+│ Prefill: skipped | Sustained decode: 9 cells                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Engine: vLLM 0.26.1rc0+glm53.flash.nvfp4.luke.clean.r1.vllme75bcfd.b12x58a046f  
+Models: ['glm53-flash-trellismx-p8-k45']
+KV cache budget (vLLM metrics): 29,343,744 tokens (3582 blocks × 2048; local 
+7,335,936 × CP 4; CP source: local process)
+Model context length: 1,000,000 tokens
+Prefill tests: skipped
+Calibrating padding text (run=buuyovdumqmr, up to 32k)...
+  8k: 50,540 chars (8,192 prompt tokens via /tokenize)
+  32k: 205,139 chars (32,768 prompt tokens via /tokenize)
+  Token targeting: /tokenize exact
+Done.
+
+
+
+llm-decode-bench v0.4.29
+╭────────────────────────────────── Phase 2 ───────────────────────────────────╮
+│ Sustained Decode                                                             │
+│ Steady-state decode throughput after the engine has admitted the requested   │
+│ concurrency and passed warmup. Use this as the main tuning/regression signal │
+│ for kernels, NCCL, DCP, MTP, and scheduler changes.                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Aggregate tok/s  + TTFT/ITL                                      
+╭────────────┬─────────────┬──────────────────┬─────────────────╮
+│ ctx \ conc │           1 │                2 │               4 │
+├────────────┼─────────────┼──────────────────┼─────────────────┤
+│ 0          │  186.3 81/5 │      255.0 118/7 │ ∅ (4/4)* 175/12 │
+│ 8k         │ 164.5 599/5 │ 190.4 (2/2) 1k/8 │  ∅ (4/4)* 1k/14 │
+│ 32k        │ 162.8 601/5 │ 188.5 (2/2) 1k/8 │     214.6 1k/15 │
+╰────────────┴─────────────┴──────────────────┴─────────────────╯
+Sustained Decode: aggregate tok/s uses OpenAI stream usage by default 
+(continuous completion_tokens when the server supports it). Prometheus is kept 
+as validation/scheduler data.
+Aggregate source(s): openai_continuous_usage
+∅ = skipped/hidden because the cell does not fit in KV cache; exact deficit is 
+kept in JSON timeout_reason
+(X/Y) = avg running / requested concurrency from Prometheus; * = 
+capacity-limited or warmup timed out
+Per-Request tok/s                             
+╭────────────┬───────┬────────────┬──────────╮
+│ ctx \ conc │     1 │          2 │        4 │
+├────────────┼───────┼────────────┼──────────┤
+│ 0          │ 186.3 │      127.5 │ ∅ (4/4)* │
+│ 8k         │ 164.5 │ 95.2 (2/2) │ ∅ (4/4)* │
+│ 32k        │ 162.8 │ 94.2 (2/2) │     53.7 │
+╰────────────┴───────┴────────────┴──────────╯
+Client request latency: p50 / p90 ms               
+╭────────────┬───────────┬───────────┬────────────╮
+│ ctx \ conc │         1 │         2 │          4 │
+├────────────┼───────────┼───────────┼────────────┤
+│ 0          │ 2.8k/2.9k │   4k/4.2k │  6.6k/6.9k │
+│ 8k         │ 3.1k/3.2k │ 5.2k/5.6k │  9.4k/9.8k │
+│ 32k        │ 3.1k/3.2k │ 5.3k/5.7k │ 9.2k/10.8k │
+╰────────────┴───────────┴───────────┴────────────╯
+Aggregate cells show dim detail as TTFT ms / ITL ms for the same ctx/conc 
+coordinate. ITL is computed from observed generated tokens, including streams 
+stopped at the measurement boundary; a missing ITL means no stream produced at 
+least two measured output tokens. Per-request tok/s and request latency are 
+shown in separate per-cell matrices. Completion/sample counts and full 
+request-level distributions remain in JSON under request_samples.
+Sustained mode: client latency metrics explain request UX variance; aggregate 
+tok/s remains the primary throughput signal. 
+ITL=(last_token_time-first_token_time)/(output_tokens-1), user tok/s=1/ITL.
+Hardware Summary                                                                
+╭───┬─┬───────┬───────────┬───────┬─────────┬─────┬──────┬─────┬───────────────╮
+│ … │ │ mode  │ GPU avg/… │ Mem … │ W avg/… │ T … │ CPU… │ VR… │ PCIe rx/tx a… │
+├───┼─┼───────┼───────────┼───────┼─────────┼─────┼──────┼─────┼───────────────┤
+│ 0 │ │ sust… │   99/100% │   43% │ 1152/1… │ 83C │  76C │ 98… │     8571/8171 │
+│ … │ │ sust… │   99/100% │   38% │ 1151/1… │ 83C │  77C │ 98… │   11022/11523 │
+│ … │ │ sust… │   99/100% │   39% │ 1151/1… │ 84C │  77C │ 98… │   15049/14201 │
+│ 0 │ │ sust… │  100/100% │   40% │ 1173/1… │ 84C │  77C │ 98… │   11246/11138 │
+│ 0 │ │ sust… │  100/100% │   34% │ 1172/1… │ 84C │  77C │ 98… │     7818/7977 │
+│ … │ │ sust… │  100/100% │   38% │ 1162/1… │ 84C │  76C │ 98… │   33979/33267 │
+│ … │ │ sust… │  100/100% │   34% │ 1158/1… │ 84C │  77C │ 98… │   22511/21996 │
+│ … │ │ sust… │  100/100% │   37% │ 1155/1… │ 84C │  76C │ 98… │   15308/17196 │
+│ … │ │ sust… │  100/100% │   31% │ 1156/1… │ 84C │  77C │ 98… │   20940/22935 │
+╰───┴─┴───────┴───────────┴───────┴─────────┴─────┴──────┴─────┴───────────────╯
+╭───────────────────────── Whole-run GPU Power ─────────────────────────╮
+│ avg 1,087 W | max 1,178 W | limit 1,200 W | over 4m 32s | 114 samples │
+╰───────────────────────────────────────────────────────────────────────╯
+Hardware summary is sampled from nvidia-smi during the measured part of each 
+cell. Whole-run GPU power is the sampled sum of GPU power draw across the 
+complete benchmark run, not wall-outlet system power. PCIe rx/tx is MB/s and is 
+a coarse live diagnostic, not a per-kernel NCCL profiler.
+
+╭────────────────────────────────── Phase 3 ───────────────────────────────────╮
+│ Burst / E2E Decode                                                           │
+│ Not run. Re-run with --run-burst to append a finite client-facing request    │
+│ burst after Sustained Decode. This is intentionally disabled by default      │
+│ because it adds another full decode matrix.                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭────────────────────────────── Primary Summary ───────────────────────────────╮
+│ Primary matrices repeated last so the important numbers are visible without  │
+│ scrolling back through diagnostics.                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Aggregate decode tok/s                         
+╭────────────┬───────┬─────────────┬──────────╮
+│ ctx \ conc │     1 │           2 │        4 │
+├────────────┼───────┼─────────────┼──────────┤
+│ 0          │ 186.3 │       255.0 │ ∅ (4/4)* │
+│ 8k         │ 164.5 │ 190.4 (2/2) │ ∅ (4/4)* │
+│ 32k        │ 162.8 │ 188.5 (2/2) │    214.6 │
+╰────────────┴───────┴─────────────┴──────────╯
+
+Results saved to 
+<campaign>/candidate-speed-wi
+ndow-01/results-01/prefill-owner188/rep-3/decode-cap512.json

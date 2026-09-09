@@ -1,0 +1,48 @@
+{
+  "status": "validated",
+  "image": "sha256:c0fdf225a559c41d0321013eca3753405bcbda85dc5dc82d6a91f074864a47f8",
+  "rates_tps": {
+    "32K prefill": 8294.0,
+    "64K prefill": 8228.0,
+    "8K C1 decode aggregate": 165.3987619914299,
+    "8K C4 decode aggregate": 329.1090504914052
+  },
+  "runtime": {
+    "arguments": {
+      "--tensor-parallel-size": "4",
+      "--decode-context-parallel-size": "4",
+      "--max-num-seqs": "24",
+      "--max-num-batched-tokens": "4096",
+      "--kv-cache-dtype": "nvfp4_ds_mla",
+      "--load-format": "safetensors",
+      "--host": "127.0.0.1",
+      "--port": "8001"
+    },
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 3,
+      "draft_sample_method": "probabilistic",
+      "rejection_sample_method": "standard",
+      "moe_backend": "marlin",
+      "attention_backend": "B12X"
+    },
+    "graph_ranks": [
+      "0",
+      "1",
+      "2",
+      "3"
+    ],
+    "kv_tokens": 23411764
+  },
+  "scope": "One fixed-prefix temperature0 diagnostic server run with probabilisticMTP3; not full-model quality qualification.",
+  "acceptance": [
+    {
+      "concurrency": 1,
+      "server_spec_accept_rate": 0.4337899543378995
+    },
+    {
+      "concurrency": 4,
+      "server_spec_accept_rate": 0.5134408602150538
+    }
+  ]
+}

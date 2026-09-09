@@ -1,0 +1,217 @@
+{
+  "schema_version": 4,
+  "record_id": "trellismx-r27-dcp4-20260908",
+  "title": "TrellisMX P8 GLM-5.3-Flash r27 DCP4",
+  "summary": "Reproducible r27 inference overlay with source parity, baked production launcher, measured speed receipts and audited paired NVFP4/FP8 KV development KLD.",
+  "model_family": "GLM-5.3-Flash",
+  "release_class": "experimental",
+  "distribution_role": "custom",
+  "qualification_status": "implemented",
+  "maintenance_status": "ephemeral",
+  "image": {
+    "repository": "verdictai/trellismx",
+    "tag": "glm53-flash-p8-r27-dcp4-20260908",
+    "digest": "sha256:1c8a10d2b21bd6ed5a7ca4a29bcc3900d29acc3ce42e1d722b9ebaa74357de3f",
+    "reference": "verdictai/trellismx:glm53-flash-p8-r27-dcp4-20260908@sha256:1c8a10d2b21bd6ed5a7ca4a29bcc3900d29acc3ce42e1d722b9ebaa74357de3f"
+  },
+  "base_image": {
+    "repository": "voipmonitor/vllm",
+    "tag": "jovian-judgement-community-20260906-r27",
+    "digest": "sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "reference": "voipmonitor/vllm:jovian-judgement-community-20260906-r27@sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "credit": "Local Inference Lab Jovian Judgement GLM r27; vLLM, B12X and component license obligations remain applicable."
+  },
+  "recommended_image": {
+    "reference": "voipmonitor/vllm:jovian-judgement-community-20260906-r27@sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512",
+    "relationship": "Pinned community runtime inherited by this custom overlay; not a matched numerical baseline."
+  },
+  "community_wiki": {
+    "repository": "https://github.com/local-inference-lab/rtx6kpro",
+    "commit": "94b71ac2a5f9c75f6b60dd1b6e6dffda492a4942",
+    "runbook_path": "models/glm-5.3-flash.md",
+    "runbook_url": "https://github.com/local-inference-lab/rtx6kpro/blob/94b71ac2a5f9c75f6b60dd1b6e6dffda492a4942/models/glm-5.3-flash.md",
+    "relationship": "Community source contract; does not qualify this custom P8 runtime."
+  },
+  "build": {
+    "recipe_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/tree/53d93dfbc9002df7b73178327dfe99773efb680e/runtime",
+    "recipe_commit": "53d93dfbc9002df7b73178327dfe99773efb680e",
+    "build_command": "docker build --pull=false -t trellismx-r27-rebuild runtime",
+    "components": [
+      {
+        "name": "vllm",
+        "repository": "https://github.com/local-inference-lab/vllm",
+        "commit": "c88fb8847dc8bc18bca56640759f137198750085",
+        "release_reference": "Local integration commit; exact complete overlay files are published in the pinned HF recipe. Inherited binaries remain r27.",
+        "pull_requests": [],
+        "patches": [
+          {
+            "path_or_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/53d93dfbc9002df7b73178327dfe99773efb680e/runtime-files.json",
+            "sha256": "sha256:e1dfd232f438f17fbfceb2c534e60666e7b9f5c2104808826c12dd18b5f92de1",
+            "purpose": "Complete SHA256 inventory for inference overlay files; pins local integration output beyond upstream source labels.",
+            "authors": [
+              "Brandon M. Music; Local Inference Lab, ExLlamaV3, KQuant, QSRT and w4a8 lineage credited in CITATION.cff"
+            ]
+          }
+        ],
+        "overlays": []
+      },
+      {
+        "name": "b12x",
+        "repository": "https://github.com/local-inference-lab/b12x",
+        "commit": "7093ad77849cf181bcf0c30b897c54fd32dac40e",
+        "release_reference": "Local integration commit; exact complete overlay files are published in the pinned HF recipe. Inherited binaries remain r27.",
+        "pull_requests": [],
+        "patches": [
+          {
+            "path_or_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/53d93dfbc9002df7b73178327dfe99773efb680e/runtime-files.json",
+            "sha256": "sha256:e1dfd232f438f17fbfceb2c534e60666e7b9f5c2104808826c12dd18b5f92de1",
+            "purpose": "Complete SHA256 inventory for inference overlay files; pins local integration output beyond upstream source labels.",
+            "authors": [
+              "Brandon M. Music; Local Inference Lab, ExLlamaV3, KQuant, QSRT and w4a8 lineage credited in CITATION.cff"
+            ]
+          }
+        ],
+        "overlays": []
+      }
+    ],
+    "package_changes": [
+      "No dependency installs; r27 native extension binaries and packages inherited."
+    ],
+    "build_arguments": [
+      "JOVIAN_IMAGE=voipmonitor/vllm:jovian-judgement-community-20260906-r27@sha256:a298fe1cd207eaf97bd2ff2686716ed25b7009c09b36650eba732a4a7dc51512"
+    ],
+    "environment_defaults": [
+      "TP=4 DCP=4 KV_CACHE_DTYPE=nvfp4_ds_mla NUM_SPECULATIVE_TOKENS=3 GPU_MEMORY_UTILIZATION=0.97 MAX_NUM_SEQS=16 MAX_NUM_BATCHED_TOKENS=4096 MAX_MODEL_LEN=1000000"
+    ],
+    "entrypoint_changes": [
+      "Bakes deployed launcher at /opt/trellismx/serve.sh; executes inherited r27 serve-glm53-flash launcher. PORT=8000."
+    ],
+    "result_tree": "N/A",
+    "integration_patch_sha256": "N/A"
+  },
+  "changes": {
+    "inherited": [
+      "r27 split-cache rebalancing, B12X attention, FlashKDA, probabilistic MTP and fairness scheduler; binaries and dependencies unchanged."
+    ],
+    "introduced": [
+      "Native TrellisMX P8 checkpoint loader and B12X expert path; DCP4 persistent workspace integration; complete inference source in recipe.",
+      "Production launcher defaults baked into image; licenses included."
+    ],
+    "compatibility_impact": [
+      "TP4 checkpoint with 168 sidecars, pinned carrier and four SM120 GPUs; no arbitrary model conversion claim."
+    ]
+  },
+  "tested_configurations": [
+    {
+      "name": "Measured source-equivalent r27 DCP4 local deployment; public image CPU checked",
+      "hardware": "4x RTX PRO 6000 Blackwell 96GB, 2 Max-Q and 2 standard",
+      "topology": "TP4/DCP4, PCIe gen5 x16; no expert parallelism",
+      "power_and_clocks": "300 W cap per GPU; clocks and telemetry retained in benchmark JSON; no clock change by release",
+      "driver": "610.57.04",
+      "cuda_runtime": "13.3",
+      "pytorch": "2.13.0",
+      "nccl": "2.31.2",
+      "engine_source": "c88fb8847dc8bc18bca56640759f137198750085 overlay on r27 binaries",
+      "model_revision": "168 sidecar identities in trellismx-manifest.json; carrier 520de24eabf507659eaef7c70f14fd584527facc",
+      "quantization": "TrellisMX coupled K4/K5, 4.6587417643 routed bpw; native E4M3 UE8M0/32 MMA",
+      "parallelism": "TP4/DCP4, EP off",
+      "kv_cache": "nvfp4_ds_mla; engine reports 23424836 effective aggregate tokens; hybrid split layout",
+      "speculative_mode": "MTP3 probabilistic draft plus standard rejection",
+      "graph_mode": "FULL_AND_PIECEWISE",
+      "scheduler_limits": "16 sequences; 4096 batched tokens; 1000000 model length; prefill share 0.4",
+      "cache_policy": "chunked prefill and prefix caching; vram; GPU memory utilization0.97",
+      "launch_command": "MODEL_ROOT=/absolute/path/to/carrier docker compose -f compose.yaml up -d"
+    }
+  ],
+  "validation": {
+    "commands": [
+      "docker build --pull=false -t trellismx-r27-rebuild runtime",
+      "MODEL_ROOT=/model docker compose -f compose.yaml config --quiet",
+      "docker run --rm --entrypoint python -v /absolute/path/to/checkpoint:/checkpoint:ro verdictai/trellismx:glm53-flash-p8-r27-dcp4-20260908@sha256:1c8a10d2b21bd6ed5a7ca4a29bcc3900d29acc3ce42e1d722b9ebaa74357de3f -c 'from vllm.utils.trellismx import load_overlay; print(len(load_overlay(\"/checkpoint\").records))'",
+      "Pinned llm_decode_bench.py commands and effective arguments in results/r27-20260908/README.md and JSON."
+    ],
+    "results": [
+      {
+        "name": "Deployed inference source parity",
+        "status": "passed",
+        "conditions": "Current local image57a9967b75e6 vs public build context",
+        "measurement": "SHA256 every included deployed inference file",
+        "result": "413 files matched",
+        "conclusion": "Source parity only; rebuilt image is separately identified and is not a new GPU benchmark.",
+        "evidence_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/results/r27-20260908/runtime-parity.json",
+        "evidence_sha256": "sha256:033767e89483ccf6290f427decbbef96911511d704358da970cee40b512207fa",
+        "category": "correctness"
+      },
+      {
+        "name": "Public image CPU overlay import and manifest inventory",
+        "status": "passed",
+        "conditions": "Public image, no GPUs passed, local HF-layout checkpoint read-only",
+        "measurement": "Import native overlay validator; verify168 file inventory, sizes, and design identities and launcher SHA",
+        "result": "168 records loaded",
+        "conclusion": "CPU manifest/inventory gate only, no complete sidecar rehash or fresh GPU launch claim.",
+        "evidence_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/results/r27-20260908/public-image-cpu-check.txt",
+        "evidence_sha256": "sha256:ea5d2725e24abafef7edfd7266efbde829f61153a62426e93df67274eb454d62",
+        "category": "smoke"
+      },
+      {
+        "name": "Recorded current-server speed observations",
+        "status": "passed",
+        "conditions": "Four SM120 GPUs at300W; TP4/DCP4 MTP3 NVFP4 MLA KV; one run each, no matched baseline",
+        "measurement": "C1/C2 20s streaming cells; separate10s cold-prefill targets; full JSON/logs retained",
+        "result": "C1 zero202.45t/s; prefill7692/7940/8006t/s at8200/16227/32316tokens",
+        "conclusion": "Exploratory absolute observations; no advantage or independent qualification claim; workload and MTP confounders detailed.",
+        "evidence_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/results/r27-20260908/README.md",
+        "evidence_sha256": "sha256:16e1e1fedf7b49dcdc1d79c156438ee016d47817861c8abdfe32964d9fe2277b",
+        "category": "performance"
+      },
+      {
+        "name": "Paired current r27 NVFP4 versus FP8 MLA KV development KLD",
+        "status": "passed",
+        "conditions": "Same32 opened conditional-fit windows; TP4/DCP4, MTP off, maxseq1; fixed NVFP4 then FP8 order, one server start per arm.",
+        "measurement": "CPU FP64 teacher-to-student KL over2046 true-decode rows/window;20,000-resample paired window BCa95.",
+        "result": "NVFP4=0.0350078183; FP8=0.0310574767; FP8-minus-NVFP4=-0.0039503416, paired BCa95[-0.0092510457,-0.0018107907].",
+        "conclusion": "Audited development comparison only; no final holdout, independent replication, MTP or long-context qualification.",
+        "evidence_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/results/r27-kv-cf32-20260908/comparison.json",
+        "evidence_sha256": "sha256:9376acdce0d66738f5af7bc54188ad98d298dbb47dfd3cd3faece459becb77d6",
+        "category": "correctness"
+      }
+    ],
+    "performance_claims": [
+      {
+        "name": "N/A"
+      }
+    ]
+  },
+  "limitations": {
+    "known": [
+      "Existing absolute speed observations belong to source-equivalent local server image57a9967b75e6, not a newly benchmarked registry rebuild.",
+      "Historical KLD0.0341811459 uses DCP1; current paired DCP4 results use the same opened windows, MTP off and2046 true-decode rows per window. Different historical runtime/topology prevents KV-only attribution.",
+      "Weight upload is still in progress; release-status.json governs remote completeness.",
+      "Engine aggregate cache capacity does not establish1M-context accuracy or full-capacity stress."
+    ],
+    "untested": [
+      "Clean download-to-GPU serving of public image",
+      "Independent repeated speed qualification"
+    ],
+    "unsupported": [
+      "Other GPU architectures, TP sizes, arbitrary model encoders; inference-only release."
+    ]
+  },
+  "support": {
+    "owner": "Brandon Music",
+    "contact": "https://github.com/brandonmmusic-max",
+    "issue_tracker": "https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues",
+    "support_thread": "https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues/5",
+    "thread_status": "active",
+    "support_commitment": "ephemeral",
+    "triage_policy": "Keep reports in this thread. Escalate upstream only after reproduction on the recommended image or a minimal reproducer identifies the responsible source change.",
+    "superseded_by": "N/A"
+  },
+  "publication": {
+    "record_url": "https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8/blob/main/image-record.json",
+    "main_channel_link": "N/A",
+    "main_channel_link_count": 0,
+    "bot_listing": "not-applicable",
+    "maintainer_approval_url": "N/A"
+  }
+}

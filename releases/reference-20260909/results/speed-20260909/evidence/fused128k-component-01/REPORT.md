@@ -1,0 +1,1 @@
+Passed80 constructed-fixture eager/graph cases, each comparing normalized output and residual exactly against CPU reference at epsilon1e-5. Four payload shapes on four ranks, with four changed-input in-place graph replays per shape. General random CPU diagnostic shows rounding differences from split BF16 reduction. No arbitrary GPU-data accuracy, model KLD or throughput claim.
