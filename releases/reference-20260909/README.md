@@ -141,6 +141,30 @@ FP8. The prior text and linked receipts are retained below without silently
 changing either number. Do not use that disputed historical label as a matched
 cache comparison. New reference results are recorded separately above.
 
+## Matched-window comparison with TR3 4bpw
+
+| Cache | TrellisMX reference KLD | TR3 / EXL3 4bpw KLD |
+| --- | ---: | ---: |
+| FP8 KV | 0.0319451732 | 0.0281899278 |
+| NVFP4 MLA KV | 0.0354562238 | 0.0304785381 |
+
+Lower is better on this panel. These runs use the same BF16 teacher, 32 previously
+opened conditional-fit windows, exact token histories and 2,046 true-decode rows
+per window. Both use MTP off, one sequence and CPU FP64 KL(teacher || student).
+The TR3 and EXL3 Hub names identify the same uniform 4bpw checkpoint; this is not
+the stock NVFP4-weight model. FP8 and NVFP4 in the table label the MLA KV cache.
+
+This is a matched-data **system comparison**. TR3 uses its compatible r10
+TP4/EP4/DCP4 runtime; TrellisMX uses r27 TP4/DCP4 with EP off. Expert math,
+nonrouted-weight policy and cache layout also differ. The result does not isolate
+the codec or establish general answer quality. One server per cache mode, FP8
+then NVFP4; window intervals do not measure server-run variability.
+
+[Per-window scores, paired intervals and audit](results/kld-tr3-20260909/README.md).
+The first TR3 startup failed before any measured windows because kernel metadata
+was unavailable in the shared compiler cache. The retained retry used process-
+separated compiler caches on tmpfs; model weights and kernel math were unchanged.
+
 ## Run the model
 
 Requires the custom runtime, four supported GPUs and NVIDIA Container Toolkit.
