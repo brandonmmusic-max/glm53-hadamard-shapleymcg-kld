@@ -2,6 +2,30 @@
 
 **September 9 selected serving reference:** [image, launch configuration and complete speed/KLD evidence](releases/reference-20260909/README.md). Matched32window development KLD: FP8 KV **0.0319451732**, NVFP4 MLA KV **0.0354562238**, TP4/DCP4/MTPoff. [HF model card](https://huggingface.co/brandonmusic/GLM-5.3-Flash-TrellisMX-MXFP8).
 
+
+## Additional local quality measurements (September 9, 2026)
+
+The same 32 windows / 65,472 prediction positions now include top-1 agreement, text likelihood, cache sensitivity, and compact student-to-student divergence. These are CPU analyses of retained scores; no new model execution.
+
+| Model/cache | Full BF16→student KL ↓ | BF16 top-1 agreement ↑ | Actual-text top-1 hit ↑ | Text perplexity ↓ | Actual-token probability MAE vs BF16 ↓ |
+|---|---:|---:|---:|---:|---:|
+| MX_fp8 | 0.03194517 | 94.7443% | 76.4113% | 2.763034 | 0.018921 |
+| MX_nvfp4 | 0.03545622 | 94.3273% | 76.4113% | 2.770716 | 0.019874 |
+| TR3_fp8 | 0.02818993 | 94.9612% | 76.4174% | 2.766834 | 0.017494 |
+| TR3_nvfp4 | 0.03047854 | 94.8100% | 76.3563% | 2.768238 | 0.018555 |
+
+Top-1 agreement measures the same preferred token as BF16. Perplexity measures likelihood of the actual text. Probability MAE measures the average difference on that text’s next token. Full KL measures the whole distribution; none is a direct answer-correctness score. See the report for definitions of every metric.
+
+When BF16 assigns its preferred token ≥90% probability, both FP8 students match 38,297/38,309 positions; NVFP4 matches are 38,286 for TR3 and 38,284 for TrellisMX. Changing FP8→NVFP4 cache flips top-1 at 3,137 positions for TrellisMX and 2,854 for TR3.
+
+All six student-pair comparisons and four teacher/student comparisons include **two-bucket KL in both directions and Jensen–Shannon divergence**, grouping the actual next token versus all other tokens. These are lower-resolution divergences, not full-vocabulary student-pair KL. Full student logits were retired, so full student-pair KL and top-k overlap cannot be recovered without another capture.
+
+TR3 has lower measured full-reference KL; TrellisMX FP8’s slightly lower text perplexity does not establish superiority. These are exploratory results on already-opened conditional-fit windows, with runtime/EP/math differences and one preparation per cache arm. They do not establish answer-quality equivalence.
+
+[Full tables, metric explanations, limitations and reproducible analysis](releases/reference-20260909/results/quality-expanded-20260909/README.md).
+
+
+
 Reproducible code and evidence for a local GLM-5.3-Flash quantization campaign on
 four RTX PRO 6000 Blackwell GPUs. It covers block-local 16×16 Hadamard rotation
 (H16) inside routed-expert projections, calibrated GPTQ, the native P8/TrellisMX

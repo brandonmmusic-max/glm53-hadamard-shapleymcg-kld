@@ -1,0 +1,21 @@
+{
+  "type": "Post-hoc descriptive analysis of retained already-opened conditional-fit scores; not new qualification",
+  "windows": 32,
+  "rows_per_window": 2046,
+  "row_mask": "Exclude prediction row0; use1..2046",
+  "metrics": [
+    "top1 equality with teacher",
+    "cross-model top1 equality",
+    "teacher-confidence subsets pmax>=0.5 and pmax>=0.9",
+    "original-text mean negative log likelihood and perplexity",
+    "mean student NLL minus teacher NLL"
+  ],
+  "aggregation": "Equal window mean for all-row metrics; pooled eligible row count for confidence subsets; confidence thresholds selected before this script inspected score values",
+  "uncertainty": "Paired window BCa95 intervals for TrellisMX-minus-TR3 top1 agreement and excess NLL,20000resamples,seed20260902; not server-run variability",
+  "limits": [
+    "Conditional teacher-forced histories, not free generation",
+    "Runtime/EP/activation/nonrouted-weight confounds retained",
+    "Teacher is BF16 and can itself be incorrect",
+    "No top-k ranks/probabilities retained; no fabricated top-k results"
+  ]
+}

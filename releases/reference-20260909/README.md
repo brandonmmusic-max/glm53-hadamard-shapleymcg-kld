@@ -473,3 +473,7 @@ See `CITATION.cff`, `LICENSE.exllamav3` and `LICENSE.carrier`.
 [Runtime support](https://github.com/brandonmmusic-max/glm53-hadamard-shapleymcg-kld/issues/5)
 is for the custom experimental release; no general hardware/support guarantee
 is implied. The original research versions remain available on GitHub.
+
+## Additional retained-score quality analysis
+
+[Full results and definitions: TrellisMX versus TR3/EXL3, both KV caches](results/quality-expanded-20260909/README.md). Includes reference agreement, text likelihood, cache sensitivity, all student-pair compact KL/JS comparisons, per-window data, and limitations.
